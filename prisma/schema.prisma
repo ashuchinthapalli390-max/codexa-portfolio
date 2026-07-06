@@ -1,0 +1,124 @@
+// Prisma schema for CodeXa Agency — Full Auth System
+// Database: SQLite (local dev)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── USER ACCOUNTS ───────────────────────────────────────────────────────────
+model User {
+  id           String   @id @default(cuid())
+  username     String?  @unique
+  email        String?  @unique
+  fullName     String?
+  passwordHash String
+  // role values: "OWNER" | "ADMIN" | "TEAM_MEMBER"
+  role         String
+  isActive     Boolean  @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  profile      TeamProfile?
+  sessions     Session[]
+  accessKeys   AccessKey[]
+}
+
+// ─── TEAM PROFILES ────────────────────────────────────────────────────────────
+model TeamProfile {
+  id                 String    @id @default(cuid())
+  userId             String?   @unique
+  // memberType values: "LEADERSHIP" | "CORE_TEAM"
+  memberType         String
+  // leadershipPosition values: "FOUNDER", "CO_FOUNDER", "CEO", or null
+  leadershipPosition String?
+  displayName        String
+  publicBio          String?
+  mediaUrl           String?
+  mediaMimeType      String?
+  cropX              Float?
+  cropY              Float?
+  cropW              Float?
+  cropH              Float?
+  cropZoom           Float?
+  cropRotation       Float?
+  isPublic           Boolean   @default(true)
+  displayOrder       Int       @default(0)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  user               User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── SESSION STORE ────────────────────────────────────────────────────────────
+model Session {
+  id               String   @id @default(cuid())
+  userId           String
+  sessionTokenHash String   @unique
+  expiresAt        DateTime
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── ACCESS KEYS ─────────────────────────────────────────────────────────────
+// Stored as hashes — raw key is NEVER stored and shown only once on creation.
+model AccessKey {
+  id          String    @id @default(cuid())
+  userId      String
+  label       String
+  keyHash     String    @unique
+  // role this key grants access for: "OWNER" | "ADMIN" | "TEAM_MEMBER"
+  role        String
+  isActive    Boolean   @default(true)
+  maxUses     Int?      // null = unlimited
+  useCount    Int       @default(0)
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  auditLogs   AccessKeyAuditLog[]
+}
+
+// ─── ACCESS KEY AUDIT LOG ────────────────────────────────────────────────────
+model AccessKeyAuditLog {
+  id          String    @id @default(cuid())
+  accessKeyId String?
+  userId      String?
+  action      String    // "VERIFY_SUCCESS" | "VERIFY_FAIL" | "KEY_CREATED" | "KEY_REVOKED" | "KEY_REGENERATED"
+  success     Boolean
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime  @default(now())
+
+  accessKey   AccessKey? @relation(fields: [accessKeyId], references: [id], onDelete: SetNull)
+}
+
+// ─── PRE-AUTH SESSIONS (short-lived, Access Key step only) ───────────────────
+// Created after Access Key is verified; replaced by full Session after credential login.
+model PreAuthSession {
+  id               String   @id @default(cuid())
+  tokenHash        String   @unique
+  userId           String
+  role             String
+  expiresAt        DateTime
+  createdAt        DateTime @default(now())
+}
+
+// ─── AUDIT LOG (existing) ────────────────────────────────────────────────────
+model ProfileAuditLog {
+  id           String   @id @default(cuid())
+  actorUserId  String?
+  targetUserId String?
+  action       String
+  details      String
+  createdAt    DateTime @default(now())
+}
