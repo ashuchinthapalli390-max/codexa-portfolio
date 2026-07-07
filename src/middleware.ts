@@ -28,7 +28,7 @@ export async function middleware(req: NextRequest) {
   const isDashboardPage = pathname.startsWith("/dashboard");
   const isOwnerApi = pathname.startsWith("/api/owner");
   const isAdminApi = pathname.startsWith("/api/admin");
-  const isProfileApi = pathname.startsWith("/api/profile");
+  const isProfileApi = pathname.startsWith("/api/profile") || pathname.startsWith("/api/profile-media");
 
   const isProtectedPage = isOwnerPage || isAdminPage || isDashboardPage;
   const isProtectedApi = isOwnerApi || isAdminApi || isProfileApi;
@@ -71,5 +71,6 @@ export const config = {
     "/api/owner/:path*",
     "/api/admin/:path*",
     "/api/profile/:path*",
+    "/api/profile-media/:path*",
   ],
 };
