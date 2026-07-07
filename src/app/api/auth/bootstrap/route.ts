@@ -5,36 +5,20 @@
  * Used when the production database has no Owner user or no active Owner access key.
  * Requires the BOOTSTRAP_SECRET env variable to match the request body secret.
  * Shows the generated raw access key EXACTLY ONCE — never stored, never logged.
+ * Normalization (trim + uppercase) and bcrypt hashing (12 rounds) applied.
  *
  * Lock behavior:
  * - If an active OWNER user with at least one active AccessKey already exists → blocked.
  * - If OWNER user exists but no active AccessKey → creates a new key for them.
  * - If no OWNER user exists → creates user + access key from env variables.
- *
- * Required env variables (set in Vercel Production):
- *   BOOTSTRAP_SECRET        — one-time secret to authorize this call
- *   OWNER_EMAIL             — email for the Owner account
- *   OWNER_PASSWORD_HASH     — bcrypt hash of Owner's password (never store plaintext)
- *
- * SECURITY RULES:
- * - Never log: secrets, passwords, hashes, raw keys, or database URLs
- * - Response includes raw key ONCE only; caller must copy it immediately
- * - After first successful bootstrap with an active key, endpoint is permanently locked
  */
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
+import { normalizeAccessKey } from "@/lib/normalize";
 
 export const runtime = "nodejs";
-
-function normalizeAccessKey(raw: string): string | null {
-  const normalized = raw.trim().toUpperCase();
-  return normalized.length > 0 ? normalized : null;
-}
-
-function hashKey(normalized: string): string {
-  return crypto.createHash("sha256").update(normalized).digest("hex");
-}
 
 function generateRawKey(): string {
   const seg = () => crypto.randomBytes(2).toString("hex").toUpperCase();
@@ -59,7 +43,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
 
-  // Constant-time comparison to prevent timing attacks
   const submittedSecret = body.secret ?? "";
   const secretBuffer = Buffer.from(bootstrapSecret);
   const submittedBuffer = Buffer.from(submittedSecret.padEnd(bootstrapSecret.length, "\0").slice(0, bootstrapSecret.length));
@@ -71,7 +54,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  // ── Env variable checks ───────────────────────────────────────────────────
   const ownerEmail = process.env.OWNER_EMAIL?.toLowerCase().trim();
   const ownerPasswordHash = process.env.OWNER_PASSWORD_HASH?.trim();
 
@@ -84,7 +66,6 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // ── Check for existing Owner + active key (lock condition) ────────────
     const existingOwner = await db.user.findFirst({
       where: { role: "OWNER", isActive: true },
       include: {
@@ -108,10 +89,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── Upsert Owner user ─────────────────────────────────────────────────
     let owner = existingOwner;
     if (!owner) {
-      // Check if email already taken by non-owner
       const emailConflict = await db.user.findFirst({ where: { email: ownerEmail } });
       if (emailConflict) {
         console.error(`[bootstrap] Email conflict — ${ownerEmail} already exists as role=${emailConflict.role}`);
@@ -136,10 +115,12 @@ export async function POST(req: NextRequest) {
       console.log("[bootstrap] OWNER user already exists — id=" + owner.id + " — creating new key only");
     }
 
-    // ── Create a new Owner access key ─────────────────────────────────────
     const rawKey = generateRawKey();
-    const normalizedKey = normalizeAccessKey(rawKey)!;
-    const keyHash = hashKey(normalizedKey);
+    const normalizedKey = normalizeAccessKey(rawKey);
+    if (!normalizedKey) {
+      return NextResponse.json({ error: "Failed to generate key." }, { status: 500 });
+    }
+    const keyHash = await bcrypt.hash(normalizedKey, 12);
 
     const accessKey = await db.accessKey.create({
       data: {
@@ -155,12 +136,11 @@ export async function POST(req: NextRequest) {
 
     console.log("[bootstrap] SUCCESS — new OWNER AccessKey created id=" + accessKey.id);
 
-    // Return raw key ONCE — caller must save it immediately
     return NextResponse.json({
       success: true,
       message: "Bootstrap complete. Save your access key — it will NOT be shown again.",
       ownerEmail,
-      rawKey, // shown exactly once
+      rawKey,
     });
   } catch (err) {
     console.error("[bootstrap] DB error:", (err as Error).message);

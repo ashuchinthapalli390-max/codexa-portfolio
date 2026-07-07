@@ -5,6 +5,9 @@
  * Aiven MySQL database using the MySQL Prisma Client.
  * Skips records that already exist to allow safe re-runs.
  */
+import { config } from "dotenv";
+config(); // Load .env file
+
 import { PrismaClient } from "@prisma/client";
 import * as fs from "fs";
 import * as path from "path";

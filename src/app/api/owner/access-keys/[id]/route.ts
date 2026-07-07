@@ -7,8 +7,10 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+import { normalizeAccessKey } from "@/lib/normalize";
 
 export const runtime = "nodejs";
 
@@ -22,18 +24,6 @@ function requireOwner(user: Awaited<ReturnType<typeof getCurrentUser>>) {
 function generateRawKey(): string {
   const seg = () => crypto.randomBytes(2).toString("hex").toUpperCase();
   return `CXA-${seg()}${seg()}-${seg()}${seg()}-${seg()}${seg()}-${seg()}${seg()}`;
-}
-
-/**
- * Canonical normalization — must match verify-key/route.ts exactly.
- */
-function normalizeAccessKey(raw: string): string | null {
-  const normalized = raw.trim().toUpperCase();
-  return normalized.length > 0 ? normalized : null;
-}
-
-function hashKey(normalized: string): string {
-  return crypto.createHash("sha256").update(normalized).digest("hex");
 }
 
 // ─── PATCH: Update key ────────────────────────────────────────────────────────
@@ -80,8 +70,11 @@ export async function PATCH(
     // Key regeneration — generates a new raw key, normalizes, hashes, resets useCount
     if (body.regenerate) {
       rawKey = generateRawKey();
-      const normalizedKey = normalizeAccessKey(rawKey)!;
-      updateData.keyHash = hashKey(normalizedKey);
+      const normalizedKey = normalizeAccessKey(rawKey);
+      if (!normalizedKey) {
+        return NextResponse.json({ error: "Failed to generate key." }, { status: 500 });
+      }
+      updateData.keyHash = await bcrypt.hash(normalizedKey, 12);
       updateData.useCount = 0;
       updateData.lastUsedAt = null;
     }

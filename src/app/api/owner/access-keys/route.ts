@@ -2,14 +2,16 @@
  * GET  /api/owner/access-keys  — List all access keys
  * POST /api/owner/access-keys  — Create a new access key
  *
- * OWNER role only. Raw keys are never stored — only SHA-256 hashes.
+ * OWNER role only. Raw keys are never stored — only bcrypt hashes.
  * Raw key is returned ONCE on creation; never retrievable again.
  * Normalization (trim + uppercase) applied before hashing — same function used at verification.
  */
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+import { normalizeAccessKey } from "@/lib/normalize";
 
 export const runtime = "nodejs";
 
@@ -24,18 +26,6 @@ function generateRawKey(): string {
   // Format: CXA-XXXX-XXXX-XXXX-XXXX (hex segments, uppercase)
   const seg = () => crypto.randomBytes(2).toString("hex").toUpperCase();
   return `CXA-${seg()}${seg()}-${seg()}${seg()}-${seg()}${seg()}-${seg()}${seg()}`;
-}
-
-/**
- * Canonical normalization — must match verify-key/route.ts exactly.
- */
-function normalizeAccessKey(raw: string): string | null {
-  const normalized = raw.trim().toUpperCase();
-  return normalized.length > 0 ? normalized : null;
-}
-
-function hashKey(normalized: string): string {
-  return crypto.createHash("sha256").update(normalized).digest("hex");
 }
 
 // ─── GET: List all access keys ────────────────────────────────────────────────
@@ -111,8 +101,13 @@ export async function POST(req: NextRequest) {
     }
 
     const rawKey = generateRawKey();
-    const normalizedKey = normalizeAccessKey(rawKey)!; // generated keys are always valid
-    const keyHash = hashKey(normalizedKey);
+    const normalizedKey = normalizeAccessKey(rawKey);
+    if (!normalizedKey) {
+      return NextResponse.json({ error: "Failed to generate key." }, { status: 500 });
+    }
+
+    // Hash the normalized key using bcrypt (12 rounds)
+    const keyHash = await bcrypt.hash(normalizedKey, 12);
 
     const created = await db.accessKey.create({
       data: {

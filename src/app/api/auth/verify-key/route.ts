@@ -3,7 +3,7 @@
  * Step 1 of two-step login.
  *
  * Accepts a raw access key, normalizes it (trim + uppercase), and verifies
- * it against SHA-256 hashed records in MySQL.
+ * it against bcrypt-hashed records in MySQL.
  * Also accepts OWNER_MASTER_KEY from env — permanent, never expires, never stored.
  * On success: creates a short-lived PreAuthSession (10 min) and sets an HTTP-only cookie.
  *
@@ -12,7 +12,9 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
+import { normalizeAccessKey } from "@/lib/normalize";
 
 export const runtime = "nodejs";
 
@@ -30,22 +32,6 @@ function getIp(req: NextRequest): string {
     req.headers.get("x-real-ip") ||
     "unknown"
   );
-}
-
-/**
- * Canonical normalization applied BOTH at key creation and verification.
- * - Trim outer whitespace
- * - Convert to uppercase
- * - Preserve internal hyphens
- * - Return null if empty after normalization
- */
-function normalizeAccessKey(raw: string): string | null {
-  const normalized = raw.trim().toUpperCase();
-  return normalized.length > 0 ? normalized : null;
-}
-
-function hashKey(normalized: string): string {
-  return crypto.createHash("sha256").update(normalized).digest("hex");
 }
 
 function checkRateLimit(ip: string): boolean {
@@ -74,6 +60,11 @@ export async function POST(req: NextRequest) {
   const env = process.env.NODE_ENV ?? "unknown";
 
   console.log(`[verify-key][${reqId}] env=${env} ip=${ip} — request received`);
+
+  if (!process.env.DATABASE_URL) {
+    console.error(`[verify-key][${reqId}] DIAGNOSTIC: DATABASE_URL_MISSING`);
+    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
+  }
 
   let body: { key?: string };
   try {
@@ -112,7 +103,7 @@ export async function POST(req: NextRequest) {
       });
 
       if (!ownerUser) {
-        console.error(`[verify-key][${reqId}] NO_OWNER_USER — OWNER user not found in DB`);
+        console.error(`[verify-key][${reqId}] DIAGNOSTIC: NO_MATCHING_ACTIVE_KEY (OWNER user disabled/missing)`);
         return NextResponse.json({ error: "Access denied. Check your access key and try again." }, { status: 401 });
       }
 
@@ -125,7 +116,7 @@ export async function POST(req: NextRequest) {
       });
 
       resetRateLimitOnSuccess(ip);
-      console.log(`[verify-key][${reqId}] MASTER_KEY_SUCCESS — preAuthSession created`);
+      console.log(`[verify-key][${reqId}] DIAGNOSTIC: ACCESS_GRANTED (MASTER_KEY)`);
 
       const res = NextResponse.json({ preAuthGranted: true });
       res.cookies.set(PREAUTH_COOKIE, rawToken, {
@@ -137,78 +128,121 @@ export async function POST(req: NextRequest) {
       });
       return res;
     } catch (err) {
-      console.error(`[verify-key][${reqId}] DB_UNAVAILABLE — master key DB error:`, (err as Error).message);
+      console.error(`[verify-key][${reqId}] DIAGNOSTIC: DB_CONNECTION_FAILED — error:`, (err as Error).message);
       return NextResponse.json({ error: "Internal server error." }, { status: 500 });
     }
   }
 
-  // ─── DB ACCESS KEY CHECK ─────────────────────────────────────────────────
-  const hash = hashKey(normalizedKey);
-
+  // ─── DB BCRYPT ACCESS KEY CHECK ──────────────────────────────────────────
   try {
-    const accessKey = await db.accessKey.findUnique({
-      where: { keyHash: hash },
-      include: { user: { select: { id: true, isActive: true, role: true } } },
+    // 1. Fetch active keys from MySQL
+    const activeKeys = await db.accessKey.findMany({
+      where: {
+        isActive: true,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            isActive: true,
+            role: true,
+          },
+        },
+      },
     });
 
-    // Detailed stage logging (no secrets)
-    if (!accessKey) {
-      console.warn(`[verify-key][${reqId}] NO_ACTIVE_KEY_FOUND — no DB record matched hash`);
-    } else if (!accessKey.isActive) {
-      console.warn(`[verify-key][${reqId}] KEY_REVOKED — keyId=${accessKey.id}`);
-    } else if (!accessKey.user.isActive) {
-      console.warn(`[verify-key][${reqId}] USER_DISABLED — keyId=${accessKey.id}`);
-    } else if (accessKey.expiresAt && new Date() >= accessKey.expiresAt) {
-      console.warn(`[verify-key][${reqId}] KEY_EXPIRED — keyId=${accessKey.id}`);
-    } else if (accessKey.maxUses !== null && accessKey.useCount >= accessKey.maxUses) {
-      console.warn(`[verify-key][${reqId}] MAX_USES_REACHED — keyId=${accessKey.id}`);
+    if (activeKeys.length === 0) {
+      console.warn(`[verify-key][${reqId}] DIAGNOSTIC: ACCESS_KEY_TABLE_EMPTY`);
+      return NextResponse.json({ error: "Access denied. Check your access key and try again." }, { status: 401 });
     }
 
-    const isValid =
-      accessKey &&
-      accessKey.isActive &&
-      accessKey.user.isActive &&
-      (!accessKey.expiresAt || new Date() < accessKey.expiresAt) &&
-      (accessKey.maxUses === null || accessKey.useCount < accessKey.maxUses);
+    // 2. Loop through candidate keys and compare using bcrypt
+    let matchedKey = null;
+    let matchFound = false;
 
-    // Audit log — always
+    for (const key of activeKeys) {
+      try {
+        const isMatch = await bcrypt.compare(normalizedKey, key.keyHash);
+        if (isMatch) {
+          matchedKey = key;
+          matchFound = true;
+          break;
+        }
+      } catch (err) {
+        console.error(`[verify-key][${reqId}] DIAGNOSTIC: HASH_COMPARE_FAILED`);
+      }
+    }
+
+    if (!matchFound || !matchedKey) {
+      console.warn(`[verify-key][${reqId}] DIAGNOSTIC: NO_MATCHING_ACTIVE_KEY`);
+      return NextResponse.json({ error: "Access denied. Check your access key and try again." }, { status: 401 });
+    }
+
+    // 3. Check constraints
+    if (!matchedKey.isActive) {
+      console.warn(`[verify-key][${reqId}] DIAGNOSTIC: KEY_DISABLED`);
+      return NextResponse.json({ error: "Access denied. Check your access key and try again." }, { status: 401 });
+    }
+
+    if (!matchedKey.user.isActive) {
+      console.warn(`[verify-key][${reqId}] DIAGNOSTIC: LINKED_USER_DISABLED`);
+      return NextResponse.json({ error: "Access denied. Check your access key and try again." }, { status: 401 });
+    }
+
+    if (matchedKey.expiresAt && new Date() >= matchedKey.expiresAt) {
+      console.warn(`[verify-key][${reqId}] DIAGNOSTIC: KEY_EXPIRED`);
+      return NextResponse.json({ error: "Access denied. Check your access key and try again." }, { status: 401 });
+    }
+
+    if (matchedKey.maxUses !== null && matchedKey.useCount >= matchedKey.maxUses) {
+      console.warn(`[verify-key][${reqId}] DIAGNOSTIC: KEY_MAX_USES_REACHED`);
+      return NextResponse.json({ error: "Access denied. Check your access key and try again." }, { status: 401 });
+    }
+
+    if (matchedKey.role !== matchedKey.user.role) {
+      console.warn(`[verify-key][${reqId}] DIAGNOSTIC: NO_MATCHING_ACTIVE_KEY (role mismatch)`);
+      return NextResponse.json({ error: "Access denied. Check your access key and try again." }, { status: 401 });
+    }
+
+    // 4. Audit log log entry
     await db.accessKeyAuditLog.create({
       data: {
-        accessKeyId: accessKey?.id ?? null,
-        userId: accessKey?.userId ?? null,
-        action: isValid ? "VERIFY_SUCCESS" : "VERIFY_FAIL",
-        success: !!isValid,
+        accessKeyId: matchedKey.id,
+        userId: matchedKey.userId,
+        action: "VERIFY_SUCCESS",
+        success: true,
         ipAddress: ip,
         userAgent: req.headers.get("user-agent") ?? undefined,
       },
     });
 
-    if (!isValid) {
-      return NextResponse.json({ error: "Access denied. Check your access key and try again." }, { status: 401 });
-    }
-
-    // Increment use count
+    // 5. Increment use count
     await db.accessKey.update({
-      where: { id: accessKey!.id },
+      where: { id: matchedKey.id },
       data: { useCount: { increment: 1 }, lastUsedAt: new Date() },
     });
 
-    // Create PreAuthSession
+    // 6. Create PreAuthSession
     const rawToken = crypto.randomBytes(32).toString("hex");
     const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
     const expiresAt = new Date(Date.now() + PREAUTH_TTL_MS);
 
-    await db.preAuthSession.create({
-      data: {
-        tokenHash,
-        userId: accessKey!.userId,
-        role: accessKey!.role,
-        expiresAt,
-      },
-    });
+    try {
+      await db.preAuthSession.create({
+        data: {
+          tokenHash,
+          userId: matchedKey.userId,
+          role: matchedKey.role,
+          expiresAt,
+        },
+      });
+    } catch (err) {
+      console.error(`[verify-key][${reqId}] DIAGNOSTIC: PREAUTH_SESSION_FAILED — error:`, (err as Error).message);
+      return NextResponse.json({ error: "Internal server error." }, { status: 500 });
+    }
 
     resetRateLimitOnSuccess(ip);
-    console.log(`[verify-key][${reqId}] DB_KEY_SUCCESS — role=${accessKey!.role} keyId=${accessKey!.id}`);
+    console.log(`[verify-key][${reqId}] DIAGNOSTIC: ACCESS_GRANTED — role=${matchedKey.role}`);
 
     const res = NextResponse.json({ preAuthGranted: true });
     res.cookies.set(PREAUTH_COOKIE, rawToken, {
@@ -220,7 +254,7 @@ export async function POST(req: NextRequest) {
     });
     return res;
   } catch (err) {
-    console.error(`[verify-key][${reqId}] DB_UNAVAILABLE — error:`, (err as Error).message);
+    console.error(`[verify-key][${reqId}] DIAGNOSTIC: DB_CONNECTION_FAILED — error:`, (err as Error).message);
     return NextResponse.json({ error: "Internal server error." }, { status: 500 });
   }
 }
