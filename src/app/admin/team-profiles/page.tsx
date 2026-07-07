@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getProfileImageStyle } from "@/lib/profile-media";
 import { LEADERSHIP_DATA } from "@/config/leadershipData";
-
+import { ProfileMediaCropModal } from "@/components/ui/ProfileMediaCropModal";
 import { upload } from "@vercel/blob/client";
 import "../../globals.css";
 
@@ -56,6 +56,19 @@ function TeamProfilesContent() {
   const quickUploadRef = useRef<HTMLInputElement>(null);
   const [quickUploadProfileId, setQuickUploadProfileId] = useState<string | null>(null);
   const [leadershipUploadStatus, setLeadershipUploadStatus] = useState<Record<string, string>>({});
+
+  // Crop modal states
+  const [showCropModal, setShowCropModal] = useState(false);
+  const [cropModalFile, setCropModalFile] = useState<File | null>(null);
+  const [cropType, setCropType] = useState<"LEADERSHIP" | "CORE_TEAM_EDIT" | "CORE_TEAM_CREATE" | null>(null);
+
+  // Local crop coordinates for new member creation
+  const [createCropX, setCreateCropX] = useState<number | null>(null);
+  const [createCropY, setCreateCropY] = useState<number | null>(null);
+  const [createCropW, setCreateCropW] = useState<number | null>(null);
+  const [createCropH, setCreateCropH] = useState<number | null>(null);
+  const [createCropZoom, setCreateCropZoom] = useState<number | null>(null);
+  const [createCropRotation, setCreateCropRotation] = useState<number | null>(null);
 
   // Lists & Filtering
   const [profiles, setProfiles] = useState<ProfileItem[]>([]);
@@ -177,10 +190,9 @@ function TeamProfilesContent() {
       return;
     }
 
-    // Instant preview
-    if (createPreview) URL.revokeObjectURL(createPreview);
-    setCreateFile(file);
-    setCreatePreview(URL.createObjectURL(file));
+    setCropType("CORE_TEAM_CREATE");
+    setCropModalFile(file);
+    setShowCropModal(true);
   };
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
@@ -289,11 +301,9 @@ function TeamProfilesContent() {
       return;
     }
 
-    // Instant preview
-    if (editPreview) URL.revokeObjectURL(editPreview);
-    setEditFile(file);
-    setEditRemoveMedia(false);
-    setEditPreview(URL.createObjectURL(file));
+    setCropType("CORE_TEAM_EDIT");
+    setCropModalFile(file);
+    setShowCropModal(true);
   };
 
   const handleEditOpen = (profile: ProfileItem) => {
@@ -410,57 +420,9 @@ function TeamProfilesContent() {
       return;
     }
 
-    const profileId = quickUploadProfileId;
-    setLeadershipUploadStatus((s) => ({ ...s, [profileId]: "Uploading…" }));
-
-    try {
-      // 1. Get signed upload nonce
-      const initRes = await fetch(`/api/profile-media/upload?targetProfileId=${profileId}`);
-      const initData = await initRes.json();
-      if (!initRes.ok) throw new Error(initData.ref ? `PM-${initData.ref}` : "Failed to get upload token.");
-
-      const { uploadNonce, targetProfileId } = initData;
-      const ext = file.name.split(".").pop() || "bin";
-      const uniqueName = `profiles/${targetProfileId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-
-      // 2. Upload directly to Vercel Blob
-      const blobResult = await upload(uniqueName, file, {
-        access: "public",
-        handleUploadUrl: "/api/profile-media/upload",
-        clientPayload: JSON.stringify({ targetProfileId, uploadNonce }),
-        onUploadProgress: ({ percentage }) => {
-          setLeadershipUploadStatus((s) => ({ ...s, [profileId]: `Uploading… ${Math.round(percentage)}%` }));
-        },
-      });
-
-      setLeadershipUploadStatus((s) => ({ ...s, [profileId]: "Saving…" }));
-
-      // 3. Commit to Aiven MySQL
-      const commitRes = await fetch("/api/profile-media/commit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          blobUrl: blobResult.url,
-          contentType: file.type,
-          targetProfileId,
-          uploadNonce,
-        }),
-      });
-
-      const commitData = await commitRes.json();
-      if (!commitRes.ok || !commitData.success) {
-        throw new Error(`Commit failed. Reference: PM-${commitData.ref ?? "Unknown"}`);
-      }
-
-      setLeadershipUploadStatus((s) => ({ ...s, [profileId]: "✅ Saved" }));
-      setTimeout(() => setLeadershipUploadStatus((s) => { const n = { ...s }; delete n[profileId]; return n; }), 2500);
-      loadData();
-    } catch (err: any) {
-      alert(`Failed to save leadership media: ${err.message}`);
-      setLeadershipUploadStatus((s) => { const n = { ...s }; delete n[profileId]; return n; });
-    } finally {
-      setQuickUploadProfileId(null);
-    }
+    setCropType("LEADERSHIP");
+    setCropModalFile(file);
+    setShowCropModal(true);
   };
 
   const handleLeadershipMediaRemove = async (profileId: string) => {
@@ -1354,6 +1316,48 @@ function TeamProfilesContent() {
 
 
 
+      {showCropModal && cropModalFile && (
+        <ProfileMediaCropModal
+          file={cropModalFile}
+          targetProfileId={
+            cropType === "CORE_TEAM_EDIT" && editingProfile
+              ? editingProfile.id
+              : cropType === "LEADERSHIP" && quickUploadProfileId
+              ? quickUploadProfileId
+              : undefined
+          }
+          onClose={() => {
+            setShowCropModal(false);
+            setCropModalFile(null);
+            if (cropType === "LEADERSHIP") setQuickUploadProfileId(null);
+          }}
+          onSuccess={(updatedProfile) => {
+            if (cropType === "CORE_TEAM_EDIT" && editingProfile) {
+              setEditingProfile(updatedProfile);
+              setEditPreview(null);
+              setEditFile(null);
+            }
+            loadData();
+            setShowCropModal(false);
+            setCropModalFile(null);
+            if (cropType === "LEADERSHIP") setQuickUploadProfileId(null);
+          }}
+          onLocalCropComplete={({ blob, cropData }) => {
+            if (cropType === "CORE_TEAM_CREATE") {
+              setCreateFile(blob as File);
+              setCreatePreview(URL.createObjectURL(blob as File));
+              if (cropData) {
+                setCreateCropX(cropData.cropX);
+                setCreateCropY(cropData.cropY);
+                setCreateCropW(cropData.cropW);
+                setCreateCropH(cropData.cropH);
+                setCreateCropZoom(cropData.cropZoom);
+                setCreateCropRotation(cropData.cropRotation);
+              }
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

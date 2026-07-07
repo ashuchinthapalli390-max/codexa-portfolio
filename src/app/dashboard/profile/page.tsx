@@ -5,8 +5,8 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import "../../globals.css";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { upload } from "@vercel/blob/client";
 import { ProfilePositionAdjuster } from "@/components/ui/ProfilePositionAdjuster";
+import { ProfileMediaCropModal } from "@/components/ui/ProfileMediaCropModal";
 
 interface ProfileData {
   id: string;
@@ -36,7 +36,6 @@ function formatBytes(bytes: number) {
 export default function TeamMemberProfilePage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
   const [sessionUser, setSessionUser] = useState<{ id: string; username: string; role: string } | null>(null);
   const [profile, setProfile] = useState<ProfileData | null>(null);
@@ -56,9 +55,8 @@ export default function TeamMemberProfilePage() {
 
   // Pending upload state
   const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [previewObjectUrl, setPreviewObjectUrl] = useState<string | null>(null);
+  const [showCropModal, setShowCropModal] = useState(false);
   const [uploadPhase, setUploadPhase] = useState<UploadPhase>("idle");
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [statusMsg, setStatusMsg] = useState("");
   const [errorRef, setErrorRef] = useState<string | null>(null);
 
@@ -106,13 +104,6 @@ export default function TeamMemberProfilePage() {
       .catch(() => router.replace("/login"));
   }, [router]);
 
-  // Revoke object URL when pendingFile changes or component unmounts
-  useEffect(() => {
-    return () => {
-      if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
-    };
-  }, [previewObjectUrl]);
-
   // ── File selected ──────────────────────────────────────────────────────────
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -141,122 +132,34 @@ export default function TeamMemberProfilePage() {
       return;
     }
 
-    // ── Instant preview ───────────────────────────────────────────────────
-    if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
-    const objUrl = URL.createObjectURL(file);
-    setPreviewObjectUrl(objUrl);
+    // Open crop modal immediately
     setPendingFile(file);
+    setShowCropModal(true);
     setRemoveMedia(false);
     setShowAdjuster(false);
     setErrorRef(null);
-
-    // ── Begin upload immediately ──────────────────────────────────────────
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    setUploadPhase("uploading");
-    setUploadProgress(0);
-    setStatusMsg("Preparing upload…");
-
-    try {
-      // 1. Get signed nonce
-      const initRes = await fetch("/api/profile-media/upload", { signal: controller.signal });
-      const initData = await initRes.json();
-      if (!initRes.ok) throw new Error(initData.ref ? `PM-${initData.ref}` : "Failed to get upload token.");
-
-      const { uploadNonce, targetProfileId } = initData;
-      const ext = file.name.split(".").pop() || "bin";
-      const uniqueName = `profiles/${targetProfileId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-
-      // 2. Upload directly to Vercel Blob CDN
-      const blobResult = await upload(uniqueName, file, {
-        access: "public",
-        handleUploadUrl: "/api/profile-media/upload",
-        clientPayload: JSON.stringify({ targetProfileId, uploadNonce }),
-        abortSignal: controller.signal,
-        onUploadProgress: ({ percentage }) => {
-          setUploadProgress(Math.round(percentage));
-          setStatusMsg(`Uploading profile media… ${Math.round(percentage)}%`);
-        },
-      });
-
-      // 3. Commit to Aiven MySQL
-      setUploadPhase("committing");
-      setStatusMsg("Saving profile changes…");
-
-      const commitRes = await fetch("/api/profile-media/commit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          blobUrl: blobResult.url,
-          contentType: file.type,
-          targetProfileId,
-          uploadNonce,
-        }),
-      });
-
-      const commitData = await commitRes.json();
-      if (!commitRes.ok || !commitData.success) {
-        throw new Error(commitData.ref ? `PM-${commitData.ref}` : "Commit failed.");
-      }
-
-      // ── Success ───────────────────────────────────────────────────────
-      // Revoke preview object URL now that we have the real committed URL
-      URL.revokeObjectURL(objUrl);
-      setPreviewObjectUrl(null);
-      setPendingFile(null);
-
-      setCommittedMediaUrl(commitData.profile.mediaUrl);
-      setCommittedMimeType(commitData.profile.mediaMimeType);
-      setCommittedCropX(commitData.profile.cropX ?? null);
-      setCommittedCropY(commitData.profile.cropY ?? null);
-      setCommittedCropW(commitData.profile.cropW ?? null);
-      setCommittedCropH(commitData.profile.cropH ?? null);
-      setCommittedCropZoom(commitData.profile.cropZoom ?? null);
-
-      setUploadPhase("done");
-      setStatusMsg("Profile media updated.");
-      setTimeout(() => setUploadPhase("idle"), 3000);
-    } catch (err: any) {
-      if (err?.name === "AbortError") {
-        // User cancelled — restore old state
-        URL.revokeObjectURL(objUrl);
-        setPreviewObjectUrl(null);
-        setPendingFile(null);
-        setUploadPhase("idle");
-        setStatusMsg("");
-        return;
-      }
-
-      const ref = err?.message?.startsWith("PM-") ? err.message : null;
-      setErrorRef(ref);
-      setUploadPhase("error");
-      setStatusMsg("Profile media could not be saved. Your previous media is still active.");
-
-      // Restore preview to old committed URL
-      URL.revokeObjectURL(objUrl);
-      setPreviewObjectUrl(null);
-      setPendingFile(null);
-    }
-  }, [previewObjectUrl]);
-
-  // ── Cancel upload ──────────────────────────────────────────────────────────
-  const handleCancelUpload = () => {
-    abortRef.current?.abort();
-  };
+    setUploadPhase("idle");
+    setStatusMsg("");
+  }, []);
 
   // ── Remove media ───────────────────────────────────────────────────────────
   const handleRemoveMedia = () => {
     if (uploadPhase === "uploading" || uploadPhase === "committing") return;
     setPendingFile(null);
-    if (previewObjectUrl) { URL.revokeObjectURL(previewObjectUrl); setPreviewObjectUrl(null); }
     setRemoveMedia(true);
     setUploadPhase("idle");
     setStatusMsg("");
     setErrorRef(null);
     setShowAdjuster(false);
+  };
+
+  // ── Cancel in-progress upload ──────────────────────────────────────────────
+  const handleCancelUpload = () => {
+    setShowCropModal(false);
+    setPendingFile(null);
+    setUploadPhase("idle");
+    setStatusMsg("");
+    setErrorRef(null);
   };
 
   // ── Save position metadata ─────────────────────────────────────────────────
@@ -341,7 +244,7 @@ export default function TeamMemberProfilePage() {
     );
   }
 
-  const activePreviewUrl = previewObjectUrl ?? (removeMedia ? null : committedMediaUrl);
+  const activePreviewUrl = removeMedia ? null : committedMediaUrl;
   const isUploading = uploadPhase === "uploading" || uploadPhase === "committing";
   const hasCommittedMedia = !!committedMediaUrl && !removeMedia;
 
@@ -500,10 +403,11 @@ export default function TeamMemberProfilePage() {
                     <div className="space-y-1.5">
                       <div className="h-1 rounded-full bg-[#1A1A1A] overflow-hidden">
                         <div
-                          className="h-full rounded-full transition-all duration-200"
+                          className="h-full rounded-full animate-pulse"
                           style={{
-                            width: `${uploadPhase === "committing" ? 100 : uploadProgress}%`,
+                            width: uploadPhase === "committing" ? "100%" : "60%",
                             background: "linear-gradient(90deg, #D90429, #FF6B35)",
+                            transition: "width 0.4s ease",
                           }}
                         />
                       </div>
@@ -536,7 +440,7 @@ export default function TeamMemberProfilePage() {
                           {hasCommittedMedia ? "Replace Media" : "Add Media"}
                         </button>
 
-                        {hasCommittedMedia && !previewObjectUrl && (
+                        {hasCommittedMedia && (
                           <button
                             type="button"
                             onClick={() => setShowAdjuster(!showAdjuster)}
@@ -680,6 +584,33 @@ export default function TeamMemberProfilePage() {
           </div>
         </div>
       </main>
+      {showCropModal && pendingFile && profile?.id && (
+        <ProfileMediaCropModal
+          file={pendingFile}
+          targetProfileId={profile.id}
+          onClose={() => {
+            setShowCropModal(false);
+            setPendingFile(null);
+          }}
+          onSuccess={(updatedProfile) => {
+            setCommittedMediaUrl(updatedProfile.mediaUrl);
+            setCommittedMimeType(updatedProfile.mediaMimeType);
+            setCommittedCropX(updatedProfile.cropX ?? null);
+            setCommittedCropY(updatedProfile.cropY ?? null);
+            setCommittedCropW(updatedProfile.cropW ?? null);
+            setCommittedCropH(updatedProfile.cropH ?? null);
+            setCommittedCropZoom(updatedProfile.cropZoom ?? null);
+            setShowCropModal(false);
+            setPendingFile(null);
+            setUploadPhase("done");
+            setStatusMsg("Profile media updated.");
+            setTimeout(() => {
+              setUploadPhase("idle");
+              setStatusMsg("");
+            }, 3000);
+          }}
+        />
+      )}
     </div>
   );
 }
