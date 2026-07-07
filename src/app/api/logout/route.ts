@@ -6,6 +6,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { destroySession } from "@/lib/auth";
 
+export const runtime = "nodejs";
+
 export async function POST(req: NextRequest) {
   const token = req.cookies.get("cxa_session")?.value;
 

@@ -4,11 +4,14 @@
  *
  * OWNER role only. Raw keys are never stored — only SHA-256 hashes.
  * Raw key is returned ONCE on creation; never retrievable again.
+ * Normalization (trim + uppercase) applied before hashing — same function used at verification.
  */
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+
+export const runtime = "nodejs";
 
 function requireOwner(user: Awaited<ReturnType<typeof getCurrentUser>>) {
   if (!user || user.role !== "OWNER") {
@@ -18,13 +21,21 @@ function requireOwner(user: Awaited<ReturnType<typeof getCurrentUser>>) {
 }
 
 function generateRawKey(): string {
-  // Format: CXA-XXXX-XXXX-XXXX-XXXX (hex segments)
+  // Format: CXA-XXXX-XXXX-XXXX-XXXX (hex segments, uppercase)
   const seg = () => crypto.randomBytes(2).toString("hex").toUpperCase();
   return `CXA-${seg()}${seg()}-${seg()}${seg()}-${seg()}${seg()}-${seg()}${seg()}`;
 }
 
-function hashKey(raw: string): string {
-  return crypto.createHash("sha256").update(raw.trim()).digest("hex");
+/**
+ * Canonical normalization — must match verify-key/route.ts exactly.
+ */
+function normalizeAccessKey(raw: string): string | null {
+  const normalized = raw.trim().toUpperCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function hashKey(normalized: string): string {
+  return crypto.createHash("sha256").update(normalized).digest("hex");
 }
 
 // ─── GET: List all access keys ────────────────────────────────────────────────
@@ -54,7 +65,7 @@ export async function GET(_req: NextRequest) {
 
     return NextResponse.json({ success: true, keys: safeKeys });
   } catch (err) {
-    console.error("[GET /api/owner/access-keys]", err);
+    console.error("[GET /api/owner/access-keys]", (err as Error).message);
     return NextResponse.json({ error: "Internal server error." }, { status: 500 });
   }
 }
@@ -94,14 +105,14 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Ensure the target user exists
     const targetUser = await db.user.findUnique({ where: { id: userId } });
     if (!targetUser) {
       return NextResponse.json({ error: "User not found." }, { status: 404 });
     }
 
     const rawKey = generateRawKey();
-    const keyHash = hashKey(rawKey);
+    const normalizedKey = normalizeAccessKey(rawKey)!; // generated keys are always valid
+    const keyHash = hashKey(normalizedKey);
 
     const created = await db.accessKey.create({
       data: {
@@ -115,7 +126,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Log creation
+    // Audit log
     await db.accessKeyAuditLog.create({
       data: {
         accessKeyId: created.id,
@@ -134,7 +145,7 @@ export async function POST(req: NextRequest) {
       rawKey, // ← shown ONCE only
     });
   } catch (err) {
-    console.error("[POST /api/owner/access-keys]", err);
+    console.error("[POST /api/owner/access-keys]", (err as Error).message);
     return NextResponse.json({ error: "Internal server error." }, { status: 500 });
   }
 }

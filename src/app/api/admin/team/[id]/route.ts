@@ -11,6 +11,8 @@ import { unlink, writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { siteConfig } from "@/config/site";
 
+export const runtime = "nodejs";
+
 interface RouteParams {
   params: {
     id: string;

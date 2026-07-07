@@ -1,6 +1,10 @@
 /**
- * Prisma Client singleton for CodeXa Admin System (Prisma 5 + SQLite)
- * Prevents multiple instances during Next.js hot-reload in development
+ * Prisma Client singleton for CodeXa Admin System (Prisma 5 + MySQL/Aiven)
+ *
+ * - Prevents multiple instances during Next.js hot-reload in development
+ * - In production each serverless function invocation reuses the global instance
+ * - Never initialize PrismaClient in browser/client components
+ * - DATABASE_URL must never be exposed via NEXT_PUBLIC_ variables
  */
 import { PrismaClient } from "@prisma/client";
 

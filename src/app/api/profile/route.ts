@@ -8,6 +8,8 @@ import { db } from "@/lib/db";
 import { writeFile, mkdir, unlink } from "fs/promises";
 import path from "path";
 
+export const runtime = "nodejs";
+
 export async function PATCH(req: NextRequest) {
   const user = await getCurrentUser();
 

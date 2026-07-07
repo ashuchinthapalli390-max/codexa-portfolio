@@ -15,12 +15,26 @@
 .env.development.local
 .env.test.local
 .env.production.local
+.env.production
 
-# SQLite database files — sensitive data
+# SQLite database files — never in production
 prisma/*.db
 prisma/*.db-journal
 prisma/*.db-wal
 prisma/*.db-shm
+prisma/prisma/*.db
+prisma/sqlite_dump.json
+*.sqlite
+*.sqlite3
+
+# Uploaded files — ephemeral on Vercel, should use cloud storage
+public/uploads/
+
+# TLS certificates — never commit private certs
+certs/*.pem
+certs/*.crt
+certs/*.key
+!certs/.gitkeep
 
 # Debug logs
 npm-debug.log*

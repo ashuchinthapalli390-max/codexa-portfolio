@@ -23,8 +23,15 @@ function generateRawKey(): string {
   return `CXA-${seg()}${seg()}-${seg()}${seg()}-${seg()}${seg()}-${seg()}${seg()}`;
 }
 
+function normalizeAccessKey(raw: string): string | null {
+  const normalized = raw.trim().toUpperCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
 function hashKey(raw: string): string {
-  return crypto.createHash("sha256").update(raw.trim()).digest("hex");
+  const normalized = normalizeAccessKey(raw);
+  if (!normalized) throw new Error("Seed generated an empty access key");
+  return crypto.createHash("sha256").update(normalized).digest("hex");
 }
 
 async function main() {

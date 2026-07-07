@@ -1,13 +1,16 @@
 /**
- * PATCH  /api/owner/access-keys/[id]  — Update key (label, isActive, expiry)
+ * PATCH  /api/owner/access-keys/[id]  — Update key (label, isActive, expiry, regenerate)
  * DELETE /api/owner/access-keys/[id]  — Revoke (permanently deactivate) a key
  *
  * OWNER role only.
+ * Normalization (trim + uppercase) applied before hashing on regeneration.
  */
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+
+export const runtime = "nodejs";
 
 function requireOwner(user: Awaited<ReturnType<typeof getCurrentUser>>) {
   if (!user || user.role !== "OWNER") {
@@ -21,8 +24,16 @@ function generateRawKey(): string {
   return `CXA-${seg()}${seg()}-${seg()}${seg()}-${seg()}${seg()}-${seg()}${seg()}`;
 }
 
-function hashKey(raw: string): string {
-  return crypto.createHash("sha256").update(raw.trim()).digest("hex");
+/**
+ * Canonical normalization — must match verify-key/route.ts exactly.
+ */
+function normalizeAccessKey(raw: string): string | null {
+  const normalized = raw.trim().toUpperCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function hashKey(normalized: string): string {
+  return crypto.createHash("sha256").update(normalized).digest("hex");
 }
 
 // ─── PATCH: Update key ────────────────────────────────────────────────────────
@@ -66,10 +77,11 @@ export async function PATCH(
       updateData.expiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
     }
 
-    // Key regeneration — generates a new raw key, resets useCount
+    // Key regeneration — generates a new raw key, normalizes, hashes, resets useCount
     if (body.regenerate) {
       rawKey = generateRawKey();
-      updateData.keyHash = hashKey(rawKey);
+      const normalizedKey = normalizeAccessKey(rawKey)!;
+      updateData.keyHash = hashKey(normalizedKey);
       updateData.useCount = 0;
       updateData.lastUsedAt = null;
     }
@@ -97,7 +109,7 @@ export async function PATCH(
       ...(rawKey ? { rawKey } : {}), // Only present on regeneration
     });
   } catch (err) {
-    console.error("[PATCH /api/owner/access-keys/[id]]", err);
+    console.error("[PATCH /api/owner/access-keys/[id]]", (err as Error).message);
     return NextResponse.json({ error: "Internal server error." }, { status: 500 });
   }
 }
@@ -136,7 +148,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    console.error("[DELETE /api/owner/access-keys/[id]]", err);
+    console.error("[DELETE /api/owner/access-keys/[id]]", (err as Error).message);
     return NextResponse.json({ error: "Internal server error." }, { status: 500 });
   }
 }

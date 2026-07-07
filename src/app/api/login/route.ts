@@ -12,6 +12,8 @@ import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { createSession } from "@/lib/auth";
 
+export const runtime = "nodejs";
+
 const PREAUTH_COOKIE = "cxa_preauth";
 
 async function validatePreAuth(req: NextRequest): Promise<{

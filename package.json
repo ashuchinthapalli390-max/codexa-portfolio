@@ -4,12 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && prisma migrate deploy && next build",
     "start": "next start",
     "lint": "next lint",
     "seed": "tsx prisma/seed.ts",
     "db:push": "prisma db push",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "db:dump": "tsx scripts/dump-sqlite.ts",
+    "db:migrate": "tsx scripts/load-mysql.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

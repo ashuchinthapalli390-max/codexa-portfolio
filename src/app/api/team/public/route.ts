@@ -8,6 +8,8 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { LEADERSHIP_DATA } from "@/config/leadershipData";
 
+export const runtime = "nodejs";
+
 export async function GET() {
   try {
     const rawProfiles = await db.teamProfile.findMany({

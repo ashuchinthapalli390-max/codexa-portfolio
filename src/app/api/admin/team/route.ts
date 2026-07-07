@@ -11,6 +11,8 @@ import crypto from "crypto";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 
+export const runtime = "nodejs";
+
 const BCRYPT_ROUNDS = 12;
 
 function generateTempPassword(): string {
