@@ -1,114 +1,122 @@
 /**
  * src/lib/upload.ts
- * Server-only Vercel Blob upload/delete helper for profile media.
+ * Server-only helpers for profile media management.
  *
  * SECURITY:
- * - Uses BLOB_READ_WRITE_TOKEN (server-only, never NEXT_PUBLIC_).
- * - Never logs blob token, DATABASE_URL, raw keys, or file contents.
+ * - BLOB_READ_WRITE_TOKEN is read server-side only; never NEXT_PUBLIC_.
+ * - Never logs token, DATABASE_URL, keys, passwords, file contents.
  * - Logs only safe diagnostic reason codes.
- *
- * Organised blob paths: profiles/{userId}/{timestamp}.{ext}
  */
-import { put, del } from "@vercel/blob";
+import { del } from "@vercel/blob";
+import crypto from "crypto";
 
+// ─── Allowed types ─────────────────────────────────────────────────────────────
 export const ALLOWED_MIME_TYPES = [
-  "image/png",
   "image/jpeg",
+  "image/png",
   "image/webp",
   "image/gif",
 ] as const;
 
 export type AllowedMimeType = (typeof ALLOWED_MIME_TYPES)[number];
 
-const MAX_SIZE_IMAGE = 10 * 1024 * 1024; // 10 MB
-const MAX_SIZE_GIF = 15 * 1024 * 1024;   // 15 MB
+export const MAX_SIZE_IMAGE = 10 * 1024 * 1024; // 10 MB
+export const MAX_SIZE_GIF   = 15 * 1024 * 1024; // 15 MB
 
-export type UploadDiagnosticCode =
-  | "BLOB_TOKEN_MISSING"
-  | "INVALID_MEDIA_TYPE"
-  | "FILE_TOO_LARGE"
-  | "BLOB_UPLOAD_FAILED"
-  | "MEDIA_DELETE_FAILED";
+// ─── HMAC-based stateless nonce (single-use via DB audit check) ────────────────
+const NONCE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-export class UploadError extends Error {
-  code: UploadDiagnosticCode;
-  constructor(code: UploadDiagnosticCode, message: string) {
-    super(message);
-    this.code = code;
-  }
+/**
+ * Issue a signed upload nonce scoped to a specific actor + target profile.
+ * Format: actingUserId:targetProfileId:expiresAt:signature
+ */
+export function issueUploadNonce(actingUserId: string, targetProfileId: string): string {
+  const expiresAt = Date.now() + NONCE_TTL_MS;
+  const payload = `${actingUserId}:${targetProfileId}:${expiresAt}`;
+  const signature = crypto
+    .createHmac("sha256", process.env.SESSION_SECRET || "default_secret")
+    .update(payload)
+    .digest("hex");
+  return `${payload}:${signature}`;
 }
 
 /**
- * Validates and uploads a File to Vercel Blob.
- * Returns the public Blob URL and MIME type.
- * Throws UploadError on any validation or upload failure.
+ * Validate a signed upload nonce.
  */
-export async function uploadProfileMedia(
-  file: File,
-  userId: string
-): Promise<{ url: string; mimeType: string }> {
-  // Guard: token must exist server-side
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    console.error("[upload] DIAGNOSTIC: BLOB_TOKEN_MISSING");
-    throw new UploadError("BLOB_TOKEN_MISSING", "Blob storage is not configured.");
-  }
-
-  // Validate MIME type
-  const mimeType = file.type as AllowedMimeType;
-  if (!ALLOWED_MIME_TYPES.includes(mimeType)) {
-    console.warn(`[upload] DIAGNOSTIC: INVALID_MEDIA_TYPE — received: ${file.type}`);
-    throw new UploadError(
-      "INVALID_MEDIA_TYPE",
-      "Invalid file type. Only PNG, JPG, WEBP, and GIF are allowed."
-    );
-  }
-
-  // Validate file size
-  const isGif = mimeType === "image/gif";
-  const maxSize = isGif ? MAX_SIZE_GIF : MAX_SIZE_IMAGE;
-  if (file.size > maxSize) {
-    console.warn(`[upload] DIAGNOSTIC: FILE_TOO_LARGE — size=${file.size} max=${maxSize}`);
-    throw new UploadError(
-      "FILE_TOO_LARGE",
-      `File too large. Maximum is ${isGif ? "15 MB for GIFs" : "10 MB"}.`
-    );
-  }
-
-  // Build organised blob path
-  const ext = mimeType === "image/jpeg" ? "jpg" : mimeType.split("/")[1];
-  const blobPath = `profiles/${userId}/profile-${Date.now()}.${ext}`;
-
+export function verifyUploadNonce(
+  nonce: string,
+  actingUserId: string,
+  targetProfileId: string
+): boolean {
   try {
-    const blob = await put(blobPath, file, {
-      access: "public",
-      token: process.env.BLOB_READ_WRITE_TOKEN,
-      // GIFs are stored as-is — do NOT use addRandomSuffix: false since
-      // we already include a timestamp making the path unique.
-      addRandomSuffix: false,
-    });
-    return { url: blob.url, mimeType };
-  } catch (err) {
-    console.error("[upload] DIAGNOSTIC: BLOB_UPLOAD_FAILED —", (err as Error).message);
-    throw new UploadError("BLOB_UPLOAD_FAILED", "Profile media could not be saved. Please try again.");
+    const parts = nonce.split(":");
+    if (parts.length !== 4) return false;
+    const [userId, profileId, expiresAtStr, signature] = parts;
+    
+    if (userId !== actingUserId || profileId !== targetProfileId) return false;
+    if (Date.now() > Number(expiresAtStr)) return false;
+    
+    const expectedPayload = `${userId}:${profileId}:${expiresAtStr}`;
+    const expectedSignature = crypto
+      .createHmac("sha256", process.env.SESSION_SECRET || "default_secret")
+      .update(expectedPayload)
+      .digest("hex");
+      
+    return crypto.timingSafeEqual(
+      Buffer.from(signature, "hex"),
+      Buffer.from(expectedSignature, "hex")
+    );
+  } catch {
+    return false;
   }
 }
 
 /**
- * Deletes a blob by its URL.
- * Safe to call with null/local paths — skips silently.
- * Only deletes URLs that start with the Vercel Blob CDN hostname.
+ * Generate a reference ID for upload error tracking (e.g. PM-4F3A12).
+ * Safe to surface to users — contains no secrets.
  */
-export async function deleteProfileMedia(url: string | null): Promise<void> {
+export function generateUploadRef(): string {
+  return "PM-" + crypto.randomBytes(3).toString("hex").toUpperCase();
+}
+
+// ─── Blob deletion ─────────────────────────────────────────────────────────────
+
+/**
+ * Safely delete a blob by URL. Non-fatal — logs on failure only.
+ * Skips local/legacy /uploads/ paths silently.
+ * Only acts on real Vercel Blob CDN URLs.
+ */
+export async function deleteProfileMedia(url: string | null | undefined): Promise<void> {
   if (!url) return;
-  // Only attempt deletion of actual Vercel Blob URLs
-  if (!url.includes("blob.vercel-storage.com") && !url.includes("public.blob.vercel-storage.com")) {
-    // Legacy local /uploads/ path — cannot delete on Vercel, skip silently
+  if (
+    !url.includes("blob.vercel-storage.com") &&
+    !url.includes("public.blob.vercel-storage.com")
+  ) {
+    // Legacy local /uploads/ path or unrecognised URL — skip silently
     return;
   }
   try {
     await del(url, { token: process.env.BLOB_READ_WRITE_TOKEN });
   } catch (err) {
-    // Non-fatal — log but do not surface to user
-    console.warn("[upload] DIAGNOSTIC: MEDIA_DELETE_FAILED —", (err as Error).message);
+    console.warn("[upload] MEDIA_DELETE_FAILED —", (err as Error).message);
+  }
+}
+
+/**
+ * Validate a Vercel Blob URL belongs to the expected profile path prefix.
+ * Prevents cross-profile URL injection attacks.
+ */
+export function isValidBlobUrl(url: string, targetProfileId: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const isBlobHost =
+      parsed.hostname.endsWith("blob.vercel-storage.com") ||
+      parsed.hostname.endsWith("public.blob.vercel-storage.com");
+    
+    // Check if path starts with or contains /profiles/{targetProfileId}/
+    const hasCorrectPath = parsed.pathname.includes(`/profiles/${targetProfileId}/`);
+    return isBlobHost && hasCorrectPath;
+  } catch {
+    return false;
   }
 }

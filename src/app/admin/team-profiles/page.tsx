@@ -8,6 +8,7 @@ import { getProfileImageStyle } from "@/lib/profile-media";
 import { ProfileCropModal } from "@/components/ui/ProfileCropModal";
 import { LEADERSHIP_DATA } from "@/config/leadershipData";
 
+import { upload } from "@vercel/blob/client";
 import "../../globals.css";
 
 interface ProfileItem {
@@ -200,45 +201,87 @@ function TeamProfilesContent() {
     setCreateLoading(true);
     setCreateError("");
 
-    const formData = new FormData();
-    formData.append("displayName", createName.trim());
-    formData.append("publicBio", createBio.trim());
-    formData.append("isPublic", createPublic ? "true" : "false");
-    formData.append("displayOrder", String(createOrder));
-    if (createFile) {
-      formData.append("profileMedia", createFile);
-      if (createCropX !== null) formData.append("cropX", createCropX.toString());
-      if (createCropY !== null) formData.append("cropY", createCropY.toString());
-      if (createCropW !== null) formData.append("cropW", createCropW.toString());
-      if (createCropH !== null) formData.append("cropH", createCropH.toString());
-      if (createCropZoom !== null) formData.append("cropZoom", createCropZoom.toString());
-      if (createCropRotation !== null) formData.append("cropRotation", createCropRotation.toString());
-    }
-
     try {
-      const res = await fetch("/api/admin/team", {
+      // 1. Create the user & profile first with text fields
+      const createRes = await fetch("/api/admin/team", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          displayName: createName.trim(),
+          publicBio: createBio.trim(),
+          isPublic: createPublic,
+          displayOrder: createOrder,
+        }),
       });
 
-      const data = await res.json();
-
-      if (res.ok && data.success) {
-        setRevealCredentials({
-          username: data.username,
-          tempPass: data.tempPassword,
-        });
-        setIsCreateOpen(false);
-        setCreateName("");
-        setCreateBio("");
-        setCreateOrder(0);
-        setCreatePublic(true);
-        setCreateFile(null);
-        setCreatePreview(null);
-        loadData();
-      } else {
-        setCreateError(data.error ?? "Failed to create account.");
+      const createData = await createRes.json();
+      if (!createRes.ok || !createData.success) {
+        setCreateError(createData.error ?? "Failed to create account.");
+        setCreateLoading(false);
+        return;
       }
+
+      const newProfileId = createData.profile.id;
+
+      // 2. If a file was selected, upload it directly to Vercel Blob and commit
+      if (createFile) {
+        try {
+          // Get signed upload nonce
+          const initRes = await fetch(`/api/profile-media/upload?targetProfileId=${newProfileId}`);
+          const initData = await initRes.json();
+          if (!initRes.ok) {
+            throw new Error(initData.ref ? `PM-${initData.ref}` : "Failed to generate upload session.");
+          }
+
+          const { uploadNonce, targetProfileId } = initData;
+
+          // Upload to Blob CDN
+          const uploaded = await upload(createFile.name, createFile, {
+            access: "public",
+            handleUploadUrl: "/api/profile-media/upload",
+            clientPayload: JSON.stringify({ targetProfileId, uploadNonce }),
+          });
+
+          // Commit to Aiven MySQL
+          const commitRes = await fetch("/api/profile-media/commit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              blobUrl: uploaded.url,
+              contentType: createFile.type,
+              targetProfileId,
+              uploadNonce,
+              cropX: createCropX,
+              cropY: createCropY,
+              cropW: createCropW,
+              cropH: createCropH,
+              cropZoom: createCropZoom,
+              cropRotation: createCropRotation,
+            }),
+          });
+
+          const commitData = await commitRes.json();
+          if (!commitRes.ok || !commitData.success) {
+            const ref = commitData.ref ?? "Unknown";
+            throw new Error(`Commit failed. Reference: PM-${ref}`);
+          }
+        } catch (uploadErr: any) {
+          alert(`Account created, but profile media upload failed: ${uploadErr.message}`);
+        }
+      }
+
+      setRevealCredentials({
+        username: createData.username,
+        tempPass: createData.tempPassword,
+      });
+      setIsCreateOpen(false);
+      setCreateName("");
+      setCreateBio("");
+      setCreateOrder(0);
+      setCreatePublic(true);
+      setCreateFile(null);
+      setCreatePreview(null);
+      loadData();
     } catch {
       setCreateError("Network error. Try again.");
     } finally {
@@ -289,27 +332,64 @@ function TeamProfilesContent() {
     setEditLoading(true);
     setEditError("");
 
-    const formData = new FormData();
-    // Only core team fields can be updated as text on client
-    formData.append("displayName", editName.trim());
-    formData.append("publicBio", editBio.trim());
-    formData.append("isPublic", editPublic ? "true" : "false");
-    formData.append("displayOrder", String(editOrder));
-    formData.append("isActive", editActive ? "true" : "false");
-
-    if (editRemoveMedia) {
-      formData.append("removeMedia", "true");
-    } else if (editFile) {
-      formData.append("profileMedia", editFile);
-      if (editCropX !== null) formData.append("cropX", editCropX.toString());
-      if (editCropY !== null) formData.append("cropY", editCropY.toString());
-      if (editCropW !== null) formData.append("cropW", editCropW.toString());
-      if (editCropH !== null) formData.append("cropH", editCropH.toString());
-      if (editCropZoom !== null) formData.append("cropZoom", editCropZoom.toString());
-      if (editCropRotation !== null) formData.append("cropRotation", editCropRotation.toString());
-    }
-
     try {
+      // 1. If an edit file is present, upload it via two-step direct-to-blob first
+      if (editFile && !editRemoveMedia) {
+        try {
+          const initRes = await fetch(`/api/profile-media/upload?targetProfileId=${editingProfile.id}`);
+          const initData = await initRes.json();
+          if (!initRes.ok) {
+            throw new Error(initData.ref ? `PM-${initData.ref}` : "Failed to generate upload session.");
+          }
+
+          const { uploadNonce, targetProfileId } = initData;
+
+          const uploaded = await upload(editFile.name, editFile, {
+            access: "public",
+            handleUploadUrl: "/api/profile-media/upload",
+            clientPayload: JSON.stringify({ targetProfileId, uploadNonce }),
+          });
+
+          const commitRes = await fetch("/api/profile-media/commit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              blobUrl: uploaded.url,
+              contentType: editFile.type,
+              targetProfileId,
+              uploadNonce,
+              cropX: editCropX,
+              cropY: editCropY,
+              cropW: editCropW,
+              cropH: editCropH,
+              cropZoom: editCropZoom,
+              cropRotation: editCropRotation,
+            }),
+          });
+
+          const commitData = await commitRes.json();
+          if (!commitRes.ok || !commitData.success) {
+            const ref = commitData.ref ?? "Unknown";
+            throw new Error(`Commit failed. Reference: PM-${ref}`);
+          }
+        } catch (uploadErr: any) {
+          setEditError(`Profile media upload failed: ${uploadErr.message}`);
+          setEditLoading(false);
+          return;
+        }
+      }
+
+      // 2. Submit non-media/text changes to main PATCH endpoint
+      const formData = new FormData();
+      formData.append("displayName", editName.trim());
+      formData.append("publicBio", editBio.trim());
+      formData.append("isPublic", editPublic ? "true" : "false");
+      formData.append("displayOrder", String(editOrder));
+      formData.append("isActive", editActive ? "true" : "false");
+      if (editRemoveMedia) {
+        formData.append("removeMedia", "true");
+      }
+
       const response = await fetch(`/api/admin/team/${editingProfile.id}`, {
         method: "PATCH",
         body: formData,
@@ -362,39 +442,53 @@ function TeamProfilesContent() {
     if (cropType === "LEADERSHIP") {
       if (!quickUploadProfileId) return;
 
-      const formData = new FormData();
-      formData.append("profileMedia", blob);
-      if (cropData) {
-        formData.append("cropX", cropData.x.toString());
-        formData.append("cropY", cropData.y.toString());
-        formData.append("cropW", cropData.w.toString());
-        formData.append("cropH", cropData.h.toString());
-        formData.append("cropZoom", cropData.zoom.toString());
-        formData.append("cropRotation", cropData.rotation.toString());
-      } else {
-        formData.append("cropX", "0");
-        formData.append("cropY", "0");
-        formData.append("cropW", "100");
-        formData.append("cropH", "100");
-        formData.append("cropZoom", "1");
-        formData.append("cropRotation", "0");
-      }
-
       try {
         setUiState("loading");
-        const res = await fetch(`/api/admin/team/${quickUploadProfileId}`, {
-          method: "PATCH",
-          body: formData,
-        });
-        if (res.ok) {
-          loadData();
-        } else {
-          const data = await res.json();
-          alert(data.error ?? "Failed to upload image.");
-          setUiState("idle");
+
+        // 1. Get signed upload nonce
+        const initRes = await fetch(`/api/profile-media/upload?targetProfileId=${quickUploadProfileId}`);
+        const initData = await initRes.json();
+        if (!initRes.ok) {
+          throw new Error(initData.ref ? `PM-${initData.ref}` : "Failed to generate upload session.");
         }
-      } catch {
-        alert("Network error uploading media.");
+
+        const { uploadNonce, targetProfileId } = initData;
+
+        // 2. Upload file directly from browser to Vercel Blob CDN
+        const fileName = (blob as File).name || "profile.jpg";
+        const uploaded = await upload(fileName, blob, {
+          access: "public",
+          handleUploadUrl: "/api/profile-media/upload",
+          clientPayload: JSON.stringify({ targetProfileId, uploadNonce }),
+        });
+
+        // 3. Commit to Aiven MySQL
+        const commitRes = await fetch("/api/profile-media/commit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            blobUrl: uploaded.url,
+            contentType: blob.type || "image/jpeg",
+            targetProfileId,
+            uploadNonce,
+            cropX: cropData ? cropData.x : 0,
+            cropY: cropData ? cropData.y : 0,
+            cropW: cropData ? cropData.w : 100,
+            cropH: cropData ? cropData.h : 100,
+            cropZoom: cropData ? cropData.zoom : 1,
+            cropRotation: cropData ? cropData.rotation : 0,
+          }),
+        });
+
+        const commitData = await commitRes.json();
+        if (!commitRes.ok || !commitData.success) {
+          const ref = commitData.ref ?? "Unknown";
+          throw new Error(`Commit failed. Reference: PM-${ref}`);
+        }
+
+        loadData();
+      } catch (err: any) {
+        alert(`Failed to save leadership media: ${err.message}`);
         setUiState("idle");
       } finally {
         setQuickUploadProfileId(null);

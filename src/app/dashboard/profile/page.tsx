@@ -5,6 +5,7 @@ import React, { useState, useEffect, useRef } from "react";
 import "../../globals.css";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { upload } from "@vercel/blob/client";
 import { getProfileImageStyle } from "@/lib/profile-media";
 import { ProfileCropModal } from "@/components/ui/ProfileCropModal";
 
@@ -158,21 +159,109 @@ export default function TeamMemberProfilePage() {
     setSaveState("loading");
     setStatusMsg("");
 
-    const formData = new FormData();
-    formData.append("displayName", displayName.trim());
-    formData.append("publicBio", publicBio.trim());
-    formData.append("removeMedia", removeMedia ? "true" : "false");
-    if (selectedFile) {
-      formData.append("profileMedia", selectedFile);
-    }
-    if (cropX !== null) formData.append("cropX", cropX.toString());
-    if (cropY !== null) formData.append("cropY", cropY.toString());
-    if (cropW !== null) formData.append("cropW", cropW.toString());
-    if (cropH !== null) formData.append("cropH", cropH.toString());
-    if (cropZoom !== null) formData.append("cropZoom", cropZoom.toString());
-    if (cropRotation !== null) formData.append("cropRotation", cropRotation.toString());
-
     try {
+      // ── If a new file was selected: two-step Blob upload ──────────────────
+      if (selectedFile && !removeMedia) {
+        // Step A: upload directly from browser to Vercel Blob CDN
+        let blobResult: { url: string; contentType: string };
+        let finalProfileId: string;
+        let finalNonce: string;
+
+        try {
+          // 1. Get a signed upload nonce from the server
+          const initRes = await fetch("/api/profile-media/upload");
+          const initData = await initRes.json();
+          if (!initRes.ok) {
+            throw new Error(initData.ref ? `PM-${initData.ref}` : "Failed to generate upload session.");
+          }
+
+          finalProfileId = initData.targetProfileId;
+          finalNonce = initData.uploadNonce;
+
+          // 2. Upload file directly from browser to Vercel Blob CDN
+          const uploaded = await upload(selectedFile.name, selectedFile, {
+            access: "public",
+            handleUploadUrl: "/api/profile-media/upload",
+            clientPayload: JSON.stringify({
+              targetProfileId: finalProfileId,
+              uploadNonce: finalNonce,
+            }),
+          });
+          blobResult = { url: uploaded.url, contentType: selectedFile.type };
+        } catch (uploadErr: any) {
+          const errMsg = uploadErr?.message || "";
+          const ref = errMsg.startsWith("PM-") ? errMsg : "Check logs for details";
+          setSaveState("error");
+          setStatusMsg(`Profile media could not be saved. Please try again. Reference: ${ref}`);
+          return;
+        }
+
+        // Step B: commit Blob URL to Aiven MySQL
+        const commitRes = await fetch("/api/profile-media/commit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            blobUrl: blobResult.url,
+            contentType: blobResult.contentType,
+            targetProfileId: finalProfileId,
+            uploadNonce: finalNonce,
+            cropX,
+            cropY,
+            cropW,
+            cropH,
+            cropZoom,
+            cropRotation,
+          }),
+        });
+
+        const commitData = await commitRes.json();
+
+        if (commitRes.ok && commitData.success) {
+          // Now save text fields
+          const formData = new FormData();
+          formData.append("displayName", displayName.trim());
+          formData.append("publicBio", publicBio.trim());
+          if (cropX !== null) formData.append("cropX", cropX.toString());
+          if (cropY !== null) formData.append("cropY", cropY.toString());
+          if (cropW !== null) formData.append("cropW", cropW.toString());
+          if (cropH !== null) formData.append("cropH", cropH.toString());
+          if (cropZoom !== null) formData.append("cropZoom", cropZoom.toString());
+          if (cropRotation !== null) formData.append("cropRotation", cropRotation.toString());
+          await fetch("/api/profile", { method: "PATCH", body: formData });
+
+          setSaveState("saved");
+          setStatusMsg("Profile media updated successfully.");
+          setMediaUrl(commitData.profile.mediaUrl);
+          setMimeType(commitData.profile.mediaMimeType);
+          setCropX(commitData.profile.cropX);
+          setCropY(commitData.profile.cropY);
+          setCropW(commitData.profile.cropW);
+          setCropH(commitData.profile.cropH);
+          setCropZoom(commitData.profile.cropZoom);
+          setCropRotation(commitData.profile.cropRotation);
+          setSelectedFile(null);
+          setPreviewUrl(null);
+          setRemoveMedia(false);
+        } else {
+          const ref = commitData.ref ?? "Unknown error";
+          setSaveState("error");
+          setStatusMsg(`Profile media could not be saved. Please try again. Reference: PM-${ref}`);
+        }
+        return;
+      }
+
+      // ── No file (text/crop/removeMedia only) ─────────────────────────────
+      const formData = new FormData();
+      formData.append("displayName", displayName.trim());
+      formData.append("publicBio", publicBio.trim());
+      formData.append("removeMedia", removeMedia ? "true" : "false");
+      if (cropX !== null) formData.append("cropX", cropX.toString());
+      if (cropY !== null) formData.append("cropY", cropY.toString());
+      if (cropW !== null) formData.append("cropW", cropW.toString());
+      if (cropH !== null) formData.append("cropH", cropH.toString());
+      if (cropZoom !== null) formData.append("cropZoom", cropZoom.toString());
+      if (cropRotation !== null) formData.append("cropRotation", cropRotation.toString());
+
       const res = await fetch("/api/profile", {
         method: "PATCH",
         body: formData,
@@ -183,7 +272,6 @@ export default function TeamMemberProfilePage() {
       if (res.ok && data.success) {
         setSaveState("saved");
         setStatusMsg("Profile updated successfully.");
-        // Refresh local details
         setMediaUrl(data.profile.mediaUrl);
         setMimeType(data.profile.mediaMimeType);
         setCropX(data.profile.cropX);

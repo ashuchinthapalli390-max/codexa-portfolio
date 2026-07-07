@@ -1,14 +1,16 @@
 /**
  * PATCH & DELETE /api/admin/team/[id]
- * PATCH: Edit profile details, display order, visibility, and user login status (isActive)
- * Supports multipart/form-data file uploads for profileMedia (profile photo/GIF)
- * DELETE: Safely delete user account and team profile (and clean up media file)
+ *
+ * PATCH: Edit profile details, display order, visibility, and user login status (isActive).
+ * Does NOT handle file uploads directly (handled via direct-to-blob + commit flow).
+ * Supports removeMedia logic.
+ *
+ * DELETE: Safely delete user account and team profile, and clean up their Vercel Blob file.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, logProfileAction } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { uploadProfileMedia, deleteProfileMedia, UploadError } from "@/lib/upload";
-import { siteConfig } from "@/config/site";
+import { deleteProfileMedia } from "@/lib/upload";
 
 export const runtime = "nodejs";
 
@@ -29,18 +31,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
   let displayName: string | undefined = undefined;
   let publicBio: string | undefined = undefined;
-  let mediaUrl: string | null | undefined = undefined;
-  let mediaMimeType: string | null | undefined = undefined;
-  let cropX: number | null | undefined = undefined;
-  let cropY: number | null | undefined = undefined;
-  let cropW: number | null | undefined = undefined;
-  let cropH: number | null | undefined = undefined;
-  let cropZoom: number | null | undefined = undefined;
-  let cropRotation: number | null | undefined = undefined;
   let isPublic: boolean | undefined = undefined;
   let displayOrder: number | undefined = undefined;
   let isActive: boolean | undefined = undefined;
-  let file: File | null = null;
   let removeMedia = false;
 
   const contentType = req.headers.get("content-type") || "";
@@ -66,44 +59,19 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         isActive = isActiveStr === "true";
       }
 
-      const cropXStr = formData.get("cropX") as string | undefined;
-      if (cropXStr !== undefined && cropXStr !== "") cropX = Number(cropXStr);
-      const cropYStr = formData.get("cropY") as string | undefined;
-      if (cropYStr !== undefined && cropYStr !== "") cropY = Number(cropYStr);
-      const cropWStr = formData.get("cropW") as string | undefined;
-      if (cropWStr !== undefined && cropWStr !== "") cropW = Number(cropWStr);
-      const cropHStr = formData.get("cropH") as string | undefined;
-      if (cropHStr !== undefined && cropHStr !== "") cropH = Number(cropHStr);
-      const cropZoomStr = formData.get("cropZoom") as string | undefined;
-      if (cropZoomStr !== undefined && cropZoomStr !== "") cropZoom = Number(cropZoomStr);
-      const cropRotationStr = formData.get("cropRotation") as string | undefined;
-      if (cropRotationStr !== undefined && cropRotationStr !== "") cropRotation = Number(cropRotationStr);
-
       removeMedia = formData.get("removeMedia") === "true";
-      file = formData.get("profileMedia") as File | null;
-    } catch (e) {
+    } catch {
       return NextResponse.json({ error: "Failed to parse multipart form data." }, { status: 400 });
     }
   } else {
-    // Parse JSON
     try {
       const body = await req.json();
       displayName = body.displayName;
       publicBio = body.publicBio;
-      mediaUrl = body.mediaUrl;
-      mediaMimeType = body.mediaMimeType;
-      cropX = body.cropX;
-      cropY = body.cropY;
-      cropW = body.cropW;
-      cropH = body.cropH;
-      cropZoom = body.cropZoom;
-      cropRotation = body.cropRotation;
       isPublic = body.isPublic;
       displayOrder = body.displayOrder;
       isActive = body.isActive;
-      if (mediaUrl === null) {
-        removeMedia = true;
-      }
+      removeMedia = body.removeMedia === true;
     } catch {
       return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
     }
@@ -120,42 +88,22 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
     const isLeadership = profile.memberType === "LEADERSHIP";
 
+    let mediaUrlPayload: Record<string, unknown> = {};
 
-
-    // Handle profile media upload
     if (removeMedia) {
-      // Delete old blob safely (skips legacy /uploads/ paths silently)
+      // Delete old blob safely
       await deleteProfileMedia(profile.mediaUrl);
-      mediaUrl = null;
-      mediaMimeType = null;
-    } else if (file && file.size > 0) {
-      // Upload to Vercel Blob — validation handled inside uploadProfileMedia
-      const targetUserId = profile.userId ?? profile.id;
-      let uploadedUrl: string;
-      let uploadedMime: string;
-
-      try {
-        const result = await uploadProfileMedia(file, targetUserId);
-        uploadedUrl = result.url;
-        uploadedMime = result.mimeType;
-      } catch (err) {
-        if (err instanceof UploadError) {
-          return NextResponse.json(
-            { error: "Profile media could not be saved. Please try again." },
-            { status: err.code === "FILE_TOO_LARGE" ? 413 : err.code === "INVALID_MEDIA_TYPE" ? 415 : 502 }
-          );
-        }
-        throw err;
-      }
-
-      // Keep old URL to delete after successful DB write
-      mediaUrl = uploadedUrl;
-      mediaMimeType = uploadedMime;
+      mediaUrlPayload = {
+        mediaUrl: null,
+        mediaMimeType: null,
+        cropX: null,
+        cropY: null,
+        cropW: null,
+        cropH: null,
+        cropZoom: null,
+        cropRotation: null,
+      };
     }
-
-    // Track old URL for post-commit deletion
-    const oldMediaUrlToDelete: string | null =
-      file && file.size > 0 ? profile.mediaUrl : null;
 
     // Run updates in transaction
     const updated = await db.$transaction(async (tx) => {
@@ -177,21 +125,10 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         }
       }
 
-      // 2. Build profile update payload based on memberType
-      const updateData: any = {};
-      
-      // Update media fields (allowed for both Leadership & Core Team)
-      if (mediaUrl !== undefined) updateData.mediaUrl = mediaUrl;
-      if (mediaMimeType !== undefined) updateData.mediaMimeType = mediaMimeType;
-      if (cropX !== undefined) updateData.cropX = cropX;
-      if (cropY !== undefined) updateData.cropY = cropY;
-      if (cropW !== undefined) updateData.cropW = cropW;
-      if (cropH !== undefined) updateData.cropH = cropH;
-      if (cropZoom !== undefined) updateData.cropZoom = cropZoom;
-      if (cropRotation !== undefined) updateData.cropRotation = cropRotation;
+      // 2. Build profile update payload
+      const updateData: any = { ...mediaUrlPayload };
 
       if (!isLeadership) {
-        // Written details updates only allowed for Core Team
         if (displayName !== undefined) updateData.displayName = displayName.trim();
         if (publicBio !== undefined) updateData.publicBio = publicBio ? publicBio.trim() : null;
         if (isPublic !== undefined) updateData.isPublic = isPublic;
@@ -213,11 +150,6 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       "team_member_updated_by_owner",
       `Owner updated profile settings for ${profile.displayName}`
     );
-
-    // Delete old blob after DB commit (non-fatal)
-    if (oldMediaUrlToDelete) {
-      await deleteProfileMedia(oldMediaUrlToDelete);
-    }
 
     return NextResponse.json({ success: true, profile: updated });
   } catch (err) {
@@ -260,13 +192,12 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
         where: { id: profile.userId },
       });
     } else {
-      // Just delete profile if no user login exists
       await db.teamProfile.delete({
         where: { id },
       });
     }
 
-    // Delete profile blob if it exists (Vercel Blob or legacy /uploads/ skipped)
+    // Delete profile image file if it exists on Vercel Blob
     await deleteProfileMedia(profile.mediaUrl);
 
     // Log audit

@@ -1,14 +1,13 @@
 /**
  * GET & POST /api/admin/team
  * GET: Fetch all profiles (Leadership & Core Team) for admin search/filter table
- * POST: Create a new Core Team member login and profile (accepts multipart/form-data)
+ * POST: Create a new Core Team member login and profile (accepts JSON or multipart text)
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, logProfileAction } from "@/lib/auth";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import { uploadProfileMedia, UploadError } from "@/lib/upload";
 
 export const runtime = "nodejs";
 
@@ -67,12 +66,25 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const formData = await req.formData();
-    const displayName = formData.get("displayName") as string | null;
-    const publicBio = formData.get("publicBio") as string | null;
-    const isPublic = formData.get("isPublic") !== "false"; // Default to true
-    const displayOrder = Number(formData.get("displayOrder")) || 0;
-    const file = formData.get("profileMedia") as File | null;
+    let displayName = "";
+    let publicBio = "";
+    let isPublic = true;
+    let displayOrder = 0;
+
+    const contentType = req.headers.get("content-type") || "";
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await req.formData();
+      displayName = (formData.get("displayName") as string) || "";
+      publicBio = (formData.get("publicBio") as string) || "";
+      isPublic = formData.get("isPublic") !== "false";
+      displayOrder = Number(formData.get("displayOrder")) || 0;
+    } else {
+      const body = await req.json();
+      displayName = body.displayName || "";
+      publicBio = body.publicBio || "";
+      isPublic = body.isPublic !== false;
+      displayOrder = Number(body.displayOrder) || 0;
+    }
 
     if (!displayName || displayName.trim() === "") {
       return NextResponse.json({ error: "Display name is required." }, { status: 400 });
@@ -109,30 +121,7 @@ export async function POST(req: NextRequest) {
     const tempPassword = generateTempPassword();
     const passwordHash = await bcrypt.hash(tempPassword, BCRYPT_ROUNDS);
 
-    // Save profile image to Vercel Blob (no local filesystem)
-    let finalMediaUrl: string | null = null;
-    let finalMediaMimeType: string | null = null;
-
-    if (file && file.size > 0) {
-      // Use a temporary placeholder userId for new members (real ID created inside tx)
-      // We upload with a consistent path using a unique timestamp key
-      const tempKey = `new-${Date.now()}`;
-      try {
-        const result = await uploadProfileMedia(file, tempKey);
-        finalMediaUrl = result.url;
-        finalMediaMimeType = result.mimeType;
-      } catch (err) {
-        if (err instanceof UploadError) {
-          return NextResponse.json(
-            { error: "Profile media could not be saved. Please try again." },
-            { status: err.code === "FILE_TOO_LARGE" ? 413 : err.code === "INVALID_MEDIA_TYPE" ? 415 : 502 }
-          );
-        }
-        throw err;
-      }
-    }
-
-    // Create User & Profile in a transaction
+    // Create User & Profile in a transaction (starts with null media; file uploaded separately via two-step commit)
     const result = await db.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
@@ -149,8 +138,8 @@ export async function POST(req: NextRequest) {
           memberType: "CORE_TEAM",
           displayName: displayName.trim(),
           publicBio: publicBio ? publicBio.trim() : null,
-          mediaUrl: finalMediaUrl,
-          mediaMimeType: finalMediaMimeType,
+          mediaUrl: null,
+          mediaMimeType: null,
           isPublic,
           displayOrder,
         },
@@ -178,4 +167,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Internal server error." }, { status: 500 });
   }
 }
+
 export const dynamic = "force-dynamic";
