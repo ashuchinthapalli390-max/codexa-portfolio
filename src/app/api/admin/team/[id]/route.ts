@@ -7,8 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, logProfileAction } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { unlink, writeFile, mkdir } from "fs/promises";
-import path from "path";
+import { uploadProfileMedia, deleteProfileMedia, UploadError } from "@/lib/upload";
 import { siteConfig } from "@/config/site";
 
 export const runtime = "nodejs";
@@ -121,58 +120,42 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
     const isLeadership = profile.memberType === "LEADERSHIP";
 
-    const cleanupFile = async (url: string | null) => {
-      if (url && url.startsWith("/uploads/profiles/")) {
-        const fullPath = path.join(process.cwd(), "public", url);
-        try {
-          await unlink(fullPath);
-        } catch (e) {
-          // ignore
-        }
-      }
-    };
+
 
     // Handle profile media upload
     if (removeMedia) {
-      await cleanupFile(profile.mediaUrl);
+      // Delete old blob safely (skips legacy /uploads/ paths silently)
+      await deleteProfileMedia(profile.mediaUrl);
       mediaUrl = null;
       mediaMimeType = null;
     } else if (file && file.size > 0) {
-      // Validate file size (10MB for images, 15MB for GIFs)
-      const isGif = file.type === "image/gif";
-      const maxLimit = isGif ? 15 * 1024 * 1024 : 10 * 1024 * 1024;
-      if (file.size > maxLimit) {
-        return NextResponse.json({ error: `File too large. Maximum size is ${isGif ? "15MB for GIFs" : "10MB"}.` }, { status: 400 });
+      // Upload to Vercel Blob — validation handled inside uploadProfileMedia
+      const targetUserId = profile.userId ?? profile.id;
+      let uploadedUrl: string;
+      let uploadedMime: string;
+
+      try {
+        const result = await uploadProfileMedia(file, targetUserId);
+        uploadedUrl = result.url;
+        uploadedMime = result.mimeType;
+      } catch (err) {
+        if (err instanceof UploadError) {
+          return NextResponse.json(
+            { error: "Profile media could not be saved. Please try again." },
+            { status: err.code === "FILE_TOO_LARGE" ? 413 : err.code === "INVALID_MEDIA_TYPE" ? 415 : 502 }
+          );
+        }
+        throw err;
       }
 
-      // Validate MIME type
-      const allowedMimeTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"];
-      if (!allowedMimeTypes.includes(file.type)) {
-        return NextResponse.json(
-          { error: "Invalid file type. Only PNG, JPG, JPEG, WEBP, and GIF are allowed (SVGs are forbidden)." },
-          { status: 400 }
-        );
-      }
-
-      // Create directory
-      const uploadDir = path.join(process.cwd(), "public", "uploads", "profiles");
-      await mkdir(uploadDir, { recursive: true });
-
-      // Generate filename using profile ID
-      const ext = file.type.split("/")[1] === "jpeg" ? "jpg" : file.type.split("/")[1];
-      const filename = `cxa_profile_admin_${profile.id}_${Date.now()}.${ext}`;
-      const filePath = path.join(uploadDir, filename);
-
-      const bytes = await file.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-      await writeFile(filePath, buffer);
-
-      // Clean up old file
-      await cleanupFile(profile.mediaUrl);
-
-      mediaUrl = `/uploads/profiles/${filename}`;
-      mediaMimeType = file.type;
+      // Keep old URL to delete after successful DB write
+      mediaUrl = uploadedUrl;
+      mediaMimeType = uploadedMime;
     }
+
+    // Track old URL for post-commit deletion
+    const oldMediaUrlToDelete: string | null =
+      file && file.size > 0 ? profile.mediaUrl : null;
 
     // Run updates in transaction
     const updated = await db.$transaction(async (tx) => {
@@ -231,6 +214,11 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       `Owner updated profile settings for ${profile.displayName}`
     );
 
+    // Delete old blob after DB commit (non-fatal)
+    if (oldMediaUrlToDelete) {
+      await deleteProfileMedia(oldMediaUrlToDelete);
+    }
+
     return NextResponse.json({ success: true, profile: updated });
   } catch (err) {
     console.error("[PATCH /api/admin/team/[id]] Error:", err);
@@ -278,15 +266,8 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
       });
     }
 
-    // Delete profile image file if local upload
-    if (profile.mediaUrl && profile.mediaUrl.startsWith("/uploads/profiles/")) {
-      const fullPath = path.join(process.cwd(), "public", profile.mediaUrl);
-      try {
-        await unlink(fullPath);
-      } catch (e) {
-        // ignore
-      }
-    }
+    // Delete profile blob if it exists (Vercel Blob or legacy /uploads/ skipped)
+    await deleteProfileMedia(profile.mediaUrl);
 
     // Log audit
     await logProfileAction(

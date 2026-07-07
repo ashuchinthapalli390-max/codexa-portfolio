@@ -1,12 +1,23 @@
 /**
  * PATCH /api/profile
- * Allows logged-in users to update their own profile details and media uploads (PNG, JPG, WEBP, GIF up to 5MB)
+ * Allows logged-in users to update their own profile details and media.
+ *
+ * Storage: Vercel Blob (server-only BLOB_READ_WRITE_TOKEN).
+ * Never writes to local filesystem.
+ *
+ * Permissions:
+ *   OWNER       — can update their own profile
+ *   TEAM_MEMBER — can update their own profile
+ *   ADMIN       — read-only; upload blocked server-side
+ *
+ * Diagnostic codes logged (never exposed to browser):
+ *   UPLOAD_UNAUTHORIZED, BLOB_TOKEN_MISSING, INVALID_MEDIA_TYPE,
+ *   FILE_TOO_LARGE, BLOB_UPLOAD_FAILED, DATABASE_UPDATE_FAILED, MEDIA_DELETE_FAILED
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, logProfileAction } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { writeFile, mkdir, unlink } from "fs/promises";
-import path from "path";
+import { uploadProfileMedia, deleteProfileMedia, UploadError } from "@/lib/upload";
 
 export const runtime = "nodejs";
 
@@ -14,7 +25,14 @@ export async function PATCH(req: NextRequest) {
   const user = await getCurrentUser();
 
   if (!user) {
+    console.warn("[PATCH /api/profile] DIAGNOSTIC: UPLOAD_UNAUTHORIZED — no session");
     return NextResponse.json({ error: "Unauthorized. Session required." }, { status: 401 });
+  }
+
+  // ADMIN role is strictly read-only
+  if (user.role === "ADMIN") {
+    console.warn(`[PATCH /api/profile] DIAGNOSTIC: UPLOAD_UNAUTHORIZED — ADMIN role blocked`);
+    return NextResponse.json({ error: "Forbidden. Admins cannot modify profile media." }, { status: 403 });
   }
 
   try {
@@ -49,7 +67,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "Display name is required." }, { status: 400 });
     }
 
-    // Get current profile info to clean up old image if replaced/removed
+    // Fetch current profile — must exist
     const currentProfile = await db.teamProfile.findUnique({
       where: { userId: user.id },
     });
@@ -58,8 +76,8 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "Profile not found for this user." }, { status: 404 });
     }
 
-    let finalMediaUrl = currentProfile.mediaUrl;
-    let finalMediaMimeType = currentProfile.mediaMimeType;
+    let finalMediaUrl: string | null | undefined = undefined;
+    let finalMediaMimeType: string | null | undefined = undefined;
     let finalCropX = currentProfile.cropX;
     let finalCropY = currentProfile.cropY;
     let finalCropW = currentProfile.cropW;
@@ -67,19 +85,9 @@ export async function PATCH(req: NextRequest) {
     let finalCropZoom = currentProfile.cropZoom;
     let finalCropRotation = currentProfile.cropRotation;
 
-    const cleanupFile = async (url: string | null) => {
-      if (url && url.startsWith("/uploads/profiles/")) {
-        const fullPath = path.join(process.cwd(), "public", url);
-        try {
-          await unlink(fullPath);
-        } catch (e) {
-          // ignore if missing or locked
-        }
-      }
-    };
-
     if (removeMedia) {
-      await cleanupFile(currentProfile.mediaUrl);
+      // Delete old blob safely (skips local/legacy /uploads/ paths silently)
+      await deleteProfileMedia(currentProfile.mediaUrl);
       finalMediaUrl = null;
       finalMediaMimeType = null;
       finalCropX = null;
@@ -89,6 +97,7 @@ export async function PATCH(req: NextRequest) {
       finalCropZoom = null;
       finalCropRotation = null;
     } else {
+      // Update crop metadata if provided
       if (cropX !== null) finalCropX = cropX;
       if (cropY !== null) finalCropY = cropY;
       if (cropW !== null) finalCropW = cropW;
@@ -97,76 +106,103 @@ export async function PATCH(req: NextRequest) {
       if (cropRotation !== null) finalCropRotation = cropRotation;
 
       if (file && file.size > 0) {
-        // Validate file size (10MB for images, 15MB for GIFs)
-        const isGif = file.type === "image/gif";
-        const maxLimit = isGif ? 15 * 1024 * 1024 : 10 * 1024 * 1024;
-        if (file.size > maxLimit) {
-          return NextResponse.json({ error: `File too large. Maximum size is ${isGif ? "15MB for GIFs" : "10MB"}.` }, { status: 400 });
+        // Upload to Vercel Blob — validation handled inside uploadProfileMedia
+        let uploadedUrl: string;
+        let uploadedMime: string;
+
+        try {
+          const result = await uploadProfileMedia(file, user.id);
+          uploadedUrl = result.url;
+          uploadedMime = result.mimeType;
+        } catch (err) {
+          if (err instanceof UploadError) {
+            return NextResponse.json(
+              { error: "Profile media could not be saved. Please try again." },
+              { status: err.code === "FILE_TOO_LARGE" ? 413 : err.code === "INVALID_MEDIA_TYPE" ? 415 : 502 }
+            );
+          }
+          throw err;
         }
 
-        // Validate MIME type
-        const allowedMimeTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"];
-        if (!allowedMimeTypes.includes(file.type)) {
+        // Update DB
+        let updatedProfile;
+        try {
+          updatedProfile = await db.teamProfile.update({
+            where: { userId: user.id },
+            data: {
+              displayName: displayName.trim(),
+              publicBio: publicBio ? publicBio.trim() : null,
+              mediaUrl: uploadedUrl,
+              mediaMimeType: uploadedMime,
+              cropX: finalCropX,
+              cropY: finalCropY,
+              cropW: finalCropW,
+              cropH: finalCropH,
+              cropZoom: finalCropZoom,
+              cropRotation: finalCropRotation,
+            },
+          });
+        } catch (dbErr) {
+          // DB failed — delete the newly uploaded blob to avoid orphans
+          console.error("[PATCH /api/profile] DIAGNOSTIC: DATABASE_UPDATE_FAILED —", (dbErr as Error).message);
+          await deleteProfileMedia(uploadedUrl);
           return NextResponse.json(
-            { error: "Invalid file type. Only PNG, JPG, JPEG, WEBP, and GIF are allowed (SVGs are forbidden)." },
-            { status: 400 }
+            { error: "Profile media could not be saved. Please try again." },
+            { status: 500 }
           );
         }
 
-        // Create uploads directory
-        const uploadDir = path.join(process.cwd(), "public", "uploads", "profiles");
-        await mkdir(uploadDir, { recursive: true });
+        // Delete old blob only after DB is committed
+        await deleteProfileMedia(currentProfile.mediaUrl);
 
-        // Generate safe unique filename
-        const ext = file.type.split("/")[1] === "jpeg" ? "jpg" : file.type.split("/")[1];
-        const filename = `cxa_profile_${user.id}_${Date.now()}.${ext}`;
-        const filePath = path.join(uploadDir, filename);
+        await logProfileAction(
+          user.id,
+          user.id,
+          "profile_update",
+          `User updated profile with new media. Media status: Set`
+        );
 
-        // Write arrayBuffer to file
-        const bytes = await file.arrayBuffer();
-        const buffer = Buffer.from(bytes);
-        await writeFile(filePath, buffer);
-
-        // Cleanup old media file
-        await cleanupFile(currentProfile.mediaUrl);
-
-        finalMediaUrl = `/uploads/profiles/${filename}`;
-        finalMediaMimeType = file.type;
+        return NextResponse.json({ success: true, profile: updatedProfile });
       }
     }
 
-    // Save changes to database
+    // No file upload — just update text + crop + possible media removal
+    const updatePayload: Record<string, unknown> = {
+      displayName: displayName.trim(),
+      publicBio: publicBio ? publicBio.trim() : null,
+      cropX: finalCropX,
+      cropY: finalCropY,
+      cropW: finalCropW,
+      cropH: finalCropH,
+      cropZoom: finalCropZoom,
+      cropRotation: finalCropRotation,
+    };
+
+    if (finalMediaUrl !== undefined) {
+      updatePayload.mediaUrl = finalMediaUrl;
+      updatePayload.mediaMimeType = finalMediaMimeType;
+    }
+
     const updatedProfile = await db.teamProfile.update({
       where: { userId: user.id },
-      data: {
-        displayName: displayName.trim(),
-        publicBio: publicBio ? publicBio.trim() : null,
-        mediaUrl: finalMediaUrl,
-        mediaMimeType: finalMediaMimeType,
-        cropX: finalCropX,
-        cropY: finalCropY,
-        cropW: finalCropW,
-        cropH: finalCropH,
-        cropZoom: finalCropZoom,
-        cropRotation: finalCropRotation,
-      },
+      data: updatePayload,
     });
 
-    // Log the profile update
     await logProfileAction(
       user.id,
       user.id,
       "profile_update",
-      `User ${user.username} updated profile fields. Media status: ${finalMediaUrl ? "Set" : "Removed"}`
+      `User updated profile fields. Media status: ${updatedProfile.mediaUrl ? "Set" : "Removed"}`
     );
 
-    return NextResponse.json({
-      success: true,
-      profile: updatedProfile,
-    });
+    return NextResponse.json({ success: true, profile: updatedProfile });
   } catch (err) {
-    console.error("[PATCH /api/profile] Error:", err);
-    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
+    console.error("[PATCH /api/profile] DIAGNOSTIC: UNKNOWN_UPLOAD_ERROR —", (err as Error).message);
+    return NextResponse.json(
+      { error: "Profile media could not be saved. Please try again." },
+      { status: 500 }
+    );
   }
 }
+
 export const dynamic = "force-dynamic";

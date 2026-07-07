@@ -8,8 +8,7 @@ import { getCurrentUser, logProfileAction } from "@/lib/auth";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
+import { uploadProfileMedia, UploadError } from "@/lib/upload";
 
 export const runtime = "nodejs";
 
@@ -110,43 +109,27 @@ export async function POST(req: NextRequest) {
     const tempPassword = generateTempPassword();
     const passwordHash = await bcrypt.hash(tempPassword, BCRYPT_ROUNDS);
 
-    // Save profile image file if uploaded
+    // Save profile image to Vercel Blob (no local filesystem)
     let finalMediaUrl: string | null = null;
     let finalMediaMimeType: string | null = null;
 
     if (file && file.size > 0) {
-      // Validate file size (10MB for images, 15MB for GIFs)
-      const isGif = file.type === "image/gif";
-      const maxLimit = isGif ? 15 * 1024 * 1024 : 10 * 1024 * 1024;
-      if (file.size > maxLimit) {
-        return NextResponse.json({ error: `File too large. Maximum size is ${isGif ? "15MB for GIFs" : "10MB"}.` }, { status: 400 });
+      // Use a temporary placeholder userId for new members (real ID created inside tx)
+      // We upload with a consistent path using a unique timestamp key
+      const tempKey = `new-${Date.now()}`;
+      try {
+        const result = await uploadProfileMedia(file, tempKey);
+        finalMediaUrl = result.url;
+        finalMediaMimeType = result.mimeType;
+      } catch (err) {
+        if (err instanceof UploadError) {
+          return NextResponse.json(
+            { error: "Profile media could not be saved. Please try again." },
+            { status: err.code === "FILE_TOO_LARGE" ? 413 : err.code === "INVALID_MEDIA_TYPE" ? 415 : 502 }
+          );
+        }
+        throw err;
       }
-
-      // Validate MIME type
-      const allowedMimeTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"];
-      if (!allowedMimeTypes.includes(file.type)) {
-        return NextResponse.json(
-          { error: "Invalid file type. Only PNG, JPG, JPEG, WEBP, and GIF are allowed (SVGs are forbidden)." },
-          { status: 400 }
-        );
-      }
-
-      // Create uploads directory
-      const uploadDir = path.join(process.cwd(), "public", "uploads", "profiles");
-      await mkdir(uploadDir, { recursive: true });
-
-      // Generate safe unique filename
-      const ext = file.type.split("/")[1] === "jpeg" ? "jpg" : file.type.split("/")[1];
-      const filename = `cxa_profile_new_${Date.now()}_${Math.floor(Math.random() * 1000)}.${ext}`;
-      const filePath = path.join(uploadDir, filename);
-
-      // Write arrayBuffer to file
-      const bytes = await file.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-      await writeFile(filePath, buffer);
-
-      finalMediaUrl = `/uploads/profiles/${filename}`;
-      finalMediaMimeType = file.type;
     }
 
     // Create User & Profile in a transaction
