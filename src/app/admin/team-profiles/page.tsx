@@ -5,11 +5,14 @@ import React, { useState, useEffect, useCallback, useRef, Suspense } from "react
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getProfileImageStyle } from "@/lib/profile-media";
-import { ProfileCropModal } from "@/components/ui/ProfileCropModal";
 import { LEADERSHIP_DATA } from "@/config/leadershipData";
 
 import { upload } from "@vercel/blob/client";
 import "../../globals.css";
+
+const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+const MAX_IMAGE = 10 * 1024 * 1024;
+const MAX_GIF = 15 * 1024 * 1024;
 
 interface ProfileItem {
   id: string;
@@ -52,27 +55,7 @@ function TeamProfilesContent() {
   // Hidden upload ref for quick leadership media replacement
   const quickUploadRef = useRef<HTMLInputElement>(null);
   const [quickUploadProfileId, setQuickUploadProfileId] = useState<string | null>(null);
-
-  // Crop states
-  const [cropModalFile, setCropModalFile] = useState<File | null>(null);
-  const [showCropModal, setShowCropModal] = useState(false);
-  const [cropType, setCropType] = useState<"LEADERSHIP" | "CORE_TEAM_EDIT" | "CORE_TEAM_CREATE" | null>(null);
-
-  // Edit crop coordinates
-  const [editCropX, setEditCropX] = useState<number | null>(null);
-  const [editCropY, setEditCropY] = useState<number | null>(null);
-  const [editCropW, setEditCropW] = useState<number | null>(null);
-  const [editCropH, setEditCropH] = useState<number | null>(null);
-  const [editCropZoom, setEditCropZoom] = useState<number | null>(null);
-  const [editCropRotation, setEditCropRotation] = useState<number | null>(null);
-
-  // Create crop coordinates
-  const [createCropX, setCreateCropX] = useState<number | null>(null);
-  const [createCropY, setCreateCropY] = useState<number | null>(null);
-  const [createCropW, setCreateCropW] = useState<number | null>(null);
-  const [createCropH, setCreateCropH] = useState<number | null>(null);
-  const [createCropZoom, setCreateCropZoom] = useState<number | null>(null);
-  const [createCropRotation, setCreateCropRotation] = useState<number | null>(null);
+  const [leadershipUploadStatus, setLeadershipUploadStatus] = useState<Record<string, string>>({});
 
   // Lists & Filtering
   const [profiles, setProfiles] = useState<ProfileItem[]>([]);
@@ -181,17 +164,23 @@ function TeamProfilesContent() {
   const handleCreateFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (fileInputRef.current) fileInputRef.current.value = "";
 
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      alert("Choose a JPG, PNG, WEBP, or GIF image.");
+      return;
+    }
     const isGif = file.type === "image/gif";
-    const maxLimit = isGif ? 15 * 1024 * 1024 : 10 * 1024 * 1024;
+    const maxLimit = isGif ? MAX_GIF : MAX_IMAGE;
     if (file.size > maxLimit) {
-      alert(`File too large. Maximum size is ${isGif ? "15MB for GIFs" : "10MB"}.`);
+      alert(isGif ? "Animated GIF profile images must be 15 MB or smaller." : "Profile images must be 10 MB or smaller.");
       return;
     }
 
-    setCropType("CORE_TEAM_CREATE");
-    setCropModalFile(file);
-    setShowCropModal(true);
+    // Instant preview
+    if (createPreview) URL.revokeObjectURL(createPreview);
+    setCreateFile(file);
+    setCreatePreview(URL.createObjectURL(file));
   };
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
@@ -251,12 +240,6 @@ function TeamProfilesContent() {
               contentType: createFile.type,
               targetProfileId,
               uploadNonce,
-              cropX: createCropX,
-              cropY: createCropY,
-              cropW: createCropW,
-              cropH: createCropH,
-              cropZoom: createCropZoom,
-              cropRotation: createCropRotation,
             }),
           });
 
@@ -293,17 +276,24 @@ function TeamProfilesContent() {
   const handleEditFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (editFileInputRef.current) editFileInputRef.current.value = "";
 
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      setEditError("Choose a JPG, PNG, WEBP, or GIF image.");
+      return;
+    }
     const isGif = file.type === "image/gif";
-    const maxLimit = isGif ? 15 * 1024 * 1024 : 10 * 1024 * 1024;
+    const maxLimit = isGif ? MAX_GIF : MAX_IMAGE;
     if (file.size > maxLimit) {
-      alert(`File too large. Maximum size is ${isGif ? "15MB for GIFs" : "10MB"}.`);
+      setEditError(isGif ? "Animated GIF profile images must be 15 MB or smaller." : "Profile images must be 10 MB or smaller.");
       return;
     }
 
-    setCropType("CORE_TEAM_EDIT");
-    setCropModalFile(file);
-    setShowCropModal(true);
+    // Instant preview
+    if (editPreview) URL.revokeObjectURL(editPreview);
+    setEditFile(file);
+    setEditRemoveMedia(false);
+    setEditPreview(URL.createObjectURL(file));
   };
 
   const handleEditOpen = (profile: ProfileItem) => {
@@ -315,12 +305,6 @@ function TeamProfilesContent() {
     setEditActive(profile.user?.isActive ?? true);
     setEditFile(null);
     setEditPreview(null);
-    setEditCropX(profile.cropX ?? null);
-    setEditCropY(profile.cropY ?? null);
-    setEditCropW(profile.cropW ?? null);
-    setEditCropH(profile.cropH ?? null);
-    setEditCropZoom(profile.cropZoom ?? null);
-    setEditCropRotation(profile.cropRotation ?? null);
     setEditRemoveMedia(false);
     setEditError("");
   };
@@ -358,12 +342,6 @@ function TeamProfilesContent() {
               contentType: editFile.type,
               targetProfileId,
               uploadNonce,
-              cropX: editCropX,
-              cropY: editCropY,
-              cropW: editCropW,
-              cropH: editCropH,
-              cropZoom: editCropZoom,
-              cropRotation: editCropRotation,
             }),
           });
 
@@ -410,126 +388,78 @@ function TeamProfilesContent() {
     }
   };
 
-  // Quick media handler for leadership
+  // Quick media handler for leadership — direct upload, no crop modal
   const handleLeadershipMediaSelect = (profileId: string) => {
     setQuickUploadProfileId(profileId);
-    setCropType("LEADERSHIP");
     quickUploadRef.current?.click();
   };
 
   const handleLeadershipMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !quickUploadProfileId) return;
+    if (quickUploadRef.current) quickUploadRef.current.value = "";
 
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      alert("Choose a JPG, PNG, WEBP, or GIF image.");
+      return;
+    }
     const isGif = file.type === "image/gif";
-    const maxLimit = isGif ? 15 * 1024 * 1024 : 10 * 1024 * 1024;
+    const maxLimit = isGif ? MAX_GIF : MAX_IMAGE;
     if (file.size > maxLimit) {
-      alert(`File too large. Maximum size is ${isGif ? "15MB for GIFs" : "10MB"}.`);
+      alert(isGif ? "Animated GIF profile images must be 15 MB or smaller." : "Profile images must be 10 MB or smaller.");
       return;
     }
 
-    setCropModalFile(file);
-    setShowCropModal(true);
-  };
+    const profileId = quickUploadProfileId;
+    setLeadershipUploadStatus((s) => ({ ...s, [profileId]: "Uploading…" }));
 
-  const handleCropComplete = async ({ blob, cropData }: { blob: Blob | File; cropData?: any }) => {
-    setShowCropModal(false);
-    setCropModalFile(null);
-    if (quickUploadRef.current) quickUploadRef.current.value = "";
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    if (editFileInputRef.current) editFileInputRef.current.value = "";
+    try {
+      // 1. Get signed upload nonce
+      const initRes = await fetch(`/api/profile-media/upload?targetProfileId=${profileId}`);
+      const initData = await initRes.json();
+      if (!initRes.ok) throw new Error(initData.ref ? `PM-${initData.ref}` : "Failed to get upload token.");
 
-    if (cropType === "LEADERSHIP") {
-      if (!quickUploadProfileId) return;
+      const { uploadNonce, targetProfileId } = initData;
+      const ext = file.name.split(".").pop() || "bin";
+      const uniqueName = `profiles/${targetProfileId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
-      try {
-        setUiState("loading");
+      // 2. Upload directly to Vercel Blob
+      const blobResult = await upload(uniqueName, file, {
+        access: "public",
+        handleUploadUrl: "/api/profile-media/upload",
+        clientPayload: JSON.stringify({ targetProfileId, uploadNonce }),
+        onUploadProgress: ({ percentage }) => {
+          setLeadershipUploadStatus((s) => ({ ...s, [profileId]: `Uploading… ${Math.round(percentage)}%` }));
+        },
+      });
 
-        // 1. Get signed upload nonce
-        const initRes = await fetch(`/api/profile-media/upload?targetProfileId=${quickUploadProfileId}`);
-        const initData = await initRes.json();
-        if (!initRes.ok) {
-          throw new Error(initData.ref ? `PM-${initData.ref}` : "Failed to generate upload session.");
-        }
+      setLeadershipUploadStatus((s) => ({ ...s, [profileId]: "Saving…" }));
 
-        const { uploadNonce, targetProfileId } = initData;
+      // 3. Commit to Aiven MySQL
+      const commitRes = await fetch("/api/profile-media/commit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          blobUrl: blobResult.url,
+          contentType: file.type,
+          targetProfileId,
+          uploadNonce,
+        }),
+      });
 
-        // 2. Upload file directly from browser to Vercel Blob CDN
-        const fileName = (blob as File).name || "profile.jpg";
-        const uploaded = await upload(fileName, blob, {
-          access: "public",
-          handleUploadUrl: "/api/profile-media/upload",
-          clientPayload: JSON.stringify({ targetProfileId, uploadNonce }),
-        });
-
-        // 3. Commit to Aiven MySQL
-        const commitRes = await fetch("/api/profile-media/commit", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            blobUrl: uploaded.url,
-            contentType: blob.type || "image/jpeg",
-            targetProfileId,
-            uploadNonce,
-            cropX: cropData ? cropData.x : 0,
-            cropY: cropData ? cropData.y : 0,
-            cropW: cropData ? cropData.w : 100,
-            cropH: cropData ? cropData.h : 100,
-            cropZoom: cropData ? cropData.zoom : 1,
-            cropRotation: cropData ? cropData.rotation : 0,
-          }),
-        });
-
-        const commitData = await commitRes.json();
-        if (!commitRes.ok || !commitData.success) {
-          const ref = commitData.ref ?? "Unknown";
-          throw new Error(`Commit failed. Reference: PM-${ref}`);
-        }
-
-        loadData();
-      } catch (err: any) {
-        alert(`Failed to save leadership media: ${err.message}`);
-        setUiState("idle");
-      } finally {
-        setQuickUploadProfileId(null);
+      const commitData = await commitRes.json();
+      if (!commitRes.ok || !commitData.success) {
+        throw new Error(`Commit failed. Reference: PM-${commitData.ref ?? "Unknown"}`);
       }
-    } else if (cropType === "CORE_TEAM_EDIT") {
-      setEditFile(blob as File);
-      setEditRemoveMedia(false);
-      if (cropData) {
-        setEditCropX(cropData.x);
-        setEditCropY(cropData.y);
-        setEditCropW(cropData.w);
-        setEditCropH(cropData.h);
-        setEditCropZoom(cropData.zoom);
-        setEditCropRotation(cropData.rotation);
-      } else {
-        setEditCropX(0);
-        setEditCropY(0);
-        setEditCropW(100);
-        setEditCropH(100);
-        setEditCropZoom(1);
-        setEditCropRotation(0);
-      }
-      setEditPreview(URL.createObjectURL(blob));
-    } else if (cropType === "CORE_TEAM_CREATE") {
-      setCreateFile(blob as File);
-      if (cropData) {
-        setCreateCropX(cropData.x);
-        setCreateCropY(cropData.y);
-        setCreateCropW(cropData.w);
-        setCreateCropH(cropData.h);
-        setCreateCropZoom(cropData.zoom);
-        setCreateCropRotation(cropData.rotation);
-      } else {
-        setCreateCropX(0);
-        setCreateCropY(0);
-        setCreateCropW(100);
-        setCreateCropH(100);
-        setCreateCropZoom(1);
-        setCreateCropRotation(0);
-      }
-      setCreatePreview(URL.createObjectURL(blob));
+
+      setLeadershipUploadStatus((s) => ({ ...s, [profileId]: "✅ Saved" }));
+      setTimeout(() => setLeadershipUploadStatus((s) => { const n = { ...s }; delete n[profileId]; return n; }), 2500);
+      loadData();
+    } catch (err: any) {
+      alert(`Failed to save leadership media: ${err.message}`);
+      setLeadershipUploadStatus((s) => { const n = { ...s }; delete n[profileId]; return n; });
+    } finally {
+      setQuickUploadProfileId(null);
     }
   };
 
@@ -1054,20 +984,16 @@ function TeamProfilesContent() {
                 <div className="flex items-center gap-3 p-3 rounded-lg border border-[rgba(217,4,41,0.15)] bg-[#111]/30">
                   <div className="w-10 h-10 rounded-full border border-crimson/25 overflow-hidden bg-[#111] flex items-center justify-center flex-shrink-0 relative">
                     {createPreview ? (
-                      (() => {
-                        const styleInfo = getProfileImageStyle({
-                          mediaUrl: createPreview,
-                          cropX: createCropX,
-                          cropY: createCropY,
-                          cropW: createCropW,
-                          cropH: createCropH,
-                          cropRotation: createCropRotation
-                        });
-                        return (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={styleInfo.src} alt="Preview" style={styleInfo.imgStyle} />
-                        );
-                      })()
+                      <img
+                        src={createPreview}
+                        alt="Preview"
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                          objectPosition: "center"
+                        }}
+                      />
                     ) : (
                       <span className="text-lg">👤</span>
                     )}
@@ -1075,7 +1001,6 @@ function TeamProfilesContent() {
                   <button
                     type="button"
                     onClick={() => {
-                      setCropType("CORE_TEAM_CREATE");
                       fileInputRef.current?.click();
                     }}
                     className="bg-[#222] hover:bg-[#333] text-[10px] px-3 py-1.5 rounded text-white"
@@ -1273,21 +1198,16 @@ function TeamProfilesContent() {
                     {editRemoveMedia ? (
                       <span className="text-xl">👤</span>
                     ) : editPreview || editingProfile.mediaUrl ? (
-                      (() => {
-                        const styleInfo = getProfileImageStyle({
-                          mediaUrl: editPreview || editingProfile.mediaUrl,
-                          cropX: editPreview ? (editFile?.type === "image/gif" ? editCropX : 0) : editCropX,
-                          cropY: editPreview ? (editFile?.type === "image/gif" ? editCropY : 0) : editCropY,
-                          cropW: editPreview ? (editFile?.type === "image/gif" ? editCropW : 100) : editCropW,
-                          cropH: editPreview ? (editFile?.type === "image/gif" ? editCropH : 100) : editCropH,
-                          cropRotation: editPreview ? (editFile?.type === "image/gif" ? editCropRotation : 0) : editCropRotation,
-                          updatedAt: editingProfile.updatedAt
-                        });
-                        return (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={styleInfo.src} alt="Preview" style={styleInfo.imgStyle} />
-                        );
-                      })()
+                      <img
+                        src={editPreview || editingProfile.mediaUrl || undefined}
+                        alt="Preview"
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                          objectPosition: "center",
+                        }}
+                      />
                     ) : (
                       <span className="text-xl">👤</span>
                     )}
@@ -1296,7 +1216,6 @@ function TeamProfilesContent() {
                     <button
                       type="button"
                       onClick={() => {
-                        setCropType("CORE_TEAM_EDIT");
                         editFileInputRef.current?.click();
                       }}
                       className="bg-[#222] hover:bg-[#333] text-[10px] px-3 py-1.5 rounded text-white"
@@ -1433,19 +1352,7 @@ function TeamProfilesContent() {
         </div>
       )}
 
-      {showCropModal && cropModalFile && (
-        <ProfileCropModal
-          file={cropModalFile}
-          onClose={() => {
-            setShowCropModal(false);
-            setCropModalFile(null);
-            if (quickUploadRef.current) quickUploadRef.current.value = "";
-            if (fileInputRef.current) fileInputRef.current.value = "";
-            if (editFileInputRef.current) editFileInputRef.current.value = "";
-          }}
-          onCropComplete={handleCropComplete}
-        />
-      )}
+
 
     </div>
   );

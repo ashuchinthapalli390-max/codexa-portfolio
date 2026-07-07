@@ -1,15 +1,15 @@
 /* eslint-disable @next/next/no-img-element, jsx-a11y/alt-text */
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import "../../globals.css";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { upload } from "@vercel/blob/client";
-import { getProfileImageStyle } from "@/lib/profile-media";
-import { ProfileCropModal } from "@/components/ui/ProfileCropModal";
+import { ProfilePositionAdjuster } from "@/components/ui/ProfilePositionAdjuster";
 
 interface ProfileData {
+  id: string;
   displayName: string;
   publicBio: string;
   mediaUrl: string | null;
@@ -22,65 +22,82 @@ interface ProfileData {
   cropRotation?: number | null;
 }
 
-type SaveState = "idle" | "loading" | "saved" | "error" | "invalid_file_type" | "file_too_large";
+type UploadPhase = "idle" | "uploading" | "committing" | "done" | "error";
+
+const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+const MAX_IMAGE = 10 * 1024 * 1024;
+const MAX_GIF = 15 * 1024 * 1024;
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default function TeamMemberProfilePage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
-  // States
   const [sessionUser, setSessionUser] = useState<{ id: string; username: string; role: string } | null>(null);
+  const [profile, setProfile] = useState<ProfileData | null>(null);
+
+  // Text fields
   const [displayName, setDisplayName] = useState("");
   const [publicBio, setPublicBio] = useState("");
-  const [mediaUrl, setMediaUrl] = useState<string | null>(null);
-  const [mimeType, setMimeType] = useState<string | null>(null);
 
-  // Crop states
-  const [cropX, setCropX] = useState<number | null>(null);
-  const [cropY, setCropY] = useState<number | null>(null);
-  const [cropW, setCropW] = useState<number | null>(null);
-  const [cropH, setCropH] = useState<number | null>(null);
-  const [cropZoom, setCropZoom] = useState<number | null>(null);
-  const [cropRotation, setCropRotation] = useState<number | null>(null);
+  // Committed media (what's actually saved in DB)
+  const [committedMediaUrl, setCommittedMediaUrl] = useState<string | null>(null);
+  const [committedMimeType, setCommittedMimeType] = useState<string | null>(null);
+  const [committedCropX, setCommittedCropX] = useState<number | null>(null);
+  const [committedCropY, setCommittedCropY] = useState<number | null>(null);
+  const [committedCropW, setCommittedCropW] = useState<number | null>(null);
+  const [committedCropH, setCommittedCropH] = useState<number | null>(null);
+  const [committedCropZoom, setCommittedCropZoom] = useState<number | null>(null);
 
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [removeMedia, setRemoveMedia] = useState(false);
-  const [cropModalFile, setCropModalFile] = useState<File | null>(null);
-  const [showCropModal, setShowCropModal] = useState(false);
-
-  const [saveState, setSaveState] = useState<SaveState>("idle");
+  // Pending upload state
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [previewObjectUrl, setPreviewObjectUrl] = useState<string | null>(null);
+  const [uploadPhase, setUploadPhase] = useState<UploadPhase>("idle");
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [statusMsg, setStatusMsg] = useState("");
+  const [errorRef, setErrorRef] = useState<string | null>(null);
+
+  // Remove media
+  const [removeMedia, setRemoveMedia] = useState(false);
+
+  // Position adjuster
+  const [showAdjuster, setShowAdjuster] = useState(false);
+
+  // Text-save state
+  const [textSaveState, setTextSaveState] = useState<"idle" | "loading" | "saved" | "error">("idle");
+  const [textSaveMsg, setTextSaveMsg] = useState("");
+
   const [logoError, setLogoError] = useState(false);
 
-  // Fetch session details
+  // ── Load session + profile ─────────────────────────────────────────────────
   useEffect(() => {
     fetch("/api/session")
       .then((r) => r.json())
       .then((data) => {
-        if (!data.authenticated) {
-          router.replace("/login");
-          return;
-        }
+        if (!data.authenticated) { router.replace("/login"); return; }
         setSessionUser(data.user);
-        
-        // Fetch current profile details
-        fetch(`/api/admin/team`)
+
+        fetch("/api/admin/team")
           .then((r) => r.json())
           .then((teamData) => {
             if (teamData.success) {
               const myProfile = teamData.profiles.find((p: any) => p.userId === data.user.id);
               if (myProfile) {
-                setDisplayName(myProfile.displayName);
+                setProfile(myProfile);
+                setDisplayName(myProfile.displayName ?? "");
                 setPublicBio(myProfile.publicBio ?? "");
-                setMediaUrl(myProfile.mediaUrl);
-                setMimeType(myProfile.mediaMimeType);
-                setCropX(myProfile.cropX ?? null);
-                setCropY(myProfile.cropY ?? null);
-                setCropW(myProfile.cropW ?? null);
-                setCropH(myProfile.cropH ?? null);
-                setCropZoom(myProfile.cropZoom ?? null);
-                setCropRotation(myProfile.cropRotation ?? null);
+                setCommittedMediaUrl(myProfile.mediaUrl);
+                setCommittedMimeType(myProfile.mediaMimeType);
+                setCommittedCropX(myProfile.cropX ?? null);
+                setCommittedCropY(myProfile.cropY ?? null);
+                setCommittedCropW(myProfile.cropW ?? null);
+                setCommittedCropH(myProfile.cropH ?? null);
+                setCommittedCropZoom(myProfile.cropZoom ?? null);
               }
             }
           })
@@ -89,216 +106,225 @@ export default function TeamMemberProfilePage() {
       .catch(() => router.replace("/login"));
   }, [router]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Revoke object URL when pendingFile changes or component unmounts
+  useEffect(() => {
+    return () => {
+      if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+    };
+  }, [previewObjectUrl]);
+
+  // ── File selected ──────────────────────────────────────────────────────────
+  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Local validation
-    const allowedMimes = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"];
-    if (!allowedMimes.includes(file.type)) {
-      setSaveState("invalid_file_type");
-      setStatusMsg("Invalid file type. Only PNG, JPG, JPEG, WEBP, and GIF are allowed.");
+    // Reset input so same file can be re-selected
+    if (fileInputRef.current) fileInputRef.current.value = "";
+
+    // Validate type
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      setUploadPhase("error");
+      setStatusMsg("Choose a JPG, PNG, WEBP, or GIF image.");
       return;
     }
 
-    // Size limit check (10MB for static, 15MB for GIFs)
+    // Validate size
     const isGif = file.type === "image/gif";
-    const maxLimit = isGif ? 15 * 1024 * 1024 : 10 * 1024 * 1024;
+    const maxLimit = isGif ? MAX_GIF : MAX_IMAGE;
     if (file.size > maxLimit) {
-      setSaveState("file_too_large");
-      setStatusMsg(`File too large. Maximum size is ${isGif ? "15MB for GIFs" : "10MB"}.`);
+      setUploadPhase("error");
+      setStatusMsg(
+        isGif
+          ? "Animated GIF profile images must be 15 MB or smaller."
+          : "Profile images must be 10 MB or smaller."
+      );
       return;
     }
 
-    setCropModalFile(file);
-    setShowCropModal(true);
-  };
-
-  const handleCropComplete = ({ blob, cropData }: { blob: Blob | File; cropData?: any }) => {
-    setSelectedFile(blob as File);
+    // ── Instant preview ───────────────────────────────────────────────────
+    if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+    const objUrl = URL.createObjectURL(file);
+    setPreviewObjectUrl(objUrl);
+    setPendingFile(file);
     setRemoveMedia(false);
-    setSaveState("idle");
-    setStatusMsg("");
+    setShowAdjuster(false);
+    setErrorRef(null);
 
-    if (cropData) {
-      setCropX(cropData.x);
-      setCropY(cropData.y);
-      setCropW(cropData.w);
-      setCropH(cropData.h);
-      setCropZoom(cropData.zoom);
-      setCropRotation(cropData.rotation);
-    } else {
-      setCropX(0);
-      setCropY(0);
-      setCropW(100);
-      setCropH(100);
-      setCropZoom(1);
-      setCropRotation(0);
-    }
+    // ── Begin upload immediately ──────────────────────────────────────────
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
-    // Create preview
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setPreviewUrl(reader.result as string);
-    };
-    reader.readAsDataURL(blob);
-  };
-
-  const handleRemoveMedia = () => {
-    setSelectedFile(null);
-    setPreviewUrl(null);
-    setRemoveMedia(true);
-    setSaveState("idle");
-    setStatusMsg("");
-  };
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!displayName.trim() || saveState === "loading") return;
-
-    setSaveState("loading");
-    setStatusMsg("");
+    setUploadPhase("uploading");
+    setUploadProgress(0);
+    setStatusMsg("Preparing upload…");
 
     try {
-      // ── If a new file was selected: two-step Blob upload ──────────────────
-      if (selectedFile && !removeMedia) {
-        // Step A: upload directly from browser to Vercel Blob CDN
-        let blobResult: { url: string; contentType: string };
-        let finalProfileId: string;
-        let finalNonce: string;
+      // 1. Get signed nonce
+      const initRes = await fetch("/api/profile-media/upload", { signal: controller.signal });
+      const initData = await initRes.json();
+      if (!initRes.ok) throw new Error(initData.ref ? `PM-${initData.ref}` : "Failed to get upload token.");
 
-        try {
-          // 1. Get a signed upload nonce from the server
-          const initRes = await fetch("/api/profile-media/upload");
-          const initData = await initRes.json();
-          if (!initRes.ok) {
-            throw new Error(initData.ref ? `PM-${initData.ref}` : "Failed to generate upload session.");
-          }
+      const { uploadNonce, targetProfileId } = initData;
+      const ext = file.name.split(".").pop() || "bin";
+      const uniqueName = `profiles/${targetProfileId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
-          finalProfileId = initData.targetProfileId;
-          finalNonce = initData.uploadNonce;
+      // 2. Upload directly to Vercel Blob CDN
+      const blobResult = await upload(uniqueName, file, {
+        access: "public",
+        handleUploadUrl: "/api/profile-media/upload",
+        clientPayload: JSON.stringify({ targetProfileId, uploadNonce }),
+        abortSignal: controller.signal,
+        onUploadProgress: ({ percentage }) => {
+          setUploadProgress(Math.round(percentage));
+          setStatusMsg(`Uploading profile media… ${Math.round(percentage)}%`);
+        },
+      });
 
-          // 2. Upload file directly from browser to Vercel Blob CDN
-          const uploaded = await upload(selectedFile.name, selectedFile, {
-            access: "public",
-            handleUploadUrl: "/api/profile-media/upload",
-            clientPayload: JSON.stringify({
-              targetProfileId: finalProfileId,
-              uploadNonce: finalNonce,
-            }),
-          });
-          blobResult = { url: uploaded.url, contentType: selectedFile.type };
-        } catch (uploadErr: any) {
-          const errMsg = uploadErr?.message || "";
-          const ref = errMsg.startsWith("PM-") ? errMsg : "Check logs for details";
-          setSaveState("error");
-          setStatusMsg(`Profile media could not be saved. Please try again. Reference: ${ref}`);
-          return;
-        }
+      // 3. Commit to Aiven MySQL
+      setUploadPhase("committing");
+      setStatusMsg("Saving profile changes…");
 
-        // Step B: commit Blob URL to Aiven MySQL
-        const commitRes = await fetch("/api/profile-media/commit", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            blobUrl: blobResult.url,
-            contentType: blobResult.contentType,
-            targetProfileId: finalProfileId,
-            uploadNonce: finalNonce,
-            cropX,
-            cropY,
-            cropW,
-            cropH,
-            cropZoom,
-            cropRotation,
-          }),
-        });
+      const commitRes = await fetch("/api/profile-media/commit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          blobUrl: blobResult.url,
+          contentType: file.type,
+          targetProfileId,
+          uploadNonce,
+        }),
+      });
 
-        const commitData = await commitRes.json();
+      const commitData = await commitRes.json();
+      if (!commitRes.ok || !commitData.success) {
+        throw new Error(commitData.ref ? `PM-${commitData.ref}` : "Commit failed.");
+      }
 
-        if (commitRes.ok && commitData.success) {
-          // Now save text fields
-          const formData = new FormData();
-          formData.append("displayName", displayName.trim());
-          formData.append("publicBio", publicBio.trim());
-          if (cropX !== null) formData.append("cropX", cropX.toString());
-          if (cropY !== null) formData.append("cropY", cropY.toString());
-          if (cropW !== null) formData.append("cropW", cropW.toString());
-          if (cropH !== null) formData.append("cropH", cropH.toString());
-          if (cropZoom !== null) formData.append("cropZoom", cropZoom.toString());
-          if (cropRotation !== null) formData.append("cropRotation", cropRotation.toString());
-          await fetch("/api/profile", { method: "PATCH", body: formData });
+      // ── Success ───────────────────────────────────────────────────────
+      // Revoke preview object URL now that we have the real committed URL
+      URL.revokeObjectURL(objUrl);
+      setPreviewObjectUrl(null);
+      setPendingFile(null);
 
-          setSaveState("saved");
-          setStatusMsg("Profile media updated successfully.");
-          setMediaUrl(commitData.profile.mediaUrl);
-          setMimeType(commitData.profile.mediaMimeType);
-          setCropX(commitData.profile.cropX);
-          setCropY(commitData.profile.cropY);
-          setCropW(commitData.profile.cropW);
-          setCropH(commitData.profile.cropH);
-          setCropZoom(commitData.profile.cropZoom);
-          setCropRotation(commitData.profile.cropRotation);
-          setSelectedFile(null);
-          setPreviewUrl(null);
-          setRemoveMedia(false);
-        } else {
-          const ref = commitData.ref ?? "Unknown error";
-          setSaveState("error");
-          setStatusMsg(`Profile media could not be saved. Please try again. Reference: PM-${ref}`);
-        }
+      setCommittedMediaUrl(commitData.profile.mediaUrl);
+      setCommittedMimeType(commitData.profile.mediaMimeType);
+      setCommittedCropX(commitData.profile.cropX ?? null);
+      setCommittedCropY(commitData.profile.cropY ?? null);
+      setCommittedCropW(commitData.profile.cropW ?? null);
+      setCommittedCropH(commitData.profile.cropH ?? null);
+      setCommittedCropZoom(commitData.profile.cropZoom ?? null);
+
+      setUploadPhase("done");
+      setStatusMsg("Profile media updated.");
+      setTimeout(() => setUploadPhase("idle"), 3000);
+    } catch (err: any) {
+      if (err?.name === "AbortError") {
+        // User cancelled — restore old state
+        URL.revokeObjectURL(objUrl);
+        setPreviewObjectUrl(null);
+        setPendingFile(null);
+        setUploadPhase("idle");
+        setStatusMsg("");
         return;
       }
 
-      // ── No file (text/crop/removeMedia only) ─────────────────────────────
+      const ref = err?.message?.startsWith("PM-") ? err.message : null;
+      setErrorRef(ref);
+      setUploadPhase("error");
+      setStatusMsg("Profile media could not be saved. Your previous media is still active.");
+
+      // Restore preview to old committed URL
+      URL.revokeObjectURL(objUrl);
+      setPreviewObjectUrl(null);
+      setPendingFile(null);
+    }
+  }, [previewObjectUrl]);
+
+  // ── Cancel upload ──────────────────────────────────────────────────────────
+  const handleCancelUpload = () => {
+    abortRef.current?.abort();
+  };
+
+  // ── Remove media ───────────────────────────────────────────────────────────
+  const handleRemoveMedia = () => {
+    if (uploadPhase === "uploading" || uploadPhase === "committing") return;
+    setPendingFile(null);
+    if (previewObjectUrl) { URL.revokeObjectURL(previewObjectUrl); setPreviewObjectUrl(null); }
+    setRemoveMedia(true);
+    setUploadPhase("idle");
+    setStatusMsg("");
+    setErrorRef(null);
+    setShowAdjuster(false);
+  };
+
+  // ── Save position metadata ─────────────────────────────────────────────────
+  const handleSavePosition = async (meta: { cropX: number; cropY: number; cropW: number; cropH: number; cropZoom: number }) => {
+    if (!profile?.id) throw new Error("Profile not found.");
+
+    const res = await fetch("/api/profile-media/position", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        targetProfileId: profile.id,
+        cropX: meta.cropX,
+        cropY: meta.cropY,
+        cropW: meta.cropW,
+        cropH: meta.cropH,
+        cropZoom: meta.cropZoom,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error("Could not save position.");
+
+    setCommittedCropX(meta.cropX);
+    setCommittedCropY(meta.cropY);
+    setCommittedCropW(meta.cropW);
+    setCommittedCropH(meta.cropH);
+    setCommittedCropZoom(meta.cropZoom);
+    setShowAdjuster(false);
+  };
+
+  // ── Save text fields ───────────────────────────────────────────────────────
+  const handleSaveText = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!displayName.trim() || textSaveState === "loading") return;
+
+    setTextSaveState("loading");
+    setTextSaveMsg("");
+
+    try {
       const formData = new FormData();
       formData.append("displayName", displayName.trim());
       formData.append("publicBio", publicBio.trim());
-      formData.append("removeMedia", removeMedia ? "true" : "false");
-      if (cropX !== null) formData.append("cropX", cropX.toString());
-      if (cropY !== null) formData.append("cropY", cropY.toString());
-      if (cropW !== null) formData.append("cropW", cropW.toString());
-      if (cropH !== null) formData.append("cropH", cropH.toString());
-      if (cropZoom !== null) formData.append("cropZoom", cropZoom.toString());
-      if (cropRotation !== null) formData.append("cropRotation", cropRotation.toString());
+      if (removeMedia) formData.append("removeMedia", "true");
 
-      const res = await fetch("/api/profile", {
-        method: "PATCH",
-        body: formData,
-      });
-
+      const res = await fetch("/api/profile", { method: "PATCH", body: formData });
       const data = await res.json();
 
       if (res.ok && data.success) {
-        setSaveState("saved");
-        setStatusMsg("Profile updated successfully.");
-        setMediaUrl(data.profile.mediaUrl);
-        setMimeType(data.profile.mediaMimeType);
-        setCropX(data.profile.cropX);
-        setCropY(data.profile.cropY);
-        setCropW(data.profile.cropW);
-        setCropH(data.profile.cropH);
-        setCropZoom(data.profile.cropZoom);
-        setCropRotation(data.profile.cropRotation);
-        setSelectedFile(null);
-        setPreviewUrl(null);
-        setRemoveMedia(false);
+        setTextSaveState("saved");
+        setTextSaveMsg("Profile details updated.");
+        if (removeMedia) {
+          setCommittedMediaUrl(null);
+          setCommittedMimeType(null);
+          setRemoveMedia(false);
+        }
+        setTimeout(() => setTextSaveState("idle"), 3000);
       } else {
-        setSaveState("error");
-        setStatusMsg(data.error ?? "Failed to save profile changes.");
+        setTextSaveState("error");
+        setTextSaveMsg(data.error ?? "Failed to save profile details.");
       }
     } catch {
-      setSaveState("error");
-      setStatusMsg("Network error. Please try again.");
+      setTextSaveState("error");
+      setTextSaveMsg("Network error. Please try again.");
     }
   };
 
   const handleLogout = async () => {
-    try {
-      await fetch("/api/logout", { method: "POST" });
-    } finally {
-      router.push("/login");
-    }
+    try { await fetch("/api/logout", { method: "POST" }); }
+    finally { router.push("/login"); }
   };
 
   if (!sessionUser) {
@@ -315,10 +341,9 @@ export default function TeamMemberProfilePage() {
     );
   }
 
-  // Active rendering image
-  const displayImage = removeMedia
-    ? null
-    : previewUrl || mediaUrl || null;
+  const activePreviewUrl = previewObjectUrl ?? (removeMedia ? null : committedMediaUrl);
+  const isUploading = uploadPhase === "uploading" || uploadPhase === "committing";
+  const hasCommittedMedia = !!committedMediaUrl && !removeMedia;
 
   return (
     <div className="min-h-screen bg-[#070707] text-[#F7F7F7] flex flex-col relative overflow-hidden">
@@ -338,15 +363,15 @@ export default function TeamMemberProfilePage() {
         }}
       />
 
-      {/* Navigation Header */}
+      {/* Nav */}
       <header className="border-b border-[rgba(217,4,41,0.15)] bg-[rgba(7,7,7,0.8)] backdrop-blur-md relative z-10">
         <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
           <Link href="/" className="flex items-center gap-2 hover:opacity-85 transition-opacity">
             {!logoError ? (
               <img
                 src="/assets/images/logo.jpeg"
-                alt="CodeXa Agency logo"
-                className="h-8 w-auto object-contain rounded border border-crimson/20 shadow-[0_0_10px_rgba(217,4,41,0.15)]"
+                alt="CodeXa Agency"
+                className="h-8 w-auto object-contain rounded border border-crimson/20"
                 onError={() => setLogoError(true)}
               />
             ) : (
@@ -369,15 +394,12 @@ export default function TeamMemberProfilePage() {
         </div>
       </header>
 
-      {/* Main Workspace Layout */}
       <main className="flex-1 max-w-5xl w-full mx-auto px-6 py-12 relative z-10 grid grid-cols-1 md:grid-cols-3 gap-8">
-        
-        {/* Left Side — Profile Preview Card (Holographic glass) */}
+
+        {/* Left — Preview Card */}
         <div className="md:col-span-1">
           <div className="sticky top-28 space-y-4">
-            <div className="text-xs font-orbitron tracking-widest text-[#A5A5A5] uppercase">
-              Public Preview
-            </div>
+            <div className="text-xs font-orbitron tracking-widest text-[#A5A5A5] uppercase">Public Preview</div>
 
             <div
               className="rounded-2xl p-[1px]"
@@ -387,45 +409,35 @@ export default function TeamMemberProfilePage() {
               }}
             >
               <div className="rounded-2xl p-6 bg-[#0B0B0B] flex flex-col items-center text-center relative overflow-hidden">
-                {/* Visual grid behind avatar */}
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(217,4,41,0.08)_0%,transparent_70%)] pointer-events-none" />
-                
-                {/* Photo / Avatar */}
-                <div className="w-24 h-24 rounded-full border border-crimson/30 relative overflow-hidden mb-4 bg-[#111111] flex items-center justify-center">
-                  {displayImage ? (
-                    (() => {
-                      const imgStyleInfo = getProfileImageStyle({
-                        mediaUrl: displayImage,
-                        cropX: previewUrl ? (selectedFile?.type === "image/gif" ? cropX : 0) : cropX,
-                        cropY: previewUrl ? (selectedFile?.type === "image/gif" ? cropY : 0) : cropY,
-                        cropW: previewUrl ? (selectedFile?.type === "image/gif" ? cropW : 100) : cropW,
-                        cropH: previewUrl ? (selectedFile?.type === "image/gif" ? cropH : 100) : cropH,
-                        cropRotation: previewUrl ? (selectedFile?.type === "image/gif" ? cropRotation : 0) : cropRotation,
-                      });
-                      return (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={imgStyleInfo.src}
-                          alt={displayName || "Team Member"}
-                          style={imgStyleInfo.imgStyle}
-                        />
-                      );
-                    })()
+
+                {/* Avatar */}
+                <div
+                  className="w-24 h-24 rounded-full border border-crimson/30 relative mb-4 bg-[#111111] flex items-center justify-center"
+                  style={{ overflow: "hidden", aspectRatio: "1/1" }}
+                >
+                  {activePreviewUrl ? (
+                    <img
+                      src={activePreviewUrl}
+                      alt={displayName || "Profile"}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                        objectPosition: "center",
+                      }}
+                    />
                   ) : (
                     <span className="font-orbitron text-2xl text-[#333333]">CX</span>
                   )}
                 </div>
 
-                {/* Display Name */}
                 <h3 className="font-orbitron text-lg font-bold tracking-wide text-[#F7F7F7]">
                   {displayName || "Your Name"}
                 </h3>
-                
                 <div className="text-[10px] font-orbitron text-[#D90429] tracking-wider uppercase mt-1">
                   Core Team Member
                 </div>
-
-                {/* Public Bio */}
                 <p className="text-xs text-[#A5A5A5] mt-4 line-clamp-4 leading-relaxed font-light italic">
                   {publicBio || "Enter a bio on the right to display your details here."}
                 </p>
@@ -434,45 +446,179 @@ export default function TeamMemberProfilePage() {
           </div>
         </div>
 
-        {/* Right Side — Profile Editor form */}
+        {/* Right — Editor */}
         <div className="md:col-span-2 space-y-6">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="font-orbitron text-2xl font-bold tracking-wide text-[#F7F7F7]">
-                My Profile
-              </h1>
-              <p className="text-xs text-[#A5A5A5] mt-1 font-light">
-                Manage your public listing card details.
-              </p>
+          <div>
+            <h1 className="font-orbitron text-2xl font-bold tracking-wide text-[#F7F7F7]">My Profile</h1>
+            <p className="text-xs text-[#A5A5A5] mt-1 font-light">Manage your public listing card details.</p>
+          </div>
+
+          {/* ── Media Section ─────────────────────────────────────── */}
+          <div
+            className="rounded-2xl p-[1px]"
+            style={{ background: "linear-gradient(135deg, rgba(217,4,41,0.2), rgba(25,25,25,0.4))" }}
+          >
+            <div className="rounded-2xl p-6 bg-[#090909] space-y-4">
+              <div className="text-[10px] font-orbitron tracking-widest text-[#A5A5A5] uppercase">
+                Profile Media
+              </div>
+
+              {/* Media area */}
+              <div className="flex flex-col sm:flex-row gap-5 items-start">
+                {/* Square preview */}
+                <div
+                  className="w-20 h-20 rounded-xl border border-[rgba(217,4,41,0.2)] bg-[#111] flex items-center justify-center flex-shrink-0"
+                  style={{ overflow: "hidden", aspectRatio: "1/1" }}
+                >
+                  {activePreviewUrl ? (
+                    <img
+                      src={activePreviewUrl}
+                      alt="Preview"
+                      style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }}
+                    />
+                  ) : (
+                    <svg className="w-8 h-8 text-[#222]" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+                    </svg>
+                  )}
+                </div>
+
+                <div className="flex-1 space-y-3">
+                  {/* File info or helper text */}
+                  {pendingFile ? (
+                    <div className="text-[10px] text-[#A5A5A5] font-mono">
+                      {pendingFile.name} — {formatBytes(pendingFile.size)}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-[#A5A5A5] font-light">
+                      Max: <span className="text-[#F7F7F7] font-normal">10 MB</span> images · <span className="text-[#F7F7F7] font-normal">15 MB</span> GIFs · PNG, JPG, WEBP, GIF
+                    </div>
+                  )}
+
+                  {/* Progress bar */}
+                  {isUploading && (
+                    <div className="space-y-1.5">
+                      <div className="h-1 rounded-full bg-[#1A1A1A] overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-200"
+                          style={{
+                            width: `${uploadPhase === "committing" ? 100 : uploadProgress}%`,
+                            background: "linear-gradient(90deg, #D90429, #FF6B35)",
+                          }}
+                        />
+                      </div>
+                      <div className="text-[10px] font-mono text-[#A5A5A5]">{statusMsg}</div>
+                    </div>
+                  )}
+
+                  {/* Status messages */}
+                  {uploadPhase === "done" && (
+                    <div className="text-[10px] font-orbitron text-[#4ECDC4] tracking-wide">✅ {statusMsg}</div>
+                  )}
+                  {uploadPhase === "error" && (
+                    <div className="space-y-1">
+                      <div className="text-[10px] font-orbitron text-[#D90429] tracking-wide">⚠ {statusMsg}</div>
+                      {errorRef && (
+                        <div className="text-[9px] font-mono text-[#555]">Reference: {errorRef}</div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Buttons */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {!isUploading && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="bg-[rgba(217,4,41,0.15)] hover:bg-[rgba(217,4,41,0.25)] text-[#D90429] font-orbitron text-[10px] tracking-wider uppercase px-4 py-2 rounded-lg transition-colors"
+                        >
+                          {hasCommittedMedia ? "Replace Media" : "Add Media"}
+                        </button>
+
+                        {hasCommittedMedia && !previewObjectUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setShowAdjuster(!showAdjuster)}
+                            className="bg-[#111] hover:bg-[#1A1A1A] text-[#A5A5A5] hover:text-white font-orbitron text-[10px] tracking-wider uppercase px-4 py-2 rounded-lg transition-colors"
+                          >
+                            {showAdjuster ? "Hide Adjuster" : "Adjust Position"}
+                          </button>
+                        )}
+
+                        {activePreviewUrl && (
+                          <button
+                            type="button"
+                            onClick={handleRemoveMedia}
+                            className="text-[#555] hover:text-[#D90429] font-orbitron text-[10px] tracking-wider uppercase px-3 py-2 transition-colors"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </>
+                    )}
+
+                    {isUploading && (
+                      <button
+                        type="button"
+                        onClick={handleCancelUpload}
+                        className="bg-[#1A1A1A] hover:bg-[#222] text-[#A5A5A5] font-orbitron text-[10px] tracking-wider uppercase px-4 py-2 rounded-lg transition-colors"
+                      >
+                        Cancel Upload
+                      </button>
+                    )}
+                  </div>
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".png,.jpg,.jpeg,.webp,.gif"
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+                </div>
+              </div>
+
+              {/* Optional Position Adjuster (inline collapsible) */}
+              {showAdjuster && committedMediaUrl && !removeMedia && (
+                <ProfilePositionAdjuster
+                  mediaUrl={committedMediaUrl}
+                  initialMeta={{
+                    cropX: committedCropX ?? 0,
+                    cropY: committedCropY ?? 0,
+                    cropW: committedCropW ?? 100,
+                    cropH: committedCropH ?? 100,
+                    cropZoom: committedCropZoom ?? 1,
+                  }}
+                  onSave={handleSavePosition}
+                  onCancel={() => setShowAdjuster(false)}
+                />
+              )}
             </div>
           </div>
 
-          {/* Status Alert Banner */}
-          {saveState !== "idle" && saveState !== "loading" && (
-            <div
-              className="p-4 rounded-xl text-xs font-orbitron border flex items-center gap-3 animate-fade-in"
-              style={{
-                borderColor: saveState === "saved" ? "rgba(78,205,196,0.3)" : "rgba(217,4,41,0.3)",
-                background: saveState === "saved" ? "rgba(78,205,196,0.05)" : "rgba(217,4,41,0.05)",
-                color: saveState === "saved" ? "#4ECDC4" : "#D90429",
-              }}
-            >
-              <span className="text-lg">
-                {saveState === "saved" ? "✅" : "⚠️"}
-              </span>
-              <span>{statusMsg}</span>
-            </div>
-          )}
-
+          {/* ── Text / Bio Form ───────────────────────────────────── */}
           <div
             className="rounded-2xl p-[1px]"
-            style={{
-              background: "linear-gradient(135deg, rgba(217,4,41,0.2), rgba(25,25,25,0.4))",
-            }}
+            style={{ background: "linear-gradient(135deg, rgba(217,4,41,0.2), rgba(25,25,25,0.4))" }}
           >
-            <form onSubmit={handleSave} className="rounded-2xl p-8 bg-[#090909] space-y-6">
-              
-              {/* Display Name */}
+            <form onSubmit={handleSaveText} className="rounded-2xl p-8 bg-[#090909] space-y-6">
+
+              {/* Text save status */}
+              {textSaveState !== "idle" && textSaveState !== "loading" && (
+                <div
+                  className="p-4 rounded-xl text-xs font-orbitron border flex items-center gap-3 animate-fade-in"
+                  style={{
+                    borderColor: textSaveState === "saved" ? "rgba(78,205,196,0.3)" : "rgba(217,4,41,0.3)",
+                    background: textSaveState === "saved" ? "rgba(78,205,196,0.05)" : "rgba(217,4,41,0.05)",
+                    color: textSaveState === "saved" ? "#4ECDC4" : "#D90429",
+                  }}
+                >
+                  <span className="text-lg">{textSaveState === "saved" ? "✅" : "⚠️"}</span>
+                  <span>{textSaveMsg}</span>
+                </div>
+              )}
+
               <div>
                 <label htmlFor="prof-name" className="block text-[10px] font-orbitron tracking-widest text-[#A5A5A5] uppercase mb-2">
                   Display Name
@@ -481,14 +627,13 @@ export default function TeamMemberProfilePage() {
                   id="prof-name"
                   type="text"
                   value={displayName}
-                  onChange={(e) => { setDisplayName(e.target.value); if (saveState !== "loading") setSaveState("idle"); }}
+                  onChange={(e) => { setDisplayName(e.target.value); setTextSaveState("idle"); }}
                   placeholder="E.g. Rohan Sharma"
-                  disabled={saveState === "loading"}
+                  disabled={textSaveState === "loading"}
                   className="w-full bg-[#111111] border border-[rgba(217,4,41,0.15)] rounded-lg px-4 py-3 text-[#F7F7F7] text-sm outline-none transition-all duration-200 focus:border-[rgba(217,4,41,0.5)] disabled:opacity-50"
                 />
               </div>
 
-              {/* Public Bio */}
               <div>
                 <label htmlFor="prof-bio" className="block text-[10px] font-orbitron tracking-widest text-[#A5A5A5] uppercase mb-2">
                   Public Bio
@@ -497,86 +642,13 @@ export default function TeamMemberProfilePage() {
                   id="prof-bio"
                   rows={4}
                   value={publicBio}
-                  onChange={(e) => { setPublicBio(e.target.value); if (saveState !== "loading") setSaveState("idle"); }}
+                  onChange={(e) => { setPublicBio(e.target.value); setTextSaveState("idle"); }}
                   placeholder="Write a public description of your experience, skills, or quote..."
-                  disabled={saveState === "loading"}
+                  disabled={textSaveState === "loading"}
                   className="w-full bg-[#111111] border border-[rgba(217,4,41,0.15)] rounded-lg px-4 py-3 text-[#F7F7F7] text-sm outline-none transition-all duration-200 focus:border-[rgba(217,4,41,0.5)] resize-none disabled:opacity-50"
                 />
               </div>
 
-              {/* Profile Image/GIF Upload */}
-              <div>
-                <label className="block text-[10px] font-orbitron tracking-widest text-[#A5A5A5] uppercase mb-2">
-                  Profile Media (PNG, JPG, WEBP, or Animated GIF)
-                </label>
-                
-                <div className="flex flex-col sm:flex-row items-center gap-6 p-6 rounded-xl border border-dashed border-[rgba(217,4,41,0.15)] bg-[#0B0B0B]">
-                  
-                  {/* Local preview sphere */}
-                  <div className="w-20 h-20 rounded-full border border-crimson/20 relative overflow-hidden bg-[#111111] flex items-center justify-center flex-shrink-0">
-                    {displayImage ? (
-                      (() => {
-                        const imgStyleInfo = getProfileImageStyle({
-                          mediaUrl: displayImage,
-                          cropX: previewUrl ? (selectedFile?.type === "image/gif" ? cropX : 0) : cropX,
-                          cropY: previewUrl ? (selectedFile?.type === "image/gif" ? cropY : 0) : cropY,
-                          cropW: previewUrl ? (selectedFile?.type === "image/gif" ? cropW : 100) : cropW,
-                          cropH: previewUrl ? (selectedFile?.type === "image/gif" ? cropH : 100) : cropH,
-                          cropRotation: previewUrl ? (selectedFile?.type === "image/gif" ? cropRotation : 0) : cropRotation,
-                        });
-                        return (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={imgStyleInfo.src}
-                            alt="Preview"
-                            style={imgStyleInfo.imgStyle}
-                          />
-                        );
-                      })()
-                    ) : (
-                      <svg className="w-8 h-8 text-[#222222]" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" aria-hidden="true">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
-                      </svg>
-                    )}
-                  </div>
-
-                  <div className="flex-1 text-center sm:text-left space-y-3">
-                    <div className="text-xs text-[#A5A5A5] font-light">
-                      Max file size: <span className="text-[#F7F7F7] font-normal">10MB (15MB for GIFs)</span>. PNG, JPG, JPEG, WEBP, or Animated GIF formats.
-                    </div>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <button
-                        type="button"
-                        disabled={saveState === "loading"}
-                        onClick={() => fileInputRef.current?.click()}
-                        className="bg-[rgba(217,4,41,0.15)] hover:bg-[rgba(217,4,41,0.25)] text-[#D90429] font-orbitron text-[10px] tracking-wider uppercase px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
-                      >
-                        Upload Media
-                      </button>
-                      
-                      {displayImage && (
-                        <button
-                          type="button"
-                          disabled={saveState === "loading"}
-                          onClick={handleRemoveMedia}
-                          className="bg-transparent text-[#A5A5A5] hover:text-[#D90429] font-orbitron text-[10px] tracking-wider uppercase px-3 py-2 transition-colors disabled:opacity-50"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".png,.jpg,.jpeg,.webp,.gif"
-                      onChange={handleFileChange}
-                      className="hidden"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Submit Buttons */}
               <div className="border-t border-[#191919] pt-6 flex justify-end gap-4">
                 <Link
                   href="/"
@@ -586,7 +658,7 @@ export default function TeamMemberProfilePage() {
                 </Link>
                 <button
                   type="submit"
-                  disabled={saveState === "loading" || !displayName.trim()}
+                  disabled={textSaveState === "loading" || !displayName.trim()}
                   className="relative group overflow-hidden rounded-lg p-[1px] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                   style={{
                     background: displayName.trim() ? "linear-gradient(90deg, #D90429, #FF6B35)" : "rgba(217,4,41,0.15)",
@@ -600,28 +672,14 @@ export default function TeamMemberProfilePage() {
                       color: displayName.trim() ? "#FFFFFF" : "#A5A5A5",
                     }}
                   >
-                    {saveState === "loading" ? "Saving..." : "Save Changes"}
+                    {textSaveState === "loading" ? "Saving…" : "Save Profile"}
                   </div>
                 </button>
               </div>
-
             </form>
           </div>
         </div>
-
       </main>
-
-      {showCropModal && cropModalFile && (
-        <ProfileCropModal
-          file={cropModalFile}
-          onClose={() => {
-            setShowCropModal(false);
-            setCropModalFile(null);
-            if (fileInputRef.current) fileInputRef.current.value = "";
-          }}
-          onCropComplete={handleCropComplete}
-        />
-      )}
     </div>
   );
 }
