@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
   const reqId = makeRequestId();
   const env = process.env.NODE_ENV ?? "unknown";
 
-  console.log(`[verify-key][${reqId}] env=${env} ip=${ip} — request received`);
+  console.log(`[verify-key][${reqId}] ACCESS_KEY_CHECK_STARTED ip=${ip} env=${env}`);
 
   if (!process.env.DATABASE_URL) {
     console.error(`[verify-key][${reqId}] DIAGNOSTIC: DATABASE_URL_MISSING`);
@@ -75,11 +75,14 @@ export async function POST(req: NextRequest) {
   }
 
   // ─── Normalize submitted key ─────────────────────────────────────────────
-  const normalizedKey = normalizeAccessKey(body.key ?? "");
-  if (!normalizedKey) {
-    console.warn(`[verify-key][${reqId}] EMPTY_KEY — blank key submitted`);
+  const rawKey = body.key ?? "";
+  if (!rawKey.trim()) {
+    console.warn(`[verify-key][${reqId}] ACCESS_KEY_EMPTY`);
     return NextResponse.json({ error: "Access denied. Check your access key and try again." }, { status: 401 });
   }
+
+  const normalizedKey = rawKey.trim().toUpperCase();
+  console.log(`[verify-key][${reqId}] ACCESS_KEY_NORMALIZED`);
 
   // ─── Rate limit ──────────────────────────────────────────────────────────
   if (!checkRateLimit(ip)) {
@@ -92,7 +95,7 @@ export async function POST(req: NextRequest) {
 
   // ─── MASTER KEY CHECK (env-based, permanent, OWNER only) ─────────────────
   const masterKeyRaw = process.env.OWNER_MASTER_KEY;
-  const normalizedMasterKey = masterKeyRaw ? normalizeAccessKey(masterKeyRaw) : null;
+  const normalizedMasterKey = masterKeyRaw ? masterKeyRaw.trim().toUpperCase() : null;
 
   if (normalizedMasterKey && normalizedKey === normalizedMasterKey) {
     console.log(`[verify-key][${reqId}] MASTER_KEY_MATCH — looking up OWNER user`);
@@ -103,7 +106,7 @@ export async function POST(req: NextRequest) {
       });
 
       if (!ownerUser) {
-        console.error(`[verify-key][${reqId}] DIAGNOSTIC: NO_MATCHING_ACTIVE_KEY (OWNER user disabled/missing)`);
+        console.error(`[verify-key][${reqId}] ACCESS_KEY_NOT_FOUND (OWNER user disabled/missing)`);
         return NextResponse.json({ error: "Access denied. Check your access key and try again." }, { status: 401 });
       }
 
@@ -116,7 +119,7 @@ export async function POST(req: NextRequest) {
       });
 
       resetRateLimitOnSuccess(ip);
-      console.log(`[verify-key][${reqId}] DIAGNOSTIC: ACCESS_GRANTED (MASTER_KEY)`);
+      console.log(`[verify-key][${reqId}] ACCESS_KEY_ACCEPTED (MASTER_KEY)`);
 
       const res = NextResponse.json({ preAuthGranted: true });
       res.cookies.set(PREAUTH_COOKIE, rawToken, {
@@ -152,7 +155,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (activeKeys.length === 0) {
-      console.warn(`[verify-key][${reqId}] DIAGNOSTIC: ACCESS_KEY_TABLE_EMPTY`);
+      console.warn(`[verify-key][${reqId}] ACCESS_KEY_NOT_FOUND`);
       return NextResponse.json({ error: "Access denied. Check your access key and try again." }, { status: 401 });
     }
 
@@ -164,6 +167,7 @@ export async function POST(req: NextRequest) {
       try {
         const isMatch = await bcrypt.compare(normalizedKey, key.keyHash);
         if (isMatch) {
+          console.log(`[verify-key][${reqId}] ACCESS_KEY_HASHED`);
           matchedKey = key;
           matchFound = true;
           break;
@@ -174,33 +178,33 @@ export async function POST(req: NextRequest) {
     }
 
     if (!matchFound || !matchedKey) {
-      console.warn(`[verify-key][${reqId}] DIAGNOSTIC: NO_MATCHING_ACTIVE_KEY`);
+      console.warn(`[verify-key][${reqId}] ACCESS_KEY_NOT_FOUND`);
       return NextResponse.json({ error: "Access denied. Check your access key and try again." }, { status: 401 });
     }
 
     // 3. Check constraints
     if (!matchedKey.isActive) {
-      console.warn(`[verify-key][${reqId}] DIAGNOSTIC: KEY_DISABLED`);
+      console.warn(`[verify-key][${reqId}] ACCESS_KEY_INACTIVE`);
       return NextResponse.json({ error: "Access denied. Check your access key and try again." }, { status: 401 });
     }
 
     if (!matchedKey.user.isActive) {
-      console.warn(`[verify-key][${reqId}] DIAGNOSTIC: LINKED_USER_DISABLED`);
+      console.warn(`[verify-key][${reqId}] ACCESS_KEY_INACTIVE (user disabled)`);
       return NextResponse.json({ error: "Access denied. Check your access key and try again." }, { status: 401 });
     }
 
     if (matchedKey.expiresAt && new Date() >= matchedKey.expiresAt) {
-      console.warn(`[verify-key][${reqId}] DIAGNOSTIC: KEY_EXPIRED`);
+      console.warn(`[verify-key][${reqId}] ACCESS_KEY_EXPIRED`);
       return NextResponse.json({ error: "Access denied. Check your access key and try again." }, { status: 401 });
     }
 
     if (matchedKey.maxUses !== null && matchedKey.useCount >= matchedKey.maxUses) {
-      console.warn(`[verify-key][${reqId}] DIAGNOSTIC: KEY_MAX_USES_REACHED`);
+      console.warn(`[verify-key][${reqId}] ACCESS_KEY_EXPIRED (max uses reached)`);
       return NextResponse.json({ error: "Access denied. Check your access key and try again." }, { status: 401 });
     }
 
     if (matchedKey.role !== matchedKey.user.role) {
-      console.warn(`[verify-key][${reqId}] DIAGNOSTIC: NO_MATCHING_ACTIVE_KEY (role mismatch)`);
+      console.warn(`[verify-key][${reqId}] ACCESS_KEY_ROLE_INVALID`);
       return NextResponse.json({ error: "Access denied. Check your access key and try again." }, { status: 401 });
     }
 
@@ -242,7 +246,7 @@ export async function POST(req: NextRequest) {
     }
 
     resetRateLimitOnSuccess(ip);
-    console.log(`[verify-key][${reqId}] DIAGNOSTIC: ACCESS_GRANTED — role=${matchedKey.role}`);
+    console.log(`[verify-key][${reqId}] ACCESS_KEY_ACCEPTED role=${matchedKey.role}`);
 
     const res = NextResponse.json({ preAuthGranted: true });
     res.cookies.set(PREAUTH_COOKIE, rawToken, {

@@ -10,6 +10,7 @@
     "start": "next start",
     "lint": "next lint",
     "seed": "tsx prisma/seed.ts",
+    "auth:diagnose": "tsx scripts/auth-diagnose.ts",
     "db:push": "prisma db push",
     "db:studio": "prisma studio"
   },
