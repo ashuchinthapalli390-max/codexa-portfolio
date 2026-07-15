@@ -1,28 +1,29 @@
 // Prisma schema for CodeXa Agency — Full Auth System
-// Database: SQLite (local dev)
+// Database: MySQL (Aiven production)
+// Local dev: use schema.sqlite.prisma with SQLite
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
 // ─── USER ACCOUNTS ───────────────────────────────────────────────────────────
 model User {
-  id           String   @id @default(cuid())
-  username     String?  @unique
-  email        String?  @unique
-  fullName     String?
-  passwordHash String
+  id           String    @id @default(cuid()) @db.VarChar(30)
+  username     String?   @unique @db.VarChar(191)
+  email        String?   @unique @db.VarChar(191)
+  fullName     String?   @db.VarChar(255)
+  passwordHash String    @db.VarChar(255)
   // role values: "OWNER" | "ADMIN" | "TEAM_MEMBER"
-  role         String
-  isActive     Boolean  @default(true)
+  role         String    @db.VarChar(20)
+  isActive     Boolean   @default(true)
   lastLoginAt  DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   profile      TeamProfile?
   sessions     Session[]
@@ -31,16 +32,16 @@ model User {
 
 // ─── TEAM PROFILES ────────────────────────────────────────────────────────────
 model TeamProfile {
-  id                 String    @id @default(cuid())
-  userId             String?   @unique
+  id                 String    @id @default(cuid()) @db.VarChar(30)
+  userId             String?   @unique @db.VarChar(30)
   // memberType values: "LEADERSHIP" | "CORE_TEAM"
-  memberType         String
-  // leadershipPosition values: "FOUNDER", "CO_FOUNDER", "CEO", or null
-  leadershipPosition String?
-  displayName        String
-  publicBio          String?
-  mediaUrl           String?
-  mediaMimeType      String?
+  memberType         String    @db.VarChar(20)
+  // leadershipPosition values: "FOUNDER" | "CO_FOUNDER" | "CEO" | null
+  leadershipPosition String?   @db.VarChar(30)
+  displayName        String    @db.VarChar(255)
+  publicBio          String?   @db.Text
+  mediaUrl           String?   @db.VarChar(512)
+  mediaMimeType      String?   @db.VarChar(100)
   cropX              Float?
   cropY              Float?
   cropW              Float?
@@ -57,9 +58,9 @@ model TeamProfile {
 
 // ─── SESSION STORE ────────────────────────────────────────────────────────────
 model Session {
-  id               String   @id @default(cuid())
-  userId           String
-  sessionTokenHash String   @unique
+  id               String   @id @default(cuid()) @db.VarChar(30)
+  userId           String   @db.VarChar(30)
+  sessionTokenHash String   @unique @db.VarChar(64)
   expiresAt        DateTime
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -68,16 +69,16 @@ model Session {
 }
 
 // ─── ACCESS KEYS ─────────────────────────────────────────────────────────────
-// Stored as hashes — raw key is NEVER stored and shown only once on creation.
+// Stored as SHA-256 hashes — raw key is NEVER stored; shown only once on creation.
 model AccessKey {
-  id          String    @id @default(cuid())
-  userId      String
-  label       String
-  keyHash     String    @unique
+  id          String    @id @default(cuid()) @db.VarChar(30)
+  userId      String    @db.VarChar(30)
+  label       String    @db.VarChar(255)
+  keyHash     String    @unique @db.VarChar(64)
   // role this key grants access for: "OWNER" | "ADMIN" | "TEAM_MEMBER"
-  role        String
+  role        String    @db.VarChar(20)
   isActive    Boolean   @default(true)
-  maxUses     Int?      // null = unlimited
+  maxUses     Int?
   useCount    Int       @default(0)
   expiresAt   DateTime?
   lastUsedAt  DateTime?
@@ -90,13 +91,14 @@ model AccessKey {
 
 // ─── ACCESS KEY AUDIT LOG ────────────────────────────────────────────────────
 model AccessKeyAuditLog {
-  id          String    @id @default(cuid())
-  accessKeyId String?
-  userId      String?
-  action      String    // "VERIFY_SUCCESS" | "VERIFY_FAIL" | "KEY_CREATED" | "KEY_REVOKED" | "KEY_REGENERATED"
+  id          String    @id @default(cuid()) @db.VarChar(30)
+  accessKeyId String?   @db.VarChar(30)
+  userId      String?   @db.VarChar(30)
+  // action: "VERIFY_SUCCESS" | "VERIFY_FAIL" | "KEY_CREATED" | "KEY_REVOKED" | "KEY_REGENERATED" | "KEY_UPDATED"
+  action      String    @db.VarChar(30)
   success     Boolean
-  ipAddress   String?
-  userAgent   String?
+  ipAddress   String?   @db.VarChar(45)
+  userAgent   String?   @db.VarChar(512)
   createdAt   DateTime  @default(now())
 
   accessKey   AccessKey? @relation(fields: [accessKeyId], references: [id], onDelete: SetNull)
@@ -105,20 +107,20 @@ model AccessKeyAuditLog {
 // ─── PRE-AUTH SESSIONS (short-lived, Access Key step only) ───────────────────
 // Created after Access Key is verified; replaced by full Session after credential login.
 model PreAuthSession {
-  id               String   @id @default(cuid())
-  tokenHash        String   @unique
-  userId           String
-  role             String
+  id               String   @id @default(cuid()) @db.VarChar(30)
+  tokenHash        String   @unique @db.VarChar(64)
+  userId           String   @db.VarChar(30)
+  role             String   @db.VarChar(20)
   expiresAt        DateTime
   createdAt        DateTime @default(now())
 }
 
-// ─── AUDIT LOG (existing) ────────────────────────────────────────────────────
+// ─── PROFILE AUDIT LOG ───────────────────────────────────────────────────────
 model ProfileAuditLog {
-  id           String   @id @default(cuid())
-  actorUserId  String?
-  targetUserId String?
-  action       String
-  details      String
+  id           String   @id @default(cuid()) @db.VarChar(30)
+  actorUserId  String?  @db.VarChar(30)
+  targetUserId String?  @db.VarChar(30)
+  action       String   @db.VarChar(50)
+  details      String   @db.Text
   createdAt    DateTime @default(now())
 }
