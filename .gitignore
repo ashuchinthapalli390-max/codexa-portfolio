@@ -29,6 +29,7 @@ prisma/sqlite_dump.json
 
 # Uploaded files — ephemeral on Vercel, should use cloud storage
 public/uploads/
+uploads/
 
 # TLS certificates — never commit private certs
 certs/*.pem

@@ -20,7 +20,7 @@ export interface AdminSessionData {
   rememberDevice?: boolean;
 }
 
-const secret = process.env.SESSION_SECRET || "f64885a6961a18819401e01e914e56de0c49ab1ace20404ba63f2c3a3b153323";
+const secret = process.env.AUTH_SECRET || process.env.SESSION_SECRET || "f64885a6961a18819401e01e914e56de0c49ab1ace20404ba63f2c3a3b153323";
 
 export const sessionOptions: SessionOptions = {
   password: secret,

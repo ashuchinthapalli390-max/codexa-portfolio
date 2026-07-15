@@ -1,187 +1,270 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Terminal, Shield, Cpu, Code } from "lucide-react";
-import { NeonButton } from "../ui/NeonButton";
+import React, { useEffect, useState, useRef } from "react";
 
 interface LoadingScreenProps {
   onComplete: () => void;
 }
 
+const SESSION_KEY = "codexa_intro_seen";
+
 export function LoadingScreen({ onComplete }: LoadingScreenProps) {
-  const [percent, setPercent] = useState(0);
-  const [terminalText, setTerminalText] = useState<string[]>([]);
-  const [isDone, setIsDone] = useState(false);
+  // Phase: "entry" | "playing" | "done"
+  const [phase, setPhase] = useState<"entry" | "playing" | "done">("entry");
   const [logoError, setLogoError] = useState(false);
+  const [videoError, setVideoError] = useState(false);
+  const [isReducedMotion, setIsReducedMotion] = useState(false);
+  const [fadeOut, setFadeOut] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const logs = [
-    "INITIALIZING CODEXA SYSTEM...",
-    "LOADING INTERFACE GRID...",
-    "CONNECTING TO DIGITAL NETWORK...",
-    "ESTABLISHING SECURE PROTOCOLS...",
-    "AI SYSTEMS ONLINE...",
-    "CYBER DEFENSE AGENT ENGAGED...",
-    "BUILDING THE FUTURE...",
-    "SYSTEM DEPLOYMENT SUCCESSFUL."
-  ];
-
+  // ── Check reduced motion preference ─────────────────────────────────
   useEffect(() => {
-    // Percentage loading ticker
-    const timer = setInterval(() => {
-      setPercent((prev) => {
-        if (prev >= 100) {
-          clearInterval(timer);
-          setIsDone(true);
-          return 100;
-        }
-        // Random increases
-        const inc = Math.floor(Math.random() * 8) + 3;
-        return Math.min(prev + inc, 100);
-      });
-    }, 100);
-
-    return () => clearInterval(timer);
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setIsReducedMotion(mq.matches);
   }, []);
 
-  // Update terminal logs based on percent
+  // ── Check sessionStorage — if already seen, skip immediately ────────
   useEffect(() => {
-    const activeLogCount = Math.min(
-      Math.floor((percent / 100) * logs.length) + 1,
-      logs.length
-    );
-    setTerminalText(logs.slice(0, activeLogCount));
-  }, [percent]);
+    try {
+      const seen = sessionStorage.getItem(SESSION_KEY);
+      if (seen === "1") {
+        // Already watched this session — go directly to homepage
+        onComplete();
+      }
+    } catch {
+      // sessionStorage not available (private mode edge case) — show normally
+    }
+  }, [onComplete]);
 
-  const handleSkipOrEnter = () => {
-    onComplete();
+  // ── Mark intro as seen and fade out ─────────────────────────────────
+  const finishIntro = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    try {
+      sessionStorage.setItem(SESSION_KEY, "1");
+    } catch {
+      // ignore
+    }
+    setFadeOut(true);
+    setTimeout(() => {
+      setPhase("done");
+      onComplete();
+    }, 600);
   };
 
+  // ── Handle Enter Experience click ───────────────────────────────────
+  const handleEnterClick = () => {
+    if (isReducedMotion || videoError) {
+      // Skip video for reduced motion or error — just fade to site
+      finishIntro();
+      return;
+    }
+    setPhase("playing");
+  };
+
+  // ── When phase becomes "playing", start video + 8s timer ───────────
+  useEffect(() => {
+    if (phase !== "playing") return;
+
+    const video = videoRef.current;
+    if (!video) {
+      finishIntro();
+      return;
+    }
+
+    // Start 8-second hard stop timer
+    timerRef.current = setTimeout(() => {
+      finishIntro();
+    }, 8000);
+
+    // Play video
+    video.play().catch(() => {
+      // Autoplay failed — finish immediately
+      finishIntro();
+    });
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
+  // ── Video ended before 8 seconds ───────────────────────────────────
+  const handleVideoEnded = () => {
+    finishIntro();
+  };
+
+  // ── Video error ─────────────────────────────────────────────────────
+  const handleVideoError = () => {
+    setVideoError(true);
+    if (phase === "playing") {
+      finishIntro();
+    }
+  };
+
+  if (phase === "done") return null;
+
   return (
-    <div className="fixed inset-0 z-50 bg-[#070707] flex flex-col justify-between p-6 select-none overflow-hidden">
-      {/* Red web lines framing the screen */}
-      <div className="absolute inset-0 pointer-events-none opacity-20 border border-crimson/30 m-4">
-        <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-bright-red" />
-        <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-bright-red" />
-        <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-bright-red" />
-        <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-bright-red" />
-      </div>
+    <div
+      className="fixed inset-0 z-[9999] select-none overflow-hidden"
+      style={{
+        transition: "opacity 0.6s ease",
+        opacity: fadeOut ? 0 : 1,
+        pointerEvents: fadeOut ? "none" : "auto",
+      }}
+    >
+      {/* ── ENTRY SCREEN — shown before user clicks ───────────── */}
+      {phase === "entry" && (
+        <div className="absolute inset-0 bg-[#070707] flex flex-col items-center justify-center">
+          {/* Corner brackets */}
+          <div className="absolute inset-4 pointer-events-none">
+            <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-[#D90429] opacity-60" />
+            <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-[#D90429] opacity-60" />
+            <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-[#D90429] opacity-60" />
+            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-[#D90429] opacity-60" />
+          </div>
 
-      {/* Top bar status */}
-      <div className="flex justify-between items-center text-crimson font-mono text-[10px] md:text-xs">
-        <span className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-bright-red animate-ping" />
-          SECURE CONNECTION :: ACTIVE
-        </span>
-        <span className="hidden sm:inline font-orbitron">CODEXA v1.0.0</span>
-      </div>
+          {/* Radial glow */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background:
+                "radial-gradient(ellipse 60% 50% at 50% 50%, rgba(217,4,41,0.08) 0%, transparent 70%)",
+            }}
+          />
 
-      {/* Center Logo & Progress */}
-      <div className="flex flex-col items-center justify-center flex-grow max-w-lg mx-auto w-full">
-        {/* Core Icon Assembly */}
-        <div className="relative mb-8 flex items-center justify-center">
-          <div className="absolute -inset-6 bg-crimson/15 rounded-full blur-xl animate-pulse-slow" />
-          
-          {/* Futuristic glowing geometric emblem */}
-          <div className="relative w-24 h-24 rounded-full border border-bright-red/40 flex items-center justify-center bg-[#070707] shadow-neon overflow-hidden">
-            {!logoError ? (
-              <img
-                src="/assets/images/logo.jpeg"
-                alt="CodeXa Agency logo"
-                className="w-full h-full object-cover"
-                onError={() => setLogoError(true)}
+          {/* Status bar */}
+          <div className="absolute top-6 left-0 right-0 flex justify-between items-center px-8 text-[10px] font-mono text-[#D90429]/60 tracking-widest">
+            <span className="flex items-center gap-2">
+              <span
+                className="w-2 h-2 rounded-full bg-[#D90429]"
+                style={{ animation: "pulse 2s ease-in-out infinite" }}
               />
-            ) : (
-              <>
-                <span className="absolute text-[10px] text-crimson font-orbitron -top-3 tracking-widest bg-[#070707] px-2">
-                  CDXA
-                </span>
-                <div className="relative flex items-center justify-center gap-1">
-                  <Cpu className="w-6 h-6 text-bright-red animate-pulse" />
-                  <Code className="w-5 h-5 text-secondary-text absolute -top-4 -right-4" />
-                  <Shield className="w-4 h-4 text-crimson absolute -bottom-4 -left-4" />
-                </div>
-              </>
+              SECURE CONNECTION :: ACTIVE
+            </span>
+            <span className="hidden sm:block font-orbitron">CODEXA v1.0.0</span>
+          </div>
+
+          {/* Center content */}
+          <div className="flex flex-col items-center text-center px-8 max-w-sm">
+            {/* Logo */}
+            <div className="relative mb-8">
+              <div
+                className="absolute -inset-6 rounded-full pointer-events-none"
+                style={{
+                  background: "rgba(217,4,41,0.12)",
+                  filter: "blur(20px)",
+                  animation: "pulse 3s ease-in-out infinite",
+                }}
+              />
+              <div
+                className="relative w-24 h-24 rounded-full border border-[rgba(217,4,41,0.4)] bg-[#070707] overflow-hidden flex items-center justify-center"
+                style={{ boxShadow: "0 0 30px rgba(217,4,41,0.2)" }}
+              >
+                {!logoError ? (
+                  <img
+                    src="/assets/images/logo.jpeg"
+                    alt="CodeXa Agency"
+                    className="w-full h-full object-cover"
+                    onError={() => setLogoError(true)}
+                  />
+                ) : (
+                  <span className="font-orbitron text-2xl font-black text-[#D90429]">CX</span>
+                )}
+              </div>
+            </div>
+
+            <h1
+              className="text-4xl font-black font-orbitron tracking-[0.2em] text-white mb-2"
+              style={{ textShadow: "0 0 40px rgba(217,4,41,0.3)" }}
+            >
+              CODEXA
+            </h1>
+            <p className="text-[11px] tracking-[0.4em] font-orbitron uppercase text-[#D90429] mb-12">
+              Where Ideas Become Digital Reality
+            </p>
+
+            {/* Enter Experience button */}
+            <button
+              id="enter-experience-btn"
+              onClick={handleEnterClick}
+              className="relative group overflow-hidden rounded-xl font-orbitron font-bold text-sm uppercase tracking-widest text-white px-10 py-4 transition-all duration-300"
+              style={{
+                background: "linear-gradient(135deg, rgba(217,4,41,0.2), rgba(217,4,41,0.05))",
+                border: "1px solid rgba(217,4,41,0.5)",
+                boxShadow:
+                  "0 0 20px rgba(217,4,41,0.2), inset 0 1px 0 rgba(255,255,255,0.05)",
+              }}
+            >
+              {/* Hover glow */}
+              <div
+                className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                style={{
+                  background:
+                    "linear-gradient(135deg, rgba(217,4,41,0.35), rgba(255,107,53,0.2))",
+                }}
+              />
+              <span className="relative flex items-center gap-3">
+                <span
+                  className="w-2 h-2 rounded-full bg-[#D90429]"
+                  style={{ animation: "pulse 1.5s ease-in-out infinite" }}
+                />
+                Enter Experience
+                <svg className="w-4 h-4 opacity-60 group-hover:opacity-100 group-hover:translate-x-1 transition-all" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+              </span>
+            </button>
+
+            {videoError && (
+              <p className="text-[10px] font-mono text-[#333] mt-4">
+                Intro video unavailable — click to enter site.
+              </p>
             )}
           </div>
-        </div>
 
-        {/* Brand Label */}
-        <h1 className="text-3xl font-black font-orbitron tracking-[0.2em] text-white text-center mb-1">
-          CODEXA
-        </h1>
-        <p className="text-[10px] tracking-[0.4em] font-orbitron uppercase text-crimson mb-8 text-center">
-          Where Ideas Become Digital Reality
-        </p>
+          {/* Bottom status */}
+          <div className="absolute bottom-6 left-0 right-0 flex justify-center">
+            <span className="text-[9px] font-orbitron tracking-[0.3em] text-[#333] uppercase">
+              Codexa Agency · Est. 2024
+            </span>
+          </div>
+        </div>
+      )}
 
-        {/* Progress Display */}
-        <div className="w-full bg-secondary-dark/60 border border-crimson/20 rounded h-2 mb-4 overflow-hidden relative">
-          <div 
-            className="h-full bg-gradient-to-r from-crimson to-bright-red transition-all duration-150 ease-out"
-            style={{ width: `${percent}%` }}
-          />
-        </div>
+      {/* ── PLAYING PHASE — full-screen video ─────────────────── */}
+      {(phase === "playing" || phase === "entry") && (
+        <video
+          ref={videoRef}
+          src="/assets/intro/intro.mp4"
+          muted
+          playsInline
+          preload="auto"
+          onEnded={handleVideoEnded}
+          onError={handleVideoError}
+          style={{
+            position: "fixed",
+            inset: 0,
+            width: "100vw",
+            height: "100dvh",
+            objectFit: "cover",
+            objectPosition: "center",
+            zIndex: phase === "playing" ? 1 : -1,
+            display: phase === "playing" ? "block" : "none",
+            background: "#000",
+          }}
+          aria-hidden="true"
+        />
+      )}
 
-        <div className="flex justify-between items-center w-full font-mono text-xs text-secondary-text mb-6">
-          <span className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-bright-red animate-pulse" />
-            SYSTEM STABILITY
-          </span>
-          <span className="text-white font-semibold font-orbitron">{percent}%</span>
-        </div>
-
-        {/* Skip/Enter button area */}
-        <div className="h-14 flex items-center justify-center">
-          <AnimatePresence mode="wait">
-            {isDone ? (
-              <motion.div
-                key="enter-experience"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ duration: 0.3 }}
-              >
-                <NeonButton onClick={handleSkipOrEnter} size="lg" className="w-56 font-bold shadow-neon-hover">
-                  Enter Experience
-                </NeonButton>
-              </motion.div>
-            ) : (
-              <motion.button
-                key="skip-animation"
-                onClick={handleSkipOrEnter}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 0.6 }}
-                whileHover={{ opacity: 1, scale: 1.05 }}
-                className="text-[10px] tracking-widest font-orbitron font-semibold uppercase text-secondary-text hover:text-bright-red transition-all duration-200"
-              >
-                [ SKIP ANIMATION ]
-              </motion.button>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
-
-      {/* Terminal Output Log in Footer */}
-      <div className="bg-card/40 border border-crimson/10 rounded-lg p-4 font-mono text-[9px] md:text-[11px] text-crimson/80 h-32 overflow-hidden flex flex-col justify-end w-full max-w-xl mx-auto shadow-inner relative">
-        <div className="absolute top-2 right-4 flex items-center gap-1.5 text-secondary-text text-[9px]">
-          <Terminal className="w-3.5 h-3.5" />
-          SYSTEM_LOG
-        </div>
-        <div className="flex flex-col gap-1 overflow-y-auto max-h-24">
-          {terminalText.map((log, index) => (
-            <div key={index} className="flex gap-2 items-start leading-tight">
-              <span className="text-bright-red select-none">&gt;</span>
-              <span>{log}</span>
-            </div>
-          ))}
-          {percent < 100 && (
-            <div className="flex items-center gap-1">
-              <span className="text-bright-red select-none">&gt;</span>
-              <span className="w-1.5 h-3.5 bg-bright-red animate-pulse" />
-            </div>
-          )}
-        </div>
-      </div>
+      {/* Pulse animation keyframes */}
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
+      `}</style>
     </div>
   );
 }

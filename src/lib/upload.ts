@@ -34,7 +34,7 @@ export function issueUploadNonce(actingUserId: string, targetProfileId: string):
   const expiresAt = Date.now() + NONCE_TTL_MS;
   const payload = `${actingUserId}:${targetProfileId}:${expiresAt}`;
   const signature = crypto
-    .createHmac("sha256", process.env.SESSION_SECRET || "default_secret")
+    .createHmac("sha256", process.env.AUTH_SECRET || process.env.SESSION_SECRET || "default_secret")
     .update(payload)
     .digest("hex");
   return `${payload}:${signature}`;
@@ -58,7 +58,7 @@ export function verifyUploadNonce(
     
     const expectedPayload = `${userId}:${profileId}:${expiresAtStr}`;
     const expectedSignature = crypto
-      .createHmac("sha256", process.env.SESSION_SECRET || "default_secret")
+      .createHmac("sha256", process.env.AUTH_SECRET || process.env.SESSION_SECRET || "default_secret")
       .update(expectedPayload)
       .digest("hex");
       

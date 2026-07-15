@@ -55,12 +55,26 @@ export async function POST(req: NextRequest) {
   }
 
   const ownerEmail = process.env.OWNER_EMAIL?.toLowerCase().trim();
-  const ownerPasswordHash = process.env.OWNER_PASSWORD_HASH?.trim();
+  const ownerPasswordRaw = process.env.OWNER_PASSWORD?.trim();
+  let ownerPasswordHash = process.env.OWNER_PASSWORD_HASH?.trim();
+  const ownerName = process.env.OWNER_NAME?.trim() || "Owner";
 
-  if (!ownerEmail || !ownerPasswordHash) {
-    console.error("[bootstrap] Missing OWNER_EMAIL or OWNER_PASSWORD_HASH in environment");
+  if (!ownerEmail) {
+    console.error("[bootstrap] Missing OWNER_EMAIL in environment");
     return NextResponse.json(
-      { error: "Owner credentials not configured. Set OWNER_EMAIL and OWNER_PASSWORD_HASH in Vercel." },
+      { error: "Owner email not configured. Set OWNER_EMAIL in Vercel." },
+      { status: 503 }
+    );
+  }
+
+  if (!ownerPasswordHash && ownerPasswordRaw) {
+    ownerPasswordHash = await bcrypt.hash(ownerPasswordRaw, 12);
+  }
+
+  if (!ownerPasswordHash) {
+    console.error("[bootstrap] Missing OWNER_PASSWORD or OWNER_PASSWORD_HASH in environment");
+    return NextResponse.json(
+      { error: "Owner credentials not configured. Set OWNER_PASSWORD or OWNER_PASSWORD_HASH in Vercel." },
       { status: 503 }
     );
   }
@@ -106,7 +120,7 @@ export async function POST(req: NextRequest) {
           passwordHash: ownerPasswordHash,
           role: "OWNER",
           isActive: true,
-          fullName: "Owner",
+          fullName: ownerName,
         },
         include: { accessKeys: true },
       });

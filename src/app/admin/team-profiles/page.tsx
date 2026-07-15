@@ -1,18 +1,14 @@
 /* eslint-disable @next/next/no-img-element, jsx-a11y/alt-text */
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getProfileImageStyle } from "@/lib/profile-media";
 import { LEADERSHIP_DATA } from "@/config/leadershipData";
-import { ProfileMediaCropModal } from "@/components/ui/ProfileMediaCropModal";
-import { upload } from "@vercel/blob/client";
+import { PfpGalleryModal } from "@/components/ui/PfpGalleryModal";
+import { PfpCropModal } from "@/components/ui/PfpCropModal";
 import "../../globals.css";
-
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-const MAX_IMAGE = 10 * 1024 * 1024;
-const MAX_GIF = 15 * 1024 * 1024;
 
 interface ProfileItem {
   id: string;
@@ -48,27 +44,12 @@ type UIState = "idle" | "loading" | "error";
 
 function TeamProfilesContent() {
   const router = useRouter();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const editFileInputRef = useRef<HTMLInputElement>(null);
   const [logoError, setLogoError] = useState(false);
 
-  // Hidden upload ref for quick leadership media replacement
-  const quickUploadRef = useRef<HTMLInputElement>(null);
-  const [quickUploadProfileId, setQuickUploadProfileId] = useState<string | null>(null);
-  const [leadershipUploadStatus, setLeadershipUploadStatus] = useState<Record<string, string>>({});
-
-  // Crop modal states
-  const [showCropModal, setShowCropModal] = useState(false);
-  const [cropModalFile, setCropModalFile] = useState<File | null>(null);
-  const [cropType, setCropType] = useState<"LEADERSHIP" | "CORE_TEAM_EDIT" | "CORE_TEAM_CREATE" | null>(null);
-
-  // Local crop coordinates for new member creation
-  const [createCropX, setCreateCropX] = useState<number | null>(null);
-  const [createCropY, setCreateCropY] = useState<number | null>(null);
-  const [createCropW, setCreateCropW] = useState<number | null>(null);
-  const [createCropH, setCreateCropH] = useState<number | null>(null);
-  const [createCropZoom, setCreateCropZoom] = useState<number | null>(null);
-  const [createCropRotation, setCreateCropRotation] = useState<number | null>(null);
+  // PFP Gallery state — single unified flow for all profile media changes
+  const [pfpTargetProfileId, setPfpTargetProfileId] = useState<string | null>(null);
+  const [pendingPfpPath, setPendingPfpPath] = useState<string | null>(null);
+  const [pfpSuccessMsgs, setPfpSuccessMsgs] = useState<Record<string, string>>({});
 
   // Lists & Filtering
   const [profiles, setProfiles] = useState<ProfileItem[]>([]);
@@ -86,8 +67,6 @@ function TeamProfilesContent() {
   const [createBio, setCreateBio] = useState("");
   const [createOrder, setCreateOrder] = useState(0);
   const [createPublic, setCreatePublic] = useState(true);
-  const [createFile, setCreateFile] = useState<File | null>(null);
-  const [createPreview, setCreatePreview] = useState<string | null>(null);
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState("");
 
@@ -101,8 +80,6 @@ function TeamProfilesContent() {
   const [editOrder, setEditOrder] = useState(0);
   const [editPublic, setEditPublic] = useState(true);
   const [editActive, setEditActive] = useState(true);
-  const [editFile, setEditFile] = useState<File | null>(null);
-  const [editPreview, setEditPreview] = useState<string | null>(null);
   const [editRemoveMedia, setEditRemoveMedia] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState("");
@@ -173,28 +150,7 @@ function TeamProfilesContent() {
     setFilteredCoreTeam(result);
   }, [profiles, searchQuery, statusFilter, visibilityFilter]);
 
-  // Create profile handlers
-  const handleCreateFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (fileInputRef.current) fileInputRef.current.value = "";
-
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      alert("Choose a JPG, PNG, WEBP, or GIF image.");
-      return;
-    }
-    const isGif = file.type === "image/gif";
-    const maxLimit = isGif ? MAX_GIF : MAX_IMAGE;
-    if (file.size > maxLimit) {
-      alert(isGif ? "Animated GIF profile images must be 15 MB or smaller." : "Profile images must be 10 MB or smaller.");
-      return;
-    }
-
-    setCropType("CORE_TEAM_CREATE");
-    setCropModalFile(file);
-    setShowCropModal(true);
-  };
-
+  // Create profile — text only, no file upload
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!createName.trim() || createLoading) return;
@@ -203,7 +159,6 @@ function TeamProfilesContent() {
     setCreateError("");
 
     try {
-      // 1. Create the user & profile first with text fields
       const createRes = await fetch("/api/admin/team", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -222,49 +177,6 @@ function TeamProfilesContent() {
         return;
       }
 
-      const newProfileId = createData.profile.id;
-
-      // 2. If a file was selected, upload it directly to Vercel Blob and commit
-      if (createFile) {
-        try {
-          // Get signed upload nonce
-          const initRes = await fetch(`/api/profile-media/upload?targetProfileId=${newProfileId}`);
-          const initData = await initRes.json();
-          if (!initRes.ok) {
-            throw new Error(initData.ref ? `PM-${initData.ref}` : "Failed to generate upload session.");
-          }
-
-          const { uploadNonce, targetProfileId } = initData;
-
-          // Upload to Blob CDN
-          const uploaded = await upload(createFile.name, createFile, {
-            access: "public",
-            handleUploadUrl: "/api/profile-media/upload",
-            clientPayload: JSON.stringify({ targetProfileId, uploadNonce }),
-          });
-
-          // Commit to Aiven MySQL
-          const commitRes = await fetch("/api/profile-media/commit", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              blobUrl: uploaded.url,
-              contentType: createFile.type,
-              targetProfileId,
-              uploadNonce,
-            }),
-          });
-
-          const commitData = await commitRes.json();
-          if (!commitRes.ok || !commitData.success) {
-            const ref = commitData.ref ?? "Unknown";
-            throw new Error(`Commit failed. Reference: PM-${ref}`);
-          }
-        } catch (uploadErr: any) {
-          alert(`Account created, but profile media upload failed: ${uploadErr.message}`);
-        }
-      }
-
       setRevealCredentials({
         username: createData.username,
         tempPass: createData.tempPassword,
@@ -274,36 +186,12 @@ function TeamProfilesContent() {
       setCreateBio("");
       setCreateOrder(0);
       setCreatePublic(true);
-      setCreateFile(null);
-      setCreatePreview(null);
       loadData();
     } catch {
       setCreateError("Network error. Try again.");
     } finally {
       setCreateLoading(false);
     }
-  };
-
-  // Edit profile handlers (Core Team)
-  const handleEditFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (editFileInputRef.current) editFileInputRef.current.value = "";
-
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      setEditError("Choose a JPG, PNG, WEBP, or GIF image.");
-      return;
-    }
-    const isGif = file.type === "image/gif";
-    const maxLimit = isGif ? MAX_GIF : MAX_IMAGE;
-    if (file.size > maxLimit) {
-      setEditError(isGif ? "Animated GIF profile images must be 15 MB or smaller." : "Profile images must be 10 MB or smaller.");
-      return;
-    }
-
-    setCropType("CORE_TEAM_EDIT");
-    setCropModalFile(file);
-    setShowCropModal(true);
   };
 
   const handleEditOpen = (profile: ProfileItem) => {
@@ -313,8 +201,6 @@ function TeamProfilesContent() {
     setEditOrder(profile.displayOrder);
     setEditPublic(profile.isPublic);
     setEditActive(profile.user?.isActive ?? true);
-    setEditFile(null);
-    setEditPreview(null);
     setEditRemoveMedia(false);
     setEditError("");
   };
@@ -327,47 +213,7 @@ function TeamProfilesContent() {
     setEditError("");
 
     try {
-      // 1. If an edit file is present, upload it via two-step direct-to-blob first
-      if (editFile && !editRemoveMedia) {
-        try {
-          const initRes = await fetch(`/api/profile-media/upload?targetProfileId=${editingProfile.id}`);
-          const initData = await initRes.json();
-          if (!initRes.ok) {
-            throw new Error(initData.ref ? `PM-${initData.ref}` : "Failed to generate upload session.");
-          }
-
-          const { uploadNonce, targetProfileId } = initData;
-
-          const uploaded = await upload(editFile.name, editFile, {
-            access: "public",
-            handleUploadUrl: "/api/profile-media/upload",
-            clientPayload: JSON.stringify({ targetProfileId, uploadNonce }),
-          });
-
-          const commitRes = await fetch("/api/profile-media/commit", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              blobUrl: uploaded.url,
-              contentType: editFile.type,
-              targetProfileId,
-              uploadNonce,
-            }),
-          });
-
-          const commitData = await commitRes.json();
-          if (!commitRes.ok || !commitData.success) {
-            const ref = commitData.ref ?? "Unknown";
-            throw new Error(`Commit failed. Reference: PM-${ref}`);
-          }
-        } catch (uploadErr: any) {
-          setEditError(`Profile media upload failed: ${uploadErr.message}`);
-          setEditLoading(false);
-          return;
-        }
-      }
-
-      // 2. Submit non-media/text changes to main PATCH endpoint
+      // Submit text/visibility changes only — media is handled by PFP gallery
       const formData = new FormData();
       formData.append("displayName", editName.trim());
       formData.append("publicBio", editBio.trim());
@@ -398,31 +244,9 @@ function TeamProfilesContent() {
     }
   };
 
-  // Quick media handler for leadership — direct upload, no crop modal
-  const handleLeadershipMediaSelect = (profileId: string) => {
-    setQuickUploadProfileId(profileId);
-    quickUploadRef.current?.click();
-  };
-
-  const handleLeadershipMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !quickUploadProfileId) return;
-    if (quickUploadRef.current) quickUploadRef.current.value = "";
-
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      alert("Choose a JPG, PNG, WEBP, or GIF image.");
-      return;
-    }
-    const isGif = file.type === "image/gif";
-    const maxLimit = isGif ? MAX_GIF : MAX_IMAGE;
-    if (file.size > maxLimit) {
-      alert(isGif ? "Animated GIF profile images must be 15 MB or smaller." : "Profile images must be 10 MB or smaller.");
-      return;
-    }
-
-    setCropType("LEADERSHIP");
-    setCropModalFile(file);
-    setShowCropModal(true);
+  // Open PFP Gallery for leadership or core team profile media change
+  const handleOpenPfpGallery = (profileId: string) => {
+    setPfpTargetProfileId(profileId);
   };
 
   const handleLeadershipMediaRemove = async (profileId: string) => {
@@ -534,14 +358,6 @@ function TeamProfilesContent() {
 
   return (
     <div className="min-h-screen bg-[#070707] flex text-[#F7F7F7] relative overflow-hidden">
-      {/* Input element for leadership quick upload */}
-      <input
-        ref={quickUploadRef}
-        type="file"
-        accept=".png,.jpg,.jpeg,.webp,.gif"
-        onChange={handleLeadershipMediaUpload}
-        className="hidden"
-      />
 
       {/* Sidebar */}
       <aside className="w-64 flex-shrink-0 border-r border-[rgba(217,4,41,0.15)] flex flex-col z-20 bg-[#070707]/95">
@@ -667,11 +483,15 @@ function TeamProfilesContent() {
                   <div className="mt-4 pt-3 border-t border-[#191919] flex justify-between items-center">
                     <span className="text-[9px] font-orbitron tracking-widest text-[#333] uppercase">TEXT LOCKED🔒</span>
                     <div className="flex gap-2">
+                      {pfpSuccessMsgs[lead.id] && (
+                        <span className="text-[9px] font-orbitron text-[#4ECDC4] tracking-wider">✓ Updated</span>
+                      )}
                       <button
-                        onClick={() => handleLeadershipMediaSelect(lead.id)}
-                        className="bg-[#151515] hover:bg-[#D90429]/20 hover:border-[#D90429]/40 border border-[#222] text-[9px] font-orbitron font-semibold tracking-wider uppercase px-2.5 py-1.5 rounded text-white transition-all"
+                        onClick={() => handleOpenPfpGallery(lead.id)}
+                        className="flex items-center gap-1 bg-[rgba(217,4,41,0.12)] hover:bg-[rgba(217,4,41,0.25)] hover:border-[#D90429]/40 border border-[rgba(217,4,41,0.2)] text-[9px] font-orbitron font-semibold tracking-wider uppercase px-2.5 py-1.5 rounded text-[#D90429] transition-all"
                       >
-                        {lead.mediaUrl ? "Replace Media" : "Upload Media"}
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                        {lead.mediaUrl ? "Replace Media" : "Set Media"}
                       </button>
                       {lead.mediaUrl && (
                         <button
@@ -941,42 +761,10 @@ function TeamProfilesContent() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[10px] font-orbitron tracking-widest text-[#A5A5A5] uppercase mb-1.5">Profile Photo / GIF</label>
-                <div className="flex items-center gap-3 p-3 rounded-lg border border-[rgba(217,4,41,0.15)] bg-[#111]/30">
-                  <div className="w-10 h-10 rounded-full border border-crimson/25 overflow-hidden bg-[#111] flex items-center justify-center flex-shrink-0 relative">
-                    {createPreview ? (
-                      <img
-                        src={createPreview}
-                        alt="Preview"
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "cover",
-                          objectPosition: "center"
-                        }}
-                      />
-                    ) : (
-                      <span className="text-lg">👤</span>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      fileInputRef.current?.click();
-                    }}
-                    className="bg-[#222] hover:bg-[#333] text-[10px] px-3 py-1.5 rounded text-white"
-                  >
-                    Select File
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".png,.jpg,.jpeg,.webp,.gif"
-                    onChange={handleCreateFileChange}
-                    className="hidden"
-                  />
-                </div>
+              <div className="p-3 rounded-lg border border-[rgba(217,4,41,0.1)] bg-[#111]/30">
+                <p className="text-[10px] text-[#555] font-orbitron tracking-wider">
+                  📷 Profile image can be set after account creation using the PFP Library.
+                </p>
               </div>
 
               <div className="border-t border-[#191919] pt-4 mt-6 flex justify-end gap-3">
@@ -1154,52 +942,42 @@ function TeamProfilesContent() {
               )}
 
               <div>
-                <label className="block text-[10px] font-orbitron tracking-widest text-[#A5A5A5] uppercase mb-1.5">Profile Media</label>
+                <label className="block text-[10px] font-orbitron tracking-widests text-[#A5A5A5] uppercase mb-1.5">Profile Media</label>
                 <div className="flex items-center gap-4 p-3 rounded-lg border border-[rgba(217,4,41,0.15)] bg-[#111]/30">
-                  <div className="w-12 h-12 rounded-full border border-crimson/20 bg-[#111] flex items-center justify-center overflow-hidden relative">
+                  <div className="w-12 h-12 rounded-full border border-crimson/20 bg-[#111] flex items-center justify-center overflow-hidden relative flex-shrink-0">
                     {editRemoveMedia ? (
                       <span className="text-xl">👤</span>
-                    ) : editPreview || editingProfile.mediaUrl ? (
+                    ) : editingProfile.mediaUrl ? (
                       <img
-                        src={editPreview || editingProfile.mediaUrl || undefined}
+                        src={editingProfile.mediaUrl}
                         alt="Preview"
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "cover",
-                          objectPosition: "center",
-                        }}
+                        style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }}
                       />
                     ) : (
                       <span className="text-xl">👤</span>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <button
                       type="button"
                       onClick={() => {
-                        editFileInputRef.current?.click();
+                        setEditingProfile(null);
+                        handleOpenPfpGallery(editingProfile.id);
                       }}
-                      className="bg-[#222] hover:bg-[#333] text-[10px] px-3 py-1.5 rounded text-white"
+                      className="flex items-center gap-1 bg-[rgba(217,4,41,0.12)] hover:bg-[rgba(217,4,41,0.25)] border border-[rgba(217,4,41,0.2)] text-[10px] font-orbitron px-3 py-1.5 rounded text-[#D90429] transition-all"
                     >
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                       Replace Media
                     </button>
-                    {(editingProfile.mediaUrl || editPreview) && !editRemoveMedia && (
+                    {editingProfile.mediaUrl && !editRemoveMedia && (
                       <button
                         type="button"
-                        onClick={() => { setEditRemoveMedia(true); setEditFile(null); setEditPreview(null); }}
+                        onClick={() => setEditRemoveMedia(true)}
                         className="bg-transparent hover:text-red-500 text-xs px-2 py-1 text-[#A5A5A5]"
                       >
                         Remove
                       </button>
                     )}
-                    <input
-                      ref={editFileInputRef}
-                      type="file"
-                      accept=".png,.jpg,.jpeg,.webp,.gif"
-                      onChange={handleEditFileChange}
-                      className="hidden"
-                    />
                   </div>
                 </div>
               </div>
@@ -1316,45 +1094,32 @@ function TeamProfilesContent() {
 
 
 
-      {showCropModal && cropModalFile && (
-        <ProfileMediaCropModal
-          file={cropModalFile}
-          targetProfileId={
-            cropType === "CORE_TEAM_EDIT" && editingProfile
-              ? editingProfile.id
-              : cropType === "LEADERSHIP" && quickUploadProfileId
-              ? quickUploadProfileId
-              : undefined
-          }
+      {/* PFP Gallery — unified entry point for all profile media changes */}
+      {pfpTargetProfileId && !pendingPfpPath && (
+        <PfpGalleryModal
+          onClose={() => setPfpTargetProfileId(null)}
+          onSelect={(pfpPath) => {
+            setPendingPfpPath(pfpPath);
+          }}
+        />
+      )}
+
+      {/* PFP Position/Crop modal */}
+      {pfpTargetProfileId && pendingPfpPath && (
+        <PfpCropModal
+          pfpPath={pendingPfpPath}
+          targetProfileId={pfpTargetProfileId}
           onClose={() => {
-            setShowCropModal(false);
-            setCropModalFile(null);
-            if (cropType === "LEADERSHIP") setQuickUploadProfileId(null);
+            setPendingPfpPath(null);
+            setPfpTargetProfileId(null);
           }}
-          onSuccess={(updatedProfile) => {
-            if (cropType === "CORE_TEAM_EDIT" && editingProfile) {
-              setEditingProfile(updatedProfile);
-              setEditPreview(null);
-              setEditFile(null);
-            }
+          onSuccess={() => {
+            const tId = pfpTargetProfileId;
+            setPfpSuccessMsgs((prev) => ({ ...prev, [tId]: "updated" }));
+            setTimeout(() => setPfpSuccessMsgs((prev) => { const n = { ...prev }; delete n[tId]; return n; }), 4000);
+            setPendingPfpPath(null);
+            setPfpTargetProfileId(null);
             loadData();
-            setShowCropModal(false);
-            setCropModalFile(null);
-            if (cropType === "LEADERSHIP") setQuickUploadProfileId(null);
-          }}
-          onLocalCropComplete={({ blob, cropData }) => {
-            if (cropType === "CORE_TEAM_CREATE") {
-              setCreateFile(blob as File);
-              setCreatePreview(URL.createObjectURL(blob as File));
-              if (cropData) {
-                setCreateCropX(cropData.cropX);
-                setCreateCropY(cropData.cropY);
-                setCreateCropW(cropData.cropW);
-                setCreateCropH(cropData.cropH);
-                setCreateCropZoom(cropData.cropZoom);
-                setCreateCropRotation(cropData.cropRotation);
-              }
-            }
           }}
         />
       )}

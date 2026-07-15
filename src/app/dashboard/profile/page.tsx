@@ -1,12 +1,13 @@
 /* eslint-disable @next/next/no-img-element, jsx-a11y/alt-text */
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import "../../globals.css";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ProfilePositionAdjuster } from "@/components/ui/ProfilePositionAdjuster";
-import { ProfileMediaCropModal } from "@/components/ui/ProfileMediaCropModal";
+import { PfpGalleryModal } from "@/components/ui/PfpGalleryModal";
+import { PfpCropModal } from "@/components/ui/PfpCropModal";
 
 interface ProfileData {
   id: string;
@@ -22,20 +23,8 @@ interface ProfileData {
   cropRotation?: number | null;
 }
 
-type UploadPhase = "idle" | "uploading" | "committing" | "done" | "error";
-
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-const MAX_IMAGE = 10 * 1024 * 1024;
-const MAX_GIF = 15 * 1024 * 1024;
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 export default function TeamMemberProfilePage() {
   const router = useRouter();
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [sessionUser, setSessionUser] = useState<{ id: string; username: string; role: string } | null>(null);
   const [profile, setProfile] = useState<ProfileData | null>(null);
@@ -53,18 +42,18 @@ export default function TeamMemberProfilePage() {
   const [committedCropH, setCommittedCropH] = useState<number | null>(null);
   const [committedCropZoom, setCommittedCropZoom] = useState<number | null>(null);
 
-  // Pending upload state
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [showCropModal, setShowCropModal] = useState(false);
-  const [uploadPhase, setUploadPhase] = useState<UploadPhase>("idle");
-  const [statusMsg, setStatusMsg] = useState("");
-  const [errorRef, setErrorRef] = useState<string | null>(null);
-
   // Remove media
   const [removeMedia, setRemoveMedia] = useState(false);
 
   // Position adjuster
   const [showAdjuster, setShowAdjuster] = useState(false);
+
+  // PFP Gallery + CSS Crop flow (the ONLY profile media change method)
+  const [showPfpGallery, setShowPfpGallery] = useState(false);
+  const [pendingPfpPath, setPendingPfpPath] = useState<string | null>(null);
+
+  // Feedback state (replaces uploadPhase)
+  const [mediaFeedback, setMediaFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
   // Text-save state
   const [textSaveState, setTextSaveState] = useState<"idle" | "loading" | "saved" | "error">("idle");
@@ -104,62 +93,11 @@ export default function TeamMemberProfilePage() {
       .catch(() => router.replace("/login"));
   }, [router]);
 
-  // ── File selected ──────────────────────────────────────────────────────────
-  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Reset input so same file can be re-selected
-    if (fileInputRef.current) fileInputRef.current.value = "";
-
-    // Validate type
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      setUploadPhase("error");
-      setStatusMsg("Choose a JPG, PNG, WEBP, or GIF image.");
-      return;
-    }
-
-    // Validate size
-    const isGif = file.type === "image/gif";
-    const maxLimit = isGif ? MAX_GIF : MAX_IMAGE;
-    if (file.size > maxLimit) {
-      setUploadPhase("error");
-      setStatusMsg(
-        isGif
-          ? "Animated GIF profile images must be 15 MB or smaller."
-          : "Profile images must be 10 MB or smaller."
-      );
-      return;
-    }
-
-    // Open crop modal immediately
-    setPendingFile(file);
-    setShowCropModal(true);
-    setRemoveMedia(false);
-    setShowAdjuster(false);
-    setErrorRef(null);
-    setUploadPhase("idle");
-    setStatusMsg("");
-  }, []);
-
   // ── Remove media ───────────────────────────────────────────────────────────
   const handleRemoveMedia = () => {
-    if (uploadPhase === "uploading" || uploadPhase === "committing") return;
-    setPendingFile(null);
     setRemoveMedia(true);
-    setUploadPhase("idle");
-    setStatusMsg("");
-    setErrorRef(null);
     setShowAdjuster(false);
-  };
-
-  // ── Cancel in-progress upload ──────────────────────────────────────────────
-  const handleCancelUpload = () => {
-    setShowCropModal(false);
-    setPendingFile(null);
-    setUploadPhase("idle");
-    setStatusMsg("");
-    setErrorRef(null);
+    setMediaFeedback(null);
   };
 
   // ── Save position metadata ─────────────────────────────────────────────────
@@ -245,8 +183,8 @@ export default function TeamMemberProfilePage() {
   }
 
   const activePreviewUrl = removeMedia ? null : committedMediaUrl;
-  const isUploading = uploadPhase === "uploading" || uploadPhase === "committing";
   const hasCommittedMedia = !!committedMediaUrl && !removeMedia;
+  const isAdmin = sessionUser.role === "ADMIN";
 
   return (
     <div className="min-h-screen bg-[#070707] text-[#F7F7F7] flex flex-col relative overflow-hidden">
@@ -327,7 +265,9 @@ export default function TeamMemberProfilePage() {
                         width: "100%",
                         height: "100%",
                         objectFit: "cover",
-                        objectPosition: "center",
+                        objectPosition: committedCropX != null && committedCropY != null
+                          ? `${committedCropX}% ${committedCropY}%`
+                          : "center",
                       }}
                     />
                   ) : (
@@ -377,7 +317,14 @@ export default function TeamMemberProfilePage() {
                     <img
                       src={activePreviewUrl}
                       alt="Preview"
-                      style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                        objectPosition: committedCropX != null && committedCropY != null
+                          ? `${committedCropX}% ${committedCropY}%`
+                          : "center",
+                      }}
                     />
                   ) : (
                     <svg className="w-8 h-8 text-[#222]" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" aria-hidden="true">
@@ -387,57 +334,36 @@ export default function TeamMemberProfilePage() {
                 </div>
 
                 <div className="flex-1 space-y-3">
-                  {/* File info or helper text */}
-                  {pendingFile ? (
-                    <div className="text-[10px] text-[#A5A5A5] font-mono">
-                      {pendingFile.name} — {formatBytes(pendingFile.size)}
-                    </div>
-                  ) : (
+                  {/* Helper text */}
+                  {!activePreviewUrl && (
                     <div className="text-xs text-[#A5A5A5] font-light">
-                      Max: <span className="text-[#F7F7F7] font-normal">10 MB</span> images · <span className="text-[#F7F7F7] font-normal">15 MB</span> GIFs · PNG, JPG, WEBP, GIF
+                      Select a profile image from the <span className="text-[#D90429] font-normal">PFP Library</span>.
                     </div>
                   )}
 
-                  {/* Progress bar */}
-                  {isUploading && (
-                    <div className="space-y-1.5">
-                      <div className="h-1 rounded-full bg-[#1A1A1A] overflow-hidden">
-                        <div
-                          className="h-full rounded-full animate-pulse"
-                          style={{
-                            width: uploadPhase === "committing" ? "100%" : "60%",
-                            background: "linear-gradient(90deg, #D90429, #FF6B35)",
-                            transition: "width 0.4s ease",
-                          }}
-                        />
-                      </div>
-                      <div className="text-[10px] font-mono text-[#A5A5A5]">{statusMsg}</div>
-                    </div>
-                  )}
-
-                  {/* Status messages */}
-                  {uploadPhase === "done" && (
-                    <div className="text-[10px] font-orbitron text-[#4ECDC4] tracking-wide">✅ {statusMsg}</div>
-                  )}
-                  {uploadPhase === "error" && (
-                    <div className="space-y-1">
-                      <div className="text-[10px] font-orbitron text-[#D90429] tracking-wide">⚠ {statusMsg}</div>
-                      {errorRef && (
-                        <div className="text-[9px] font-mono text-[#555]">Reference: {errorRef}</div>
-                      )}
+                  {/* Feedback */}
+                  {mediaFeedback && (
+                    <div className={`text-[10px] font-orbitron tracking-wide ${mediaFeedback.type === "success" ? "text-[#4ECDC4]" : "text-[#D90429]"}`}>
+                      {mediaFeedback.type === "success" ? "✅" : "⚠"} {mediaFeedback.msg}
                     </div>
                   )}
 
                   {/* Buttons */}
                   <div className="flex flex-wrap items-center gap-2">
-                    {!isUploading && (
+                    {!isAdmin && (
                       <>
+                        {/* PRIMARY — PFP Library (the only media change method) */}
                         <button
                           type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="bg-[rgba(217,4,41,0.15)] hover:bg-[rgba(217,4,41,0.25)] text-[#D90429] font-orbitron text-[10px] tracking-wider uppercase px-4 py-2 rounded-lg transition-colors"
+                          id="select-profile-image-btn"
+                          onClick={() => setShowPfpGallery(true)}
+                          className="flex items-center gap-1.5 bg-[rgba(217,4,41,0.15)] hover:bg-[rgba(217,4,41,0.28)] text-[#D90429] font-orbitron text-[10px] tracking-wider uppercase px-4 py-2 rounded-lg transition-all border border-[rgba(217,4,41,0.2)] hover:border-[rgba(217,4,41,0.5)]"
+                          style={{ boxShadow: "0 0 10px rgba(217,4,41,0.08)" }}
                         >
-                          {hasCommittedMedia ? "Replace Media" : "Add Media"}
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          {hasCommittedMedia ? "Change Profile Image" : "Select Profile Image"}
                         </button>
 
                         {hasCommittedMedia && (
@@ -462,24 +388,12 @@ export default function TeamMemberProfilePage() {
                       </>
                     )}
 
-                    {isUploading && (
-                      <button
-                        type="button"
-                        onClick={handleCancelUpload}
-                        className="bg-[#1A1A1A] hover:bg-[#222] text-[#A5A5A5] font-orbitron text-[10px] tracking-wider uppercase px-4 py-2 rounded-lg transition-colors"
-                      >
-                        Cancel Upload
-                      </button>
+                    {isAdmin && (
+                      <div className="text-[10px] font-orbitron text-[#444] tracking-wider uppercase px-3 py-2 border border-[#1A1A1A] rounded-lg cursor-not-allowed select-none">
+                        🔒 Admins cannot change profile images
+                      </div>
                     )}
                   </div>
-
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".png,.jpg,.jpeg,.webp,.gif"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
                 </div>
               </div>
 
@@ -584,14 +498,25 @@ export default function TeamMemberProfilePage() {
           </div>
         </div>
       </main>
-      {showCropModal && pendingFile && profile?.id && (
-        <ProfileMediaCropModal
-          file={pendingFile}
-          targetProfileId={profile.id}
-          onClose={() => {
-            setShowCropModal(false);
-            setPendingFile(null);
+
+      {/* PFP Gallery Modal — the ONLY way to change profile media */}
+      {showPfpGallery && profile?.id && (
+        <PfpGalleryModal
+          isAdmin={isAdmin}
+          onClose={() => setShowPfpGallery(false)}
+          onSelect={(pfpPath) => {
+            setPendingPfpPath(pfpPath);
+            setShowPfpGallery(false);
           }}
+        />
+      )}
+
+      {/* PFP Position/Crop Modal */}
+      {pendingPfpPath && profile?.id && (
+        <PfpCropModal
+          pfpPath={pendingPfpPath}
+          targetProfileId={profile.id}
+          onClose={() => setPendingPfpPath(null)}
           onSuccess={(updatedProfile) => {
             setCommittedMediaUrl(updatedProfile.mediaUrl);
             setCommittedMimeType(updatedProfile.mediaMimeType);
@@ -600,14 +525,10 @@ export default function TeamMemberProfilePage() {
             setCommittedCropW(updatedProfile.cropW ?? null);
             setCommittedCropH(updatedProfile.cropH ?? null);
             setCommittedCropZoom(updatedProfile.cropZoom ?? null);
-            setShowCropModal(false);
-            setPendingFile(null);
-            setUploadPhase("done");
-            setStatusMsg("Profile media updated.");
-            setTimeout(() => {
-              setUploadPhase("idle");
-              setStatusMsg("");
-            }, 3000);
+            setPendingPfpPath(null);
+            setRemoveMedia(false);
+            setMediaFeedback({ type: "success", msg: "Profile image updated." });
+            setTimeout(() => setMediaFeedback(null), 4000);
           }}
         />
       )}
