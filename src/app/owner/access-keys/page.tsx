@@ -516,7 +516,7 @@ export default function AccessKeysPage() {
               onClick={() => { setModal(null); setRevealedKey(null); setCopied(false); }}
               className="w-full rounded-lg py-2.5 font-orbitron text-xs font-bold uppercase tracking-widest text-[#555] hover:text-white border border-[#222] hover:border-[#333] transition-all"
             >
-              I've Saved It — Close
+              I&apos;ve Saved It — Close
             </button>
           </div>
         </div>

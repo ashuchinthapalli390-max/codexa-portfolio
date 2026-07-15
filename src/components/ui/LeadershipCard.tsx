@@ -229,7 +229,7 @@ export function LeadershipCard({
                   }}
                 />
                 <div className="absolute top-4 left-6 font-orbitron text-[9px] tracking-[0.3em] text-[#D90429] uppercase opacity-70">
-                  {member.leadershipPosition.replace("_", " ")} // CODEX BOARD
+                  {member.leadershipPosition.replace("_", " ")} {/* CODEX BOARD */}
                 </div>
               </div>
 
