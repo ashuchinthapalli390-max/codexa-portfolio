@@ -2,24 +2,22 @@
  * CodeXa Agency — Seed Script (Prisma 5 + MySQL/Aiven)
  * Run with: npx tsx prisma/seed.ts
  *
- * Safe, idempotent seeder that configures Owner, Admin, and Team Member accounts
- * reading parameters from environment variables with secure fallbacks.
+ * Idempotent seeder that uses deterministic HMAC-SHA256 access keys.
  */
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { config } from "dotenv";
+import { hashAccessKey } from "../src/lib/accessKeyHash";
 
 const BCRYPT_ROUNDS = 12;
 
-function normalizeAccessKey(raw: string): string | null {
-  const normalized = raw.trim().toUpperCase();
-  return normalized.length > 0 ? normalized : null;
-}
-
 async function main() {
+  config({ path: ".env.local", override: true });
+  config({ override: true });
   const db = new PrismaClient();
 
   console.log("\n╔══════════════════════════════════════════════════════════╗");
-  console.log("║         CODEXA CORE TEAM SYSTEM — DATABASE SEED          ║");
+  console.log("║       CODEXA CORE TEAM SYSTEM — SECURE HMAC SEED         ║");
   console.log("╚══════════════════════════════════════════════════════════╝\n");
 
   try {
@@ -59,38 +57,37 @@ async function main() {
         fullName: ownerName,
       },
     });
-    console.log(`  ✓ Created OWNER user: ${owner.email}`);
   } else {
-    console.log(`  ✓ OWNER user already exists: ${owner.email}`);
-  }
-
-  // Owner Access Key (Bcrypt hashed matching verify-key logic)
-  const normOwnerKey = normalizeAccessKey(ownerRawKey);
-  if (normOwnerKey) {
-    const existingOwnerKey = await db.accessKey.findFirst({
-      where: { userId: owner.id, role: "OWNER" }
+    // Sync email/name if they changed in env
+    owner = await db.user.update({
+      where: { id: owner.id },
+      data: { email: ownerEmail, fullName: ownerName }
     });
-    if (!existingOwnerKey) {
-      const keyHash = await bcrypt.hash(normOwnerKey, BCRYPT_ROUNDS);
-      await db.accessKey.create({
-        data: {
-          userId: owner.id,
-          label: "Owner Primary Key",
-          keyHash,
-          role: "OWNER",
-          isActive: true,
-        },
-      });
-      console.log("  ✓ Seeded Owner Access Key");
-    } else {
-      console.log("  ✓ Owner Access Key already seeded");
-    }
   }
 
-  // Seed Founder profile linked to Owner
-  const existingOwnerProfile = await db.teamProfile.findFirst({
-    where: { userId: owner.id }
+  // Deactivate old duplicate Owner keys (e.g. bcrypt legacy keys)
+  await db.accessKey.updateMany({
+    where: { userId: owner.id, role: "OWNER", label: { startsWith: "Owner Primary" } },
+    data: { isActive: false }
   });
+
+  // Seed HMAC Owner Access Key
+  const ownerHash = hashAccessKey(ownerRawKey);
+  const ownerAccessKey = await db.accessKey.upsert({
+    where: { keyHash: ownerHash },
+    update: { role: "OWNER", isActive: true, expiresAt: null },
+    create: {
+      userId: owner.id,
+      label: "Owner Primary Key (HMAC)",
+      keyHash: ownerHash,
+      role: "OWNER",
+      isActive: true,
+      expiresAt: null
+    }
+  });
+
+  // Seed Founder profile
+  const existingOwnerProfile = await db.teamProfile.findFirst({ where: { userId: owner.id } });
   if (!existingOwnerProfile) {
     await db.teamProfile.create({
       data: {
@@ -105,7 +102,6 @@ async function main() {
         displayOrder: 1,
       },
     });
-    console.log("  ✓ Seeded Founder profile (linked to Owner)");
   }
 
   // ─── 3. SEED ADMIN ACCOUNT ──────────────────────────────────────────────────
@@ -121,33 +117,33 @@ async function main() {
         fullName: adminName,
       },
     });
-    console.log(`  ✓ Created ADMIN user: ${admin.email}`);
   } else {
-    console.log(`  ✓ ADMIN user already exists: ${admin.email}`);
+    admin = await db.user.update({
+      where: { id: admin.id },
+      data: { email: adminEmail, fullName: adminName }
+    });
   }
 
-  // Admin Access Key
-  const normAdminKey = normalizeAccessKey(adminRawKey);
-  if (normAdminKey) {
-    const existingAdminKey = await db.accessKey.findFirst({
-      where: { userId: admin.id, role: "ADMIN" }
-    });
-    if (!existingAdminKey) {
-      const keyHash = await bcrypt.hash(normAdminKey, BCRYPT_ROUNDS);
-      await db.accessKey.create({
-        data: {
-          userId: admin.id,
-          label: "Admin Test Key",
-          keyHash,
-          role: "ADMIN",
-          isActive: true,
-        },
-      });
-      console.log("  ✓ Seeded Admin Access Key");
-    } else {
-      console.log("  ✓ Admin Access Key already seeded");
+  // Deactivate old duplicate Admin keys
+  await db.accessKey.updateMany({
+    where: { userId: admin.id, role: "ADMIN", label: { startsWith: "Admin Test" } },
+    data: { isActive: false }
+  });
+
+  // Seed HMAC Admin Access Key
+  const adminHash = hashAccessKey(adminRawKey);
+  const adminAccessKey = await db.accessKey.upsert({
+    where: { keyHash: adminHash },
+    update: { role: "ADMIN", isActive: true, expiresAt: null },
+    create: {
+      userId: admin.id,
+      label: "Admin Test Key (HMAC)",
+      keyHash: adminHash,
+      role: "ADMIN",
+      isActive: true,
+      expiresAt: null
     }
-  }
+  });
 
   // ─── 4. SEED TEAM_MEMBER ACCOUNT ────────────────────────────────────────────
   let teamUser = await db.user.findFirst({ where: { role: "TEAM_MEMBER" } });
@@ -162,38 +158,36 @@ async function main() {
         fullName: teamDisplayName,
       },
     });
-    console.log(`  ✓ Created TEAM_MEMBER user: ${teamUser.username}`);
   } else {
-    console.log(`  ✓ TEAM_MEMBER user already exists: ${teamUser.username}`);
-  }
-
-  // Team Member Access Key
-  const normTeamKey = normalizeAccessKey(teamRawKey);
-  if (normTeamKey) {
-    const existingTeamKey = await db.accessKey.findFirst({
-      where: { userId: teamUser.id, role: "TEAM_MEMBER" }
+    teamUser = await db.user.update({
+      where: { id: teamUser.id },
+      data: { username: teamUsername, fullName: teamDisplayName }
     });
-    if (!existingTeamKey) {
-      const keyHash = await bcrypt.hash(normTeamKey, BCRYPT_ROUNDS);
-      await db.accessKey.create({
-        data: {
-          userId: teamUser.id,
-          label: "Team Member Test Key",
-          keyHash,
-          role: "TEAM_MEMBER",
-          isActive: true,
-        },
-      });
-      console.log("  ✓ Seeded Team Member Access Key");
-    } else {
-      console.log("  ✓ Team Member Access Key already seeded");
-    }
   }
 
-  // Team Profile row for Team Member
-  const existingTeamProfile = await db.teamProfile.findFirst({
-    where: { userId: teamUser.id }
+  // Deactivate old duplicate Team keys
+  await db.accessKey.updateMany({
+    where: { userId: teamUser.id, role: "TEAM_MEMBER", label: { startsWith: "Team Member Test" } },
+    data: { isActive: false }
   });
+
+  // Seed HMAC Team Member Access Key
+  const teamHash = hashAccessKey(teamRawKey);
+  const teamAccessKey = await db.accessKey.upsert({
+    where: { keyHash: teamHash },
+    update: { role: "TEAM_MEMBER", isActive: true, expiresAt: null },
+    create: {
+      userId: teamUser.id,
+      label: "Team Member Test Key (HMAC)",
+      keyHash: teamHash,
+      role: "TEAM_MEMBER",
+      isActive: true,
+      expiresAt: null
+    }
+  });
+
+  // Seed Team Profile row
+  const existingTeamProfile = await db.teamProfile.findFirst({ where: { userId: teamUser.id } });
   if (!existingTeamProfile) {
     await db.teamProfile.create({
       data: {
@@ -205,13 +199,10 @@ async function main() {
         displayOrder: 10,
       },
     });
-    console.log("  ✓ Seeded TeamProfile row for Team Member");
   }
 
   // ─── 5. SEED FIXED SITE CONFIG (LEADERSHIP PROFILES) ───────────────────────
-  const existingCoFounder = await db.teamProfile.findFirst({
-    where: { leadershipPosition: "CO_FOUNDER" }
-  });
+  const existingCoFounder = await db.teamProfile.findFirst({ where: { leadershipPosition: "CO_FOUNDER" } });
   if (!existingCoFounder) {
     await db.teamProfile.create({
       data: {
@@ -226,12 +217,9 @@ async function main() {
         displayOrder: 2,
       },
     });
-    console.log("  ✓ Seeded Co-Founder profile");
   }
 
-  const existingCEO = await db.teamProfile.findFirst({
-    where: { leadershipPosition: "CEO" }
-  });
+  const existingCEO = await db.teamProfile.findFirst({ where: { leadershipPosition: "CEO" } });
   if (!existingCEO) {
     await db.teamProfile.create({
       data: {
@@ -246,8 +234,15 @@ async function main() {
         displayOrder: 3,
       },
     });
-    console.log("  ✓ Seeded CEO profile");
   }
+
+  // ─── 6. REQUIRE SEED CONFIRMATION OUTPUT ────────────────────────────────────
+  console.log(`OWNER user exists: ${owner ? "yes" : "no"}`);
+  console.log(`OWNER access key exists: ${ownerAccessKey ? "yes" : "no"}`);
+  console.log(`ADMIN user exists: ${admin ? "yes" : "no"}`);
+  console.log(`ADMIN access key exists: ${adminAccessKey ? "yes" : "no"}`);
+  console.log(`TEAM user exists: ${teamUser ? "yes" : "no"}`);
+  console.log(`TEAM access key exists: ${teamAccessKey ? "yes" : "no"}`);
 
   await db.$disconnect();
   console.log("\n  ✓ Seed completed successfully.\n");

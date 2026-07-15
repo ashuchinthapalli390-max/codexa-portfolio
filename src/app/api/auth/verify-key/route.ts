@@ -3,7 +3,7 @@
  * Step 1 of two-step login.
  *
  * Accepts a raw access key, normalizes it (trim + uppercase), and verifies
- * it against bcrypt-hashed records in MySQL.
+ * it against HMAC-SHA256-hashed records in MySQL.
  * Also accepts OWNER_MASTER_KEY from env — permanent, never expires, never stored.
  * On success: creates a short-lived PreAuthSession (10 min) and sets an HTTP-only cookie.
  *
@@ -12,9 +12,8 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
-import { normalizeAccessKey } from "@/lib/normalize";
+import { hashAccessKey } from "@/lib/accessKeyHash";
 
 export const runtime = "nodejs";
 
@@ -136,13 +135,20 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ─── DB BCRYPT ACCESS KEY CHECK ──────────────────────────────────────────
+  // ─── DB HMAC ACCESS KEY CHECK ────────────────────────────────────────────
   try {
-    // 1. Fetch active keys from MySQL
-    const activeKeys = await db.accessKey.findMany({
-      where: {
-        isActive: true,
-      },
+    let keyHash: string;
+    try {
+      keyHash = hashAccessKey(normalizedKey);
+      console.log(`[verify-key][${reqId}] ACCESS_KEY_HASHED`);
+    } catch (hashErr) {
+      console.error(`[verify-key][${reqId}] DIAGNOSTIC: HASH_FAILED —`, (hashErr as Error).message);
+      return NextResponse.json({ error: "Access denied. Check your access key and try again." }, { status: 401 });
+    }
+
+    // Direct unique lookup in MySQL using keyHash index
+    const matchedKey = await db.accessKey.findUnique({
+      where: { keyHash },
       include: {
         user: {
           select: {
@@ -154,30 +160,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    if (activeKeys.length === 0) {
-      console.warn(`[verify-key][${reqId}] ACCESS_KEY_NOT_FOUND`);
-      return NextResponse.json({ error: "Access denied. Check your access key and try again." }, { status: 401 });
-    }
-
-    // 2. Loop through candidate keys and compare using bcrypt
-    let matchedKey = null;
-    let matchFound = false;
-
-    for (const key of activeKeys) {
-      try {
-        const isMatch = await bcrypt.compare(normalizedKey, key.keyHash);
-        if (isMatch) {
-          console.log(`[verify-key][${reqId}] ACCESS_KEY_HASHED`);
-          matchedKey = key;
-          matchFound = true;
-          break;
-        }
-      } catch (err) {
-        console.error(`[verify-key][${reqId}] DIAGNOSTIC: HASH_COMPARE_FAILED`);
-      }
-    }
-
-    if (!matchFound || !matchedKey) {
+    if (!matchedKey) {
       console.warn(`[verify-key][${reqId}] ACCESS_KEY_NOT_FOUND`);
       return NextResponse.json({ error: "Access denied. Check your access key and try again." }, { status: 401 });
     }
