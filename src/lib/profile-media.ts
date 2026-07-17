@@ -2,11 +2,15 @@ import React from "react";
 
 export interface ProfileMediaInfo {
   mediaUrl?: string | null;
+  profileMediaUrl?: string | null;
   cropX?: number | null;
   cropY?: number | null;
   cropW?: number | null;
   cropH?: number | null;
+  cropZoom?: number | null;
   cropRotation?: number | null;
+  zoom?: number | null;
+  objectPosition?: string | null;
   updatedAt?: string | Date | null;
 }
 
@@ -18,46 +22,26 @@ export interface ProfileMediaInfo {
 export function getProfileImageStyle(profile: ProfileMediaInfo, defaultFallback = "") {
   const time = profile.updatedAt ? new Date(profile.updatedAt).getTime() : null;
   const cacheBuster = time ? `?v=${time}` : "";
-  const src = profile.mediaUrl ? `${profile.mediaUrl}${cacheBuster}` : defaultFallback;
+  
+  const src = profile.profileMediaUrl || profile.mediaUrl || defaultFallback;
+  const finalSrc = src ? `${src}${cacheBuster}` : "";
 
-  const hasCrop =
-    profile.mediaUrl &&
-    profile.cropX !== null &&
-    profile.cropY !== null &&
-    profile.cropW !== null &&
-    profile.cropH !== null &&
-    profile.cropW !== 0 &&
-    profile.cropH !== 0;
+  const zoom = profile.zoom !== undefined && profile.zoom !== null 
+    ? profile.zoom 
+    : (profile.cropZoom !== undefined && profile.cropZoom !== null ? profile.cropZoom : 1);
 
-  if (hasCrop) {
-    const scale = 100 / (profile.cropW ?? 100);
-    const leftVal = -(profile.cropX ?? 0) * scale;
-    const topVal = -(profile.cropY ?? 0) * scale;
-    const rot = profile.cropRotation ?? 0;
-
-    return {
-      src,
-      containerClass: "relative overflow-hidden w-full h-full",
-      imgStyle: {
-        position: "absolute" as const,
-        width: `${scale * 100}%`,
-        height: `${scale * 100}%`,
-        left: `${leftVal}%`,
-        top: `${topVal}%`,
-        transform: `rotate(${rot}deg)`,
-        transformOrigin: "center",
-        objectFit: "cover" as const,
-      },
-    };
-  }
+  const objectPosition = profile.objectPosition || "center";
 
   return {
-    src,
+    src: finalSrc,
     containerClass: "relative overflow-hidden w-full h-full",
     imgStyle: {
       width: "100%",
       height: "100%",
       objectFit: "cover" as const,
+      objectPosition: objectPosition,
+      transform: `scale(${zoom})`,
+      transformOrigin: "center",
     },
   };
 }

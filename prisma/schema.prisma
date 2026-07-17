@@ -13,17 +13,23 @@ datasource db {
 
 // ─── USER ACCOUNTS ───────────────────────────────────────────────────────────
 model User {
-  id           String    @id @default(cuid()) @db.VarChar(30)
-  username     String?   @unique @db.VarChar(191)
-  email        String?   @unique @db.VarChar(191)
-  fullName     String?   @db.VarChar(255)
-  passwordHash String    @db.VarChar(255)
+  id                   String    @id @default(cuid()) @db.VarChar(30)
+  username             String?   @unique @db.VarChar(191)
+  email                String?   @unique @db.VarChar(191)
+  fullName             String?   @db.VarChar(255)
+  passwordHash         String    @db.VarChar(255)
   // role values: "OWNER" | "ADMIN" | "TEAM_MEMBER"
-  role         String    @db.VarChar(20)
-  isActive     Boolean   @default(true)
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  role                 String    @db.VarChar(20)
+  isActive             Boolean   @default(true)
+  lastLoginAt          DateTime?
+  profileMediaUrl      String?   @db.VarChar(512)
+  profileMediaMimeType String?   @db.VarChar(100)
+  cropX                Float?    @default(0)
+  cropY                Float?    @default(0)
+  zoom                 Float?    @default(1)
+  objectPosition       String?   @default("center")
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   profile      TeamProfile?
   sessions     Session[]
@@ -32,26 +38,30 @@ model User {
 
 // ─── TEAM PROFILES ────────────────────────────────────────────────────────────
 model TeamProfile {
-  id                 String    @id @default(cuid()) @db.VarChar(30)
-  userId             String?   @unique @db.VarChar(30)
+  id                   String    @id @default(cuid()) @db.VarChar(30)
+  userId               String?   @unique @db.VarChar(30)
   // memberType values: "LEADERSHIP" | "CORE_TEAM"
-  memberType         String    @db.VarChar(20)
+  memberType           String    @db.VarChar(20)
   // leadershipPosition values: "FOUNDER" | "CO_FOUNDER" | "CEO" | null
-  leadershipPosition String?   @db.VarChar(30)
-  displayName        String    @db.VarChar(255)
-  publicBio          String?   @db.Text
-  mediaUrl           String?   @db.VarChar(512)
-  mediaMimeType      String?   @db.VarChar(100)
-  cropX              Float?
-  cropY              Float?
-  cropW              Float?
-  cropH              Float?
-  cropZoom           Float?
-  cropRotation       Float?
-  isPublic           Boolean   @default(true)
-  displayOrder       Int       @default(0)
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  leadershipPosition   String?   @db.VarChar(30)
+  displayName          String    @db.VarChar(255)
+  publicBio            String?   @db.Text
+  mediaUrl             String?   @db.VarChar(512)
+  mediaMimeType        String?   @db.VarChar(100)
+  profileMediaUrl      String?   @db.VarChar(512)
+  profileMediaMimeType String?   @db.VarChar(100)
+  cropX                Float?    @default(0)
+  cropY                Float?    @default(0)
+  cropW                Float?
+  cropH                Float?
+  cropZoom             Float?
+  cropRotation         Float?
+  zoom                 Float?    @default(1)
+  objectPosition       String?   @default("center")
+  isPublic             Boolean   @default(true)
+  displayOrder         Int       @default(0)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   user               User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

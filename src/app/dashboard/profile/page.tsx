@@ -516,6 +516,7 @@ export default function TeamMemberProfilePage() {
         <PfpCropModal
           pfpPath={pendingPfpPath}
           targetProfileId={profile.id}
+          targetType="TEAM_PROFILE"
           onClose={() => setPendingPfpPath(null)}
           onSuccess={(updatedProfile) => {
             setCommittedMediaUrl(updatedProfile.mediaUrl);

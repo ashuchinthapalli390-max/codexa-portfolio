@@ -69,6 +69,10 @@ export async function PATCH(req: NextRequest) {
       await deleteProfileMedia(currentProfile.mediaUrl);
       updatePayload.mediaUrl      = null;
       updatePayload.mediaMimeType = null;
+      updatePayload.profileMediaUrl = null;
+      updatePayload.profileMediaMimeType = null;
+      updatePayload.zoom          = null;
+      updatePayload.objectPosition = null;
       updatePayload.cropX         = null;
       updatePayload.cropY         = null;
       updatePayload.cropW         = null;
@@ -85,9 +89,25 @@ export async function PATCH(req: NextRequest) {
       if (cropRotationStr !== null && cropRotationStr !== "") updatePayload.cropRotation = Number(cropRotationStr);
     }
 
-    const updatedProfile = await db.teamProfile.update({
-      where: { userId: user.id },
-      data: updatePayload,
+    const updatedProfile = await db.$transaction(async (tx) => {
+      if (removeMedia) {
+        await tx.user.update({
+          where: { id: user.id },
+          data: {
+            profileMediaUrl: null,
+            profileMediaMimeType: null,
+            cropX: null,
+            cropY: null,
+            zoom: null,
+            objectPosition: null,
+          },
+        }).catch(() => {});
+      }
+
+      return tx.teamProfile.update({
+        where: { userId: user.id },
+        data: updatePayload,
+      });
     });
 
     await logProfileAction(

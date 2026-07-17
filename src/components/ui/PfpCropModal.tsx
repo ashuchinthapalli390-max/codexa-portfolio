@@ -9,6 +9,7 @@ interface PfpCropModalProps {
   pfpPath: string;
   /** Profile ID to update in DB */
   targetProfileId: string;
+  targetType?: "USER" | "TEAM_PROFILE" | "LEADERSHIP";
   onClose: () => void;
   onSuccess: (updatedProfile: any) => void;
 }
@@ -28,6 +29,7 @@ const DEFAULT_OBJ_Y = 50;
 export function PfpCropModal({
   pfpPath,
   targetProfileId,
+  targetType,
   onClose,
   onSuccess,
 }: PfpCropModalProps) {
@@ -36,6 +38,7 @@ export function PfpCropModal({
   const [objY, setObjY] = useState(DEFAULT_OBJ_Y); // 0–100 %
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveRef, setSaveRef] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   const frameRef = useRef<HTMLDivElement>(null);
@@ -139,19 +142,24 @@ export function PfpCropModal({
     if (isSaving) return;
     setIsSaving(true);
     setSaveError(null);
+    setSaveRef(null);
+
+    const ext = pfpPath.split(".").pop()?.toLowerCase() ?? "";
+    const mime = ext === "gif" ? "image/gif" : ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+    const derivedTargetType = targetType || "TEAM_PROFILE";
 
     try {
-      const res = await fetch("/api/profile-media/pfp-select", {
+      const res = await fetch("/api/profile-media/select-pfp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          targetProfileId,
-          pfpPath,
+          targetType: derivedTargetType,
+          targetId: targetProfileId,
+          profileMediaUrl: pfpPath,
+          profileMediaMimeType: mime,
           cropX: Math.round(objX * 100) / 100,
           cropY: Math.round(objY * 100) / 100,
-          cropW: 100,
-          cropH: 100,
-          cropZoom: Math.round(zoom * 100) / 100,
+          zoom: Math.round(zoom * 100) / 100,
           objectPosition: `${Math.round(objX)}% ${Math.round(objY)}%`,
         }),
       });
@@ -159,7 +167,8 @@ export function PfpCropModal({
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        setSaveError(data.error ?? "Failed to save profile image.");
+        setSaveError(data.error ?? "Profile update failed. Please try again.");
+        setSaveRef(data.ref ?? null);
         setIsSaving(false);
         return;
       }
@@ -169,7 +178,8 @@ export function PfpCropModal({
         onSuccess(data.profile);
       }, 700);
     } catch {
-      setSaveError("Network error. Please try again.");
+      setSaveError("Profile update failed. Please try again.");
+      setSaveRef(null);
       setIsSaving(false);
     }
   };
@@ -226,9 +236,14 @@ export function PfpCropModal({
 
         {/* Error */}
         {saveError && (
-          <div className="px-6 py-3 bg-[rgba(217,4,41,0.1)] border-b border-[rgba(217,4,41,0.25)] text-xs text-[#D90429] font-orbitron tracking-wide flex items-center gap-2 flex-shrink-0">
-            <span>⚠️</span>
-            <span>{saveError}</span>
+          <div className="px-6 py-3 bg-[rgba(217,4,41,0.1)] border-b border-[rgba(217,4,41,0.25)] text-xs text-[#D90429] font-orbitron tracking-wide flex flex-col gap-1 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <span>⚠️</span>
+              <span>{saveError}</span>
+            </div>
+            {saveRef && (
+              <span className="text-[10px] text-[#A5A5A5]/60 font-mono pl-6">Reference ID: {saveRef}</span>
+            )}
           </div>
         )}
 

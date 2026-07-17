@@ -1109,6 +1109,10 @@ function TeamProfilesContent() {
         <PfpCropModal
           pfpPath={pendingPfpPath}
           targetProfileId={pfpTargetProfileId}
+          targetType={(() => {
+            const prof = profiles.find((p) => p.id === pfpTargetProfileId);
+            return prof?.memberType === "LEADERSHIP" ? "LEADERSHIP" : "TEAM_PROFILE";
+          })()}
           onClose={() => {
             setPendingPfpPath(null);
             setPfpTargetProfileId(null);

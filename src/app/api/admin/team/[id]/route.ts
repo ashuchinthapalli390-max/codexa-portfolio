@@ -96,6 +96,10 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       mediaUrlPayload = {
         mediaUrl: null,
         mediaMimeType: null,
+        profileMediaUrl: null,
+        profileMediaMimeType: null,
+        zoom: null,
+        objectPosition: null,
         cropX: null,
         cropY: null,
         cropW: null,
@@ -123,6 +127,20 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
             });
           }
         }
+      }
+
+      if (removeMedia && profile.userId) {
+        await tx.user.update({
+          where: { id: profile.userId },
+          data: {
+            profileMediaUrl: null,
+            profileMediaMimeType: null,
+            cropX: null,
+            cropY: null,
+            zoom: null,
+            objectPosition: null,
+          },
+        }).catch(() => {});
       }
 
       // 2. Build profile update payload
