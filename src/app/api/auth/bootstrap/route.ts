@@ -5,7 +5,7 @@
  * Used when the production database has no Owner user or no active Owner access key.
  * Requires the BOOTSTRAP_SECRET env variable to match the request body secret.
  * Shows the generated raw access key EXACTLY ONCE — never stored, never logged.
- * Normalization (trim + uppercase) and bcrypt hashing (12 rounds) applied.
+ * Normalization (trim + uppercase) and HMAC-SHA256 hashing applied.
  *
  * Lock behavior:
  * - If an active OWNER user with at least one active AccessKey already exists → blocked.
@@ -16,7 +16,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
-import { normalizeAccessKey } from "@/lib/normalize";
+import { hashAccessKey } from "@/lib/accessKeyHash";
 
 export const runtime = "nodejs";
 
@@ -130,11 +130,15 @@ export async function POST(req: NextRequest) {
     }
 
     const rawKey = generateRawKey();
-    const normalizedKey = normalizeAccessKey(rawKey);
-    if (!normalizedKey) {
-      return NextResponse.json({ error: "Failed to generate key." }, { status: 500 });
+
+    // Use HMAC-SHA256 — must match the same function used in verify-key route
+    let keyHash: string;
+    try {
+      keyHash = hashAccessKey(rawKey);
+    } catch (hashErr) {
+      console.error("[bootstrap] HASH_FAILED — AUTH_SECRET likely missing:", (hashErr as Error).message);
+      return NextResponse.json({ error: "Internal server error: AUTH_SECRET not configured." }, { status: 500 });
     }
-    const keyHash = await bcrypt.hash(normalizedKey, 12);
 
     const accessKey = await db.accessKey.create({
       data: {

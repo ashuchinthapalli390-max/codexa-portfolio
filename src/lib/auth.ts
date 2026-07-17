@@ -44,7 +44,7 @@ export async function createSession(userId: string, rememberDevice: boolean): Pr
   const maxAge = rememberDevice ? SESSION_MAX_AGE_REMEMBER : SESSION_MAX_AGE_DEFAULT;
   const expiresAt = new Date(Date.now() + maxAge * 1000);
 
-  // Secure SQLite transaction
+  // Secure MySQL session write
   await db.session.create({
     data: {
       userId,
