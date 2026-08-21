@@ -70,3 +70,28 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const conversationId = searchParams.get("id");
+
+    if (!conversationId) {
+      return NextResponse.json({ success: false, error: "Conversation ID is required." }, { status: 400 });
+    }
+
+    const success = await dataStore.hideConversation(conversationId, user.id);
+    return NextResponse.json({ success });
+  } catch (error: any) {
+    console.error("[DELETE /api/chat/conversations]", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to hide conversation." },
+      { status: 500 }
+    );
+  }
+}

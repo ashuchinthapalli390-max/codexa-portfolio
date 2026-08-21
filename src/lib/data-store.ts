@@ -232,6 +232,8 @@ export interface Conversation {
   lastMessageText?: string;
   lastMessageAt?: string;
   unreadCount?: number;
+  hiddenForUserIds?: string[];
+  isMutedForUserIds?: string[];
 }
 
 export interface ChatMessage {
@@ -261,6 +263,7 @@ export interface ChatMessage {
     userId: string;
     emoji: string;
   }>;
+  isSeen?: boolean;
   createdAt: string;
   updatedAt?: string;
   sender?: {
@@ -1067,6 +1070,7 @@ export const dataStore = {
   // ── Chat & Direct Messaging ────────────────────────────────────────────────
   async getConversations(userId?: string): Promise<Conversation[]> {
     const list = memoryConversations.filter((conv) => {
+      if (userId && conv.hiddenForUserIds?.includes(userId)) return false;
       if (conv.type !== "DIRECT") return true;
       if (!userId) return true;
       return (
@@ -1236,12 +1240,30 @@ export const dataStore = {
           .filter((r) => !userId || r.userId === userId)
           .map((r) => ({ userId: r.userId, emoji: r.emoji }));
 
+        // Calculate read status (Seen)
+        let isSeen = false;
+        if (userId && m.senderId === userId) {
+          const conv = memoryConversations.find((c) => c.id === conversationId);
+          if (conv && conv.type === "DIRECT") {
+            const otherParticipantId = conv.participantIds?.find((id) => id !== userId);
+            if (otherParticipantId) {
+              const otherMemberRecord = memoryConversationMembers.find(
+                (rec) => rec.conversationId === conversationId && rec.userId === otherParticipantId
+              );
+              if (otherMemberRecord?.lastReadAt) {
+                isSeen = new Date(otherMemberRecord.lastReadAt).getTime() >= new Date(m.createdAt).getTime();
+              }
+            }
+          }
+        }
+
         return {
           ...m,
           sender,
           replyTo,
           reactions,
           userReactions,
+          isSeen,
         };
       })
       .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
@@ -1399,6 +1421,30 @@ export const dataStore = {
       });
     }
     return true;
+  },
+
+  async hideConversation(conversationId: string, userId: string): Promise<boolean> {
+    const conv = memoryConversations.find((c) => c.id === conversationId);
+    if (!conv) return false;
+    if (!conv.hiddenForUserIds) conv.hiddenForUserIds = [];
+    if (!conv.hiddenForUserIds.includes(userId)) {
+      conv.hiddenForUserIds.push(userId);
+    }
+    return true;
+  },
+
+  async toggleMuteConversation(conversationId: string, userId: string): Promise<{ isMuted: boolean }> {
+    const conv = memoryConversations.find((c) => c.id === conversationId);
+    if (!conv) return { isMuted: false };
+    if (!conv.isMutedForUserIds) conv.isMutedForUserIds = [];
+    const idx = conv.isMutedForUserIds.indexOf(userId);
+    if (idx !== -1) {
+      conv.isMutedForUserIds.splice(idx, 1);
+      return { isMuted: false };
+    } else {
+      conv.isMutedForUserIds.push(userId);
+      return { isMuted: true };
+    }
   },
 
   // ── Notifications ──────────────────────────────────────────────────────────

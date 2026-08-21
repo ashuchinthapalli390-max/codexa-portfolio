@@ -28,7 +28,13 @@ import {
   ChevronDown,
   AlertCircle,
   Sparkles,
-  Loader2
+  Loader2,
+  FolderKanban,
+  Bell,
+  BellOff,
+  Grid,
+  ChevronRight,
+  Download
 } from "lucide-react";
 import { TeamCoreShell } from "@/components/layout/TeamCoreShell";
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
@@ -36,6 +42,8 @@ import { Conversation, ChatMessage, Profile } from "@/lib/data-store";
 
 const QUICK_EMOJIS = ["❤️", "😂", "😮", "😢", "😡", "👍", "🔥", "🚀", "👏", "🎉", "💯", "✨"];
 const REACTION_BAR_EMOJIS = ["❤️", "😂", "😮", "😢", "😡", "👍"];
+
+type CategoryTab = "ALL" | "DIRECT" | "CHANNELS" | "UNREAD";
 
 function MessagesContent() {
   const router = useRouter();
@@ -53,24 +61,34 @@ function MessagesContent() {
   const [messagesLoading, setMessagesLoading] = useState(false);
 
   // Search & Filter
+  const [categoryTab, setCategoryTab] = useState<CategoryTab>("ALL");
   const [chatSearch, setChatSearch] = useState("");
   const [newMsgModalOpen, setNewMsgModalOpen] = useState(false);
   const [memberSearchQuery, setMemberSearchQuery] = useState("");
 
+  // Chat Details Drawer
+  const [chatDetailsOpen, setChatDetailsOpen] = useState(false);
+  const [detailsTab, setDetailsTab] = useState<"INFO" | "MEDIA">("INFO");
+
   // Composer States
   const [messageText, setMessageText] = useState("");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [filePreviewUrls, setFilePreviewUrls] = useState<string[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const [heartAnimMessageId, setHeartAnimMessageId] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   // Lightbox
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
 
+  // New Messages Floating Scroll Pill
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
+
   // Refs
+  const messageStreamRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -126,7 +144,7 @@ function MessagesContent() {
     }
   };
 
-  // ── 2. Open Direct Chat With User (From Profile / Directory) ────────────────
+  // ── 2. Open Direct Chat With User ───────────────────────────────────────────
   const handleOpenDirectChatWithUser = async (targetIdOrUsername: string, existingConvs?: Conversation[]) => {
     try {
       const res = await fetch("/api/chat/conversations", {
@@ -146,7 +164,6 @@ function MessagesContent() {
         setActiveConvId(newConv.id);
         loadMessages(newConv.id);
         setNewMsgModalOpen(false);
-        // Focus composer
         setTimeout(() => textareaRef.current?.focus(), 150);
       }
     } catch (err) {
@@ -169,7 +186,7 @@ function MessagesContent() {
           body: JSON.stringify({ conversationId: convId }),
         }).catch(() => {});
 
-        // Reset unread count locally for this conversation
+        // Reset unread count locally
         setConversations((prev) =>
           prev.map((c) => (c.id === convId ? { ...c, unreadCount: 0 } : c))
         );
@@ -197,36 +214,63 @@ function MessagesContent() {
     };
   }, [activeConvId]);
 
-  // Scroll to bottom on new messages
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // ── 5. File / Image Selection Handler ───────────────────────────────────────
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      alert("Please select an image file (JPG, PNG, WEBP, GIF).");
-      return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      alert("Image size exceeds 10MB limit.");
-      return;
-    }
-
-    setSelectedFile(file);
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      setFilePreviewUrl(ev.target?.result as string);
-    };
-    reader.readAsDataURL(file);
+  // Scroll listener for "New messages ↓" button
+  const handleScroll = () => {
+    if (!messageStreamRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = messageStreamRef.current;
+    const isUp = scrollHeight - scrollTop - clientHeight > 150;
+    setShowScrollBottom(isUp);
   };
 
-  const handleRemoveSelectedFile = () => {
-    setSelectedFile(null);
-    setFilePreviewUrl(null);
+  // Scroll to bottom on new messages if near bottom
+  useEffect(() => {
+    if (!showScrollBottom) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, showScrollBottom]);
+
+  // ── 5. Multi-Image Selection Handler (Up to 4 images) ───────────────────────
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const validFiles: File[] = [];
+    const newPreviewUrls: string[] = [];
+
+    const totalAllowed = 4 - selectedFiles.length;
+    if (totalAllowed <= 0) {
+      alert("Maximum 4 images per message.");
+      return;
+    }
+
+    const filesToProcess = files.slice(0, totalAllowed);
+
+    for (const file of filesToProcess) {
+      if (!file.type.startsWith("image/")) {
+        alert(`${file.name} is not an image file (JPG, PNG, WEBP, GIF).`);
+        continue;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        alert(`${file.name} exceeds 10MB limit.`);
+        continue;
+      }
+      validFiles.push(file);
+      newPreviewUrls.push(URL.createObjectURL(file));
+    }
+
+    setSelectedFiles((prev) => [...prev, ...validFiles]);
+    setFilePreviewUrls((prev) => [...prev, ...newPreviewUrls]);
+  };
+
+  const handleRemoveFile = (index: number) => {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+    setFilePreviewUrls((prev) => prev.filter((_, i) => i !== index));
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const clearAllFiles = () => {
+    setSelectedFiles([]);
+    setFilePreviewUrls([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -236,7 +280,9 @@ function MessagesContent() {
     if (!activeConvId) return;
 
     const trimmed = messageText.trim();
-    if (!trimmed && !selectedFile) return;
+    if (!trimmed && selectedFiles.length === 0) return;
+
+    setSendError(null);
 
     // Handle Edit Mode
     if (editingMessage) {
@@ -252,26 +298,30 @@ function MessagesContent() {
           setEditingMessage(null);
           setMessageText("");
         }
-      } catch {}
+      } catch (err) {
+        setSendError("Failed to edit message.");
+      }
       return;
     }
 
-    // Normal Send
-    let attachmentObj = null;
-    if (selectedFile) {
+    // Upload selected images (up to 4)
+    const uploadedAttachments: any[] = [];
+    if (selectedFiles.length > 0) {
       setUploadingImage(true);
       try {
-        const formData = new FormData();
-        formData.append("file", selectedFile);
-        formData.append("conversationId", activeConvId);
+        for (const file of selectedFiles) {
+          const formData = new FormData();
+          formData.append("file", file);
+          formData.append("conversationId", activeConvId);
 
-        const upRes = await fetch("/api/chat/upload", {
-          method: "POST",
-          body: formData,
-        });
-        const upData = await upRes.json();
-        if (upRes.ok && upData.success && upData.attachment) {
-          attachmentObj = upData.attachment;
+          const upRes = await fetch("/api/chat/upload", {
+            method: "POST",
+            body: formData,
+          });
+          const upData = await upRes.json();
+          if (upRes.ok && upData.success && upData.attachment) {
+            uploadedAttachments.push(upData.attachment);
+          }
         }
       } catch (err) {
         console.error("[Upload Image Error]", err);
@@ -283,14 +333,14 @@ function MessagesContent() {
     const payload = {
       conversationId: activeConvId,
       message: trimmed,
-      attachments: attachmentObj ? [attachmentObj] : undefined,
-      fileUrl: attachmentObj?.url,
-      fileName: attachmentObj?.name,
+      attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
+      fileUrl: uploadedAttachments[0]?.url,
+      fileName: uploadedAttachments[0]?.name,
       replyToId: replyingTo?.id || null,
     };
 
     setMessageText("");
-    handleRemoveSelectedFile();
+    clearAllFiles();
     setReplyingTo(null);
 
     try {
@@ -302,9 +352,13 @@ function MessagesContent() {
       const data = await res.json();
       if (res.ok && data.success && data.message) {
         setMessages((prev) => [...prev, data.message]);
+        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+      } else {
+        setSendError("Failed to send message. Please retry.");
       }
     } catch (err) {
       console.error("[Send Message Error]", err);
+      setSendError("Network error sending message.");
     }
   };
 
@@ -318,7 +372,6 @@ function MessagesContent() {
 
   // ── 7. Reaction Handling ───────────────────────────────────────────────────
   const handleToggleReaction = async (messageId: string, emoji: string) => {
-    // Heart animation if ❤️
     if (emoji === "❤️") {
       setHeartAnimMessageId(messageId);
       setTimeout(() => setHeartAnimMessageId(null), 900);
@@ -341,7 +394,7 @@ function MessagesContent() {
 
   // ── 8. Unsend / Delete Message ──────────────────────────────────────────────
   const handleUnsendMessage = async (messageId: string) => {
-    if (!confirm("Unsend this message? It will be removed for everyone in this chat.")) return;
+    if (!confirm("Unsend this message? It will be replaced for everyone in this chat.")) return;
     try {
       const res = await fetch(`/api/chat/messages?id=${messageId}`, {
         method: "DELETE",
@@ -349,13 +402,30 @@ function MessagesContent() {
       const data = await res.json();
       if (res.ok && data.success) {
         setMessages((prev) =>
-          prev.map((m) => (m.id === messageId ? { ...m, isDeleted: true, message: "" } : m))
+          prev.map((m) => (m.id === messageId ? { ...m, isDeleted: true, message: "", attachments: [] } : m))
         );
       }
     } catch {}
   };
 
-  // ── 9. Copy Text ───────────────────────────────────────────────────────────
+  // ── 9. Delete Chat For Me (Hide Conversation) ──────────────────────────────
+  const handleDeleteChatForMe = async (convId: string) => {
+    if (!confirm("Delete this chat from your inbox? Other participants will still keep their history.")) return;
+    try {
+      const res = await fetch(`/api/chat/conversations?id=${convId}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setConversations((prev) => prev.filter((c) => c.id !== convId));
+        setActiveConvId("");
+        setMessages([]);
+        setChatDetailsOpen(false);
+      }
+    } catch {}
+  };
+
+  // ── 10. Copy Text ───────────────────────────────────────────────────────────
   const handleCopyText = (text: string) => {
     navigator.clipboard.writeText(text);
   };
@@ -363,11 +433,20 @@ function MessagesContent() {
   const activeConv = conversations.find((c) => c.id === activeConvId);
   const activeOtherMember = activeConv?.otherMember;
 
+  // Filter conversations by category tab & search query
   const filteredConversations = conversations.filter((c) => {
+    // Category tab filter
+    if (categoryTab === "DIRECT" && c.type !== "DIRECT") return false;
+    if (categoryTab === "CHANNELS" && c.type !== "GROUP" && c.type !== "PROJECT") return false;
+    if (categoryTab === "UNREAD" && (!c.unreadCount || c.unreadCount === 0)) return false;
+
+    // Text search query
     const q = chatSearch.toLowerCase();
     if (!q) return true;
     const titleMatch = c.title?.toLowerCase().includes(q);
-    const memberMatch = c.otherMember?.displayName.toLowerCase().includes(q) || c.otherMember?.username.toLowerCase().includes(q);
+    const memberMatch =
+      c.otherMember?.displayName.toLowerCase().includes(q) ||
+      c.otherMember?.username.toLowerCase().includes(q);
     const textMatch = c.lastMessageText?.toLowerCase().includes(q);
     return titleMatch || memberMatch || textMatch;
   });
@@ -381,6 +460,11 @@ function MessagesContent() {
       m.headline?.toLowerCase().includes(q)
     );
   });
+
+  // Extract shared media photos across the active conversation
+  const sharedMediaPhotos = messages
+    .filter((m) => !m.isDeleted && m.attachments && m.attachments.length > 0)
+    .flatMap((m) => m.attachments || []);
 
   return (
     <TeamCoreShell
@@ -398,7 +482,7 @@ function MessagesContent() {
       <div className="h-[78vh] rounded-3xl bg-[#080808] border border-crimson/25 overflow-hidden flex flex-col md:flex-row shadow-2xl relative">
         
         {/* ═════════════════════════════════════════════════════════════════════
-            LEFT PANEL: CONVERSATION LIST (DESKTOP + MOBILE SWITCHER)
+            LEFT PANEL: CONVERSATION LIST (CATEGORIES + SEARCH + STREAM)
         ══════════════════════════════════════════════════════════════════════ */}
         <div
           className={`w-full md:w-80 lg:w-96 border-r border-crimson/15 flex flex-col justify-between bg-[#0A0A0A] flex-shrink-0 ${
@@ -406,10 +490,10 @@ function MessagesContent() {
           }`}
         >
           {/* Top Search & Filter */}
-          <div className="p-4 border-b border-white/5 space-y-3">
+          <div className="p-3.5 border-b border-white/5 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="font-orbitron font-black text-xs text-white uppercase tracking-widest flex items-center gap-2">
-                <MessageSquare className="w-3.5 h-3.5 text-bright-red" /> Messages / DMs
+                <MessageSquare className="w-3.5 h-3.5 text-bright-red" /> Direct Messages
               </span>
               <button
                 onClick={() => setNewMsgModalOpen(true)}
@@ -420,6 +504,24 @@ function MessagesContent() {
               </button>
             </div>
 
+            {/* Category Tabs: ALL | DIRECT | CHANNELS | UNREAD */}
+            <div className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-[#121212] border border-white/5 text-[10px] font-orbitron">
+              {(["ALL", "DIRECT", "CHANNELS", "UNREAD"] as CategoryTab[]).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setCategoryTab(tab)}
+                  className={`py-1 rounded-lg text-center font-bold transition-colors ${
+                    categoryTab === tab
+                      ? "bg-crimson text-white shadow-sm"
+                      : "text-[#777] hover:text-white"
+                  }`}
+                >
+                  {tab === "CHANNELS" ? "ROOMS" : tab}
+                </button>
+              ))}
+            </div>
+
+            {/* Search Bar */}
             <div className="relative">
               <Search className="w-3.5 h-3.5 text-[#666] absolute left-3 top-1/2 -translate-y-1/2" />
               <input
@@ -483,6 +585,10 @@ function MessagesContent() {
                             alt={other?.displayName || "Member"}
                             size="sm"
                           />
+                        ) : conv.type === "PROJECT" ? (
+                          <div className="w-9 h-9 rounded-full bg-deep-red/30 border border-crimson/40 flex items-center justify-center text-bright-red">
+                            <FolderKanban className="w-4 h-4" />
+                          </div>
                         ) : (
                           <div className="w-9 h-9 rounded-full bg-deep-red/30 border border-crimson/40 flex items-center justify-center text-bright-red">
                             <Users className="w-4 h-4" />
@@ -525,18 +631,18 @@ function MessagesContent() {
         </div>
 
         {/* ═════════════════════════════════════════════════════════════════════
-            RIGHT PANEL: ACTIVE CHAT & MESSAGE STREAM
+            RIGHT PANEL: ACTIVE CHAT & MESSAGE STREAM & DETAILS DRAWER
         ══════════════════════════════════════════════════════════════════════ */}
         <div
-          className={`flex-1 flex flex-col justify-between bg-[#070707] ${
+          className={`flex-1 flex flex-col justify-between bg-[#070707] relative ${
             !activeConvId ? "hidden md:flex" : "flex"
           }`}
         >
           {activeConv ? (
             <>
               {/* Active Chat Header */}
-              <div className="h-16 px-4 sm:px-6 border-b border-crimson/20 bg-[#090909]/95 backdrop-blur-md flex items-center justify-between flex-shrink-0">
-                <div className="flex items-center gap-3">
+              <div className="h-16 px-4 sm:px-6 border-b border-crimson/20 bg-[#090909]/95 backdrop-blur-md flex items-center justify-between flex-shrink-0 z-10">
+                <div className="flex items-center gap-3 min-w-0">
                   {/* Mobile Back button */}
                   <button
                     onClick={() => setActiveConvId("")}
@@ -558,8 +664,8 @@ function MessagesContent() {
                     </div>
                   )}
 
-                  <div>
-                    <h3 className="font-orbitron font-bold text-xs sm:text-sm text-white">
+                  <div className="min-w-0">
+                    <h3 className="font-orbitron font-bold text-xs sm:text-sm text-white truncate">
                       {activeConv.type === "DIRECT" ? activeOtherMember?.displayName || activeConv.title : activeConv.title}
                     </h3>
                     <div className="flex items-center gap-2">
@@ -567,25 +673,43 @@ function MessagesContent() {
                         <span className="text-[10px] font-mono text-crimson">@{activeOtherMember.username}</span>
                       )}
                       {activeOtherMember?.headline && (
-                        <span className="text-[10px] text-[#777] hidden sm:inline">&bull; {activeOtherMember.headline}</span>
+                        <span className="text-[10px] text-[#777] hidden sm:inline truncate">&bull; {activeOtherMember.headline}</span>
                       )}
                     </div>
                   </div>
                 </div>
 
-                {activeConv.type === "DIRECT" && activeOtherMember?.username && (
-                  <Link
-                    href={`/team/${activeOtherMember.username}`}
-                    target="_blank"
-                    className="px-3 py-1.5 rounded-xl bg-[#141414] hover:bg-deep-red/20 border border-crimson/20 text-white text-[10px] font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center gap-1"
+                <div className="flex items-center gap-2">
+                  {activeConv.type === "DIRECT" && activeOtherMember?.username && (
+                    <Link
+                      href={`/team/${activeOtherMember.username}`}
+                      target="_blank"
+                      className="px-3 py-1.5 rounded-xl bg-[#141414] hover:bg-deep-red/20 border border-crimson/20 text-white text-[10px] font-orbitron font-bold uppercase tracking-wider transition-colors hidden sm:flex items-center gap-1"
+                    >
+                      <User className="w-3 h-3 text-bright-red" /> View Profile
+                    </Link>
+                  )}
+                  {/* Info / Chat Details Toggle */}
+                  <button
+                    onClick={() => setChatDetailsOpen(!chatDetailsOpen)}
+                    className={`p-2 rounded-xl border transition-colors ${
+                      chatDetailsOpen
+                        ? "bg-crimson border-bright-red text-white"
+                        : "bg-[#141414] border-crimson/20 text-[#888] hover:text-white"
+                    }`}
+                    title="Chat Details & Media"
                   >
-                    <User className="w-3 h-3 text-bright-red" /> View Profile
-                  </Link>
-                )}
+                    <Info className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
               {/* Message Stream */}
-              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+              <div
+                ref={messageStreamRef}
+                onScroll={handleScroll}
+                className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 relative"
+              >
                 {messagesLoading && messages.length === 0 ? (
                   <div className="flex items-center justify-center h-full">
                     <Loader2 className="w-6 h-6 text-bright-red animate-spin" />
@@ -604,6 +728,7 @@ function MessagesContent() {
                   messages.map((msg, idx) => {
                     const isSelf = msg.senderId === currentUser?.id;
                     const isDeleted = msg.isDeleted;
+                    const isLastSelf = isSelf && idx === messages.length - 1;
 
                     return (
                       <div
@@ -629,7 +754,7 @@ function MessagesContent() {
                         {/* Bubble Container with Context Bar on Hover */}
                         <div className="flex items-center gap-2 group/bubble max-w-[85%] sm:max-w-[70%]">
                           {/* Left Action Menu on sent messages */}
-                          {isSelf && (
+                          {isSelf && !isDeleted && (
                             <div className="opacity-0 group-hover/bubble:opacity-100 transition-opacity flex items-center gap-1">
                               <button
                                 onClick={() => setReplyingTo(msg)}
@@ -679,19 +804,25 @@ function MessagesContent() {
                               </motion.div>
                             )}
 
-                            {/* Image Attachments */}
+                            {/* Image Attachments Grid (1 to 4 images) */}
                             {msg.attachments && msg.attachments.length > 0 && (
-                              <div className="space-y-1.5">
+                              <div
+                                className={`gap-1.5 rounded-2xl overflow-hidden ${
+                                  msg.attachments.length === 1
+                                    ? "block"
+                                    : "grid grid-cols-2"
+                                }`}
+                              >
                                 {msg.attachments.map((att, attIdx) => (
                                   <div
                                     key={attIdx}
                                     onClick={() => setLightboxImageUrl(att.url)}
-                                    className="rounded-2xl overflow-hidden cursor-pointer group/img relative border border-black/20"
+                                    className="rounded-xl overflow-hidden cursor-pointer group/img relative border border-black/20"
                                   >
                                     <img
                                       src={att.url}
                                       alt={att.name || "Chat Image"}
-                                      className="max-h-60 w-full object-cover group-hover/img:scale-105 transition-transform"
+                                      className="max-h-56 w-full object-cover group-hover/img:scale-105 transition-transform"
                                     />
                                   </div>
                                 ))}
@@ -710,15 +841,14 @@ function MessagesContent() {
                               {msg.isEdited && <span>(edited)</span>}
                               <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                               {isSelf && (
-                                <CheckCheck className="w-3 h-3 text-white/90" />
+                                <CheckCheck className={`w-3 h-3 ${msg.isSeen ? "text-cyan-300" : "text-white/90"}`} />
                               )}
                             </div>
                           </div>
 
                           {/* Right Action Menu on received messages */}
-                          {!isSelf && (
+                          {!isSelf && !isDeleted && (
                             <div className="opacity-0 group-hover/bubble:opacity-100 transition-opacity flex items-center gap-1">
-                              {/* Quick Emoji Bar */}
                               {REACTION_BAR_EMOJIS.slice(0, 3).map((emoji) => (
                                 <button
                                   key={emoji}
@@ -759,11 +889,28 @@ function MessagesContent() {
                             ))}
                           </div>
                         )}
+
+                        {/* Read Receipt Seen indicator on latest sent message */}
+                        {isLastSelf && activeConv.type === "DIRECT" && msg.isSeen && (
+                          <span className="text-[9px] font-mono text-cyan-400/80 pr-1 mt-0.5">
+                            Seen
+                          </span>
+                        )}
                       </div>
                     );
                   })
                 )}
                 <div ref={messagesEndRef} />
+
+                {/* Floating "New messages ↓" button when scrolled up */}
+                {showScrollBottom && (
+                  <button
+                    onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })}
+                    className="sticky bottom-2 right-4 ml-auto px-3 py-1.5 rounded-full bg-crimson hover:bg-bright-red text-white text-[10px] font-orbitron font-bold shadow-2xl transition-all flex items-center gap-1 z-20"
+                  >
+                    <span>New messages</span> <ChevronDown className="w-3 h-3" />
+                  </button>
+                )}
               </div>
 
               {/* Message Composer */}
@@ -803,16 +950,36 @@ function MessagesContent() {
                   </div>
                 )}
 
-                {/* Image Attachment Preview */}
-                {filePreviewUrl && (
-                  <div className="relative inline-block rounded-2xl overflow-hidden border border-crimson/30">
-                    <img src={filePreviewUrl} alt="Preview" className="h-20 w-20 object-cover" />
-                    <button
-                      onClick={handleRemoveSelectedFile}
-                      className="absolute top-1 right-1 p-1 rounded-full bg-black/80 text-white hover:bg-crimson transition-colors"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
+                {/* Multi-Image Attachment Preview Strip */}
+                {filePreviewUrls.length > 0 && (
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                    {filePreviewUrls.map((url, pIdx) => (
+                      <div key={pIdx} className="relative inline-block rounded-xl overflow-hidden border border-crimson/30 flex-shrink-0">
+                        <img src={url} alt={`Preview ${pIdx}`} className="h-16 w-16 object-cover" />
+                        <button
+                          onClick={() => handleRemoveFile(pIdx)}
+                          className="absolute top-1 right-1 p-0.5 rounded-full bg-black/80 text-white hover:bg-crimson transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                    {filePreviewUrls.length < 4 && (
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="h-16 w-16 rounded-xl border border-dashed border-crimson/30 hover:border-bright-red flex flex-col items-center justify-center text-[#777] hover:text-white transition-colors"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span className="text-[8px] font-mono">Add</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Send Error Notice */}
+                {sendError && (
+                  <div className="text-[10px] text-bright-red font-mono flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> {sendError}
                   </div>
                 )}
 
@@ -824,6 +991,7 @@ function MessagesContent() {
                     ref={fileInputRef}
                     type="file"
                     accept="image/*"
+                    multiple
                     onChange={handleFileSelect}
                     className="hidden"
                   />
@@ -831,7 +999,7 @@ function MessagesContent() {
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     className="p-2.5 rounded-xl bg-[#141414] hover:bg-deep-red/20 text-[#888] hover:text-white transition-colors"
-                    title="Send Image"
+                    title="Send Images (Up to 4)"
                   >
                     <ImageIcon className="w-4 h-4 text-bright-red" />
                   </button>
@@ -879,20 +1047,115 @@ function MessagesContent() {
                     value={messageText}
                     onChange={(e) => setMessageText(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Type a message... (Enter to send)"
+                    placeholder="Type a message... (Enter to send, Shift+Enter for newline)"
                     className="flex-1 bg-[#121212] border border-crimson/20 rounded-2xl px-4 py-2.5 text-xs text-white placeholder-[#555] outline-none focus:border-bright-red resize-none max-h-32 transition-colors"
                   />
 
                   {/* Send Button */}
                   <button
                     onClick={() => handleSendMessage()}
-                    disabled={uploadingImage || (!messageText.trim() && !selectedFile)}
+                    disabled={uploadingImage || (!messageText.trim() && selectedFiles.length === 0)}
                     className="p-2.5 rounded-2xl bg-crimson hover:bg-bright-red text-white disabled:opacity-40 disabled:hover:bg-crimson transition-all shadow-[0_0_15px_rgba(217,4,41,0.3)] flex-shrink-0"
                   >
                     {uploadingImage ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
+
+              {/* ─── CHAT DETAILS DRAWER (INFO & SHARED MEDIA) ───────────────── */}
+              <AnimatePresence>
+                {chatDetailsOpen && (
+                  <motion.div
+                    initial={{ x: "100%" }}
+                    animate={{ x: 0 }}
+                    exit={{ x: "100%" }}
+                    transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                    className="absolute top-0 right-0 bottom-0 w-80 bg-[#0C0C0C] border-l border-crimson/20 shadow-2xl z-30 flex flex-col justify-between p-5 space-y-4"
+                  >
+                    <div className="space-y-4 overflow-y-auto flex-1">
+                      {/* Drawer Header */}
+                      <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                        <h4 className="font-orbitron font-bold text-xs text-white uppercase tracking-wider flex items-center gap-2">
+                          <Info className="w-3.5 h-3.5 text-bright-red" /> Details
+                        </h4>
+                        <button
+                          onClick={() => setChatDetailsOpen(false)}
+                          className="p-1 rounded bg-[#181818] text-[#888] hover:text-white"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {/* Participant Profile Card */}
+                      {activeConv.type === "DIRECT" && activeOtherMember ? (
+                        <div className="text-center space-y-2 p-3 rounded-2xl bg-[#121212] border border-white/5">
+                          <div className="flex justify-center">
+                            <CodeXaAvatar
+                              src={activeOtherMember.mediaUrl || "/assets/images/128acbeb739b3eb8bc4d1d9ae15fcfb2.jpg"}
+                              alt={activeOtherMember.displayName}
+                              size="lg"
+                              showGlow
+                            />
+                          </div>
+                          <div>
+                            <p className="font-orbitron font-bold text-sm text-white">{activeOtherMember.displayName}</p>
+                            <p className="text-xs font-mono text-crimson">@{activeOtherMember.username}</p>
+                            <p className="text-[11px] text-[#777] mt-1">{activeOtherMember.headline || activeOtherMember.role}</p>
+                          </div>
+                          <Link
+                            href={`/team/${activeOtherMember.username}`}
+                            target="_blank"
+                            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-crimson/20 hover:bg-crimson text-white text-[10px] font-orbitron font-bold uppercase transition-colors"
+                          >
+                            <ExternalLink className="w-3 h-3" /> View Profile
+                          </Link>
+                        </div>
+                      ) : (
+                        <div className="p-3 rounded-2xl bg-[#121212] border border-white/5 space-y-1">
+                          <p className="font-orbitron font-bold text-sm text-white">{activeConv.title}</p>
+                          <p className="text-xs text-[#777]">{activeConv.type} Discussion Channel</p>
+                        </div>
+                      )}
+
+                      {/* Details Tabs: Info / Shared Media */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between border-b border-white/10 pb-1 text-xs font-orbitron">
+                          <span className="font-bold text-white flex items-center gap-1.5">
+                            <Grid className="w-3.5 h-3.5 text-bright-red" /> Shared Media
+                          </span>
+                          <span className="text-[#666] font-mono text-[10px]">{sharedMediaPhotos.length} Photos</span>
+                        </div>
+
+                        {sharedMediaPhotos.length === 0 ? (
+                          <p className="text-xs text-[#666] italic py-2 text-center">No media shared yet.</p>
+                        ) : (
+                          <div className="grid grid-cols-3 gap-1.5 max-h-56 overflow-y-auto">
+                            {sharedMediaPhotos.map((photo, pIdx) => (
+                              <div
+                                key={pIdx}
+                                onClick={() => setLightboxImageUrl(photo.url)}
+                                className="aspect-square rounded-lg overflow-hidden cursor-pointer border border-white/10 hover:border-crimson transition-colors"
+                              >
+                                <img src={photo.url} alt={photo.name || "Media"} className="w-full h-full object-cover" />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Bottom Actions: Delete Chat For Me */}
+                    <div className="pt-3 border-t border-white/10 space-y-2">
+                      <button
+                        onClick={() => handleDeleteChatForMe(activeConv.id)}
+                        className="w-full py-2 rounded-xl bg-deep-red/20 hover:bg-crimson border border-crimson/30 text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-bright-red" /> Delete Chat For Me
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-4">
