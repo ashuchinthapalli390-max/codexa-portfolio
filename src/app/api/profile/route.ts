@@ -1,127 +1,122 @@
-/**
- * PATCH /api/profile
- *
- * Handles non-upload profile updates only:
- *   - displayName
- *   - publicBio
- *   - crop metadata (cropX, cropY, cropW, cropH, cropZoom, cropRotation)
- *   - removeMedia (delete current media URL from DB + clean up blob)
- *
- * File uploads are handled by the two-step flow:
- *   POST /api/profile-media/upload  (browser → Blob CDN token)
- *   POST /api/profile-media/commit  (Blob URL → Aiven MySQL)
- *
- * Permissions:
- *   OWNER       — own profile (text/crop/remove)
- *   TEAM_MEMBER — own profile (text/crop/remove)
- *   ADMIN       — blocked
- */
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser, logProfileAction } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { deleteProfileMedia } from "@/lib/upload";
+import { getCurrentUser } from "@/lib/auth";
+import { dataStore } from "@/lib/data-store";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-export async function PATCH(req: NextRequest) {
-  const user = await getCurrentUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized. Session required." }, { status: 401 });
-  }
-
-  if (user.role === "ADMIN") {
-    return NextResponse.json({ error: "Forbidden. Admins cannot modify profiles." }, { status: 403 });
-  }
-
+/**
+ * GET /api/profile
+ * Returns the current authenticated user's profile with stats and links.
+ */
+export async function GET() {
   try {
-    const formData = await req.formData();
-    const displayName  = formData.get("displayName") as string | null;
-    const publicBio    = formData.get("publicBio")   as string | null;
-    const removeMedia  = formData.get("removeMedia") === "true";
-
-    const cropXStr        = formData.get("cropX")        as string | null;
-    const cropYStr        = formData.get("cropY")        as string | null;
-    const cropWStr        = formData.get("cropW")        as string | null;
-    const cropHStr        = formData.get("cropH")        as string | null;
-    const cropZoomStr     = formData.get("cropZoom")     as string | null;
-    const cropRotationStr = formData.get("cropRotation") as string | null;
-
-    if (!displayName || displayName.trim() === "") {
-      return NextResponse.json({ error: "Display name is required." }, { status: 400 });
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401 });
     }
 
-    const currentProfile = await db.teamProfile.findUnique({
-      where: { userId: user.id },
+    const profile = await dataStore.getProfileByUserId(user.id);
+    if (!profile) {
+      return NextResponse.json({ success: false, error: "Profile not found." }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      profile,
     });
-
-    if (!currentProfile) {
-      return NextResponse.json({ error: "Profile not found for this user." }, { status: 404 });
-    }
-
-    const updatePayload: Record<string, unknown> = {
-      displayName: displayName.trim(),
-      publicBio: publicBio ? publicBio.trim() : null,
-    };
-
-    if (removeMedia) {
-      // Delete old blob safely before clearing DB field
-      await deleteProfileMedia(currentProfile.mediaUrl);
-      updatePayload.mediaUrl      = null;
-      updatePayload.mediaMimeType = null;
-      updatePayload.profileMediaUrl = null;
-      updatePayload.profileMediaMimeType = null;
-      updatePayload.zoom          = null;
-      updatePayload.objectPosition = null;
-      updatePayload.cropX         = null;
-      updatePayload.cropY         = null;
-      updatePayload.cropW         = null;
-      updatePayload.cropH         = null;
-      updatePayload.cropZoom      = null;
-      updatePayload.cropRotation  = null;
-    } else {
-      // Update crop metadata only if provided
-      if (cropXStr        !== null && cropXStr !== "")        updatePayload.cropX        = Number(cropXStr);
-      if (cropYStr        !== null && cropYStr !== "")        updatePayload.cropY        = Number(cropYStr);
-      if (cropWStr        !== null && cropWStr !== "")        updatePayload.cropW        = Number(cropWStr);
-      if (cropHStr        !== null && cropHStr !== "")        updatePayload.cropH        = Number(cropHStr);
-      if (cropZoomStr     !== null && cropZoomStr !== "")     updatePayload.cropZoom     = Number(cropZoomStr);
-      if (cropRotationStr !== null && cropRotationStr !== "") updatePayload.cropRotation = Number(cropRotationStr);
-    }
-
-    const updatedProfile = await db.$transaction(async (tx) => {
-      if (removeMedia) {
-        await tx.user.update({
-          where: { id: user.id },
-          data: {
-            profileMediaUrl: null,
-            profileMediaMimeType: null,
-            cropX: null,
-            cropY: null,
-            zoom: null,
-            objectPosition: null,
-          },
-        }).catch(() => {});
-      }
-
-      return tx.teamProfile.update({
-        where: { userId: user.id },
-        data: updatePayload,
-      });
-    });
-
-    await logProfileAction(
-      user.id,
-      user.id,
-      "profile_text_update",
-      `User updated profile fields. Media: ${updatedProfile.mediaUrl ? "Set" : "Removed"}`
-    );
-
-    return NextResponse.json({ success: true, profile: updatedProfile });
-  } catch (err) {
-    console.error("[PATCH /api/profile] error:", (err as Error).message);
-    return NextResponse.json({ error: "Failed to save profile changes." }, { status: 500 });
+  } catch (err: any) {
+    console.error("[GET /api/profile] Error:", err);
+    return NextResponse.json({ success: false, error: "Failed to fetch profile." }, { status: 500 });
   }
 }
 
-export const dynamic = "force-dynamic";
+/**
+ * PATCH /api/profile
+ * Updates the current logged-in user's own profile (OWNER, ADMIN, TEAM_MEMBER).
+ */
+export async function PATCH(req: NextRequest) {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401 });
+    }
+
+    const contentType = req.headers.get("content-type") || "";
+    let updates: any = {};
+
+    if (contentType.includes("application/json")) {
+      updates = await req.json();
+    } else {
+      const formData = await req.formData();
+      const displayName = formData.get("displayName") as string | null;
+      const headline = formData.get("headline") as string | null;
+      const bio = (formData.get("bio") || formData.get("publicBio")) as string | null;
+      const skillsStr = formData.get("skills") as string | null;
+      const githubUrl = formData.get("githubUrl") as string | null;
+      const linkedinUrl = formData.get("linkedinUrl") as string | null;
+      const portfolioUrl = formData.get("portfolioUrl") as string | null;
+      const mediaUrl = formData.get("mediaUrl") as string | null;
+
+      if (displayName) updates.displayName = displayName.trim();
+      if (headline !== null) updates.headline = headline.trim();
+      if (bio !== null) updates.bio = bio.trim();
+      if (skillsStr !== null) {
+        updates.skills = skillsStr.split(",").map((s) => s.trim()).filter(Boolean);
+      }
+      if (githubUrl !== null) updates.githubUrl = githubUrl.trim();
+      if (linkedinUrl !== null) updates.linkedinUrl = linkedinUrl.trim();
+      if (portfolioUrl !== null) updates.portfolioUrl = portfolioUrl.trim();
+      if (mediaUrl !== null) updates.mediaUrl = mediaUrl.trim();
+
+      const cropX = formData.get("cropX");
+      const cropY = formData.get("cropY");
+      const cropW = formData.get("cropW");
+      const cropH = formData.get("cropH");
+      const cropZoom = formData.get("cropZoom");
+      const cropRotation = formData.get("cropRotation");
+
+      if (cropX !== null && cropX !== "") updates.cropX = Number(cropX);
+      if (cropY !== null && cropY !== "") updates.cropY = Number(cropY);
+      if (cropW !== null && cropW !== "") updates.cropW = Number(cropW);
+      if (cropH !== null && cropH !== "") updates.cropH = Number(cropH);
+      if (cropZoom !== null && cropZoom !== "") updates.cropZoom = Number(cropZoom);
+      if (cropRotation !== null && cropRotation !== "") updates.cropRotation = Number(cropRotation);
+    }
+
+    if (updates.displayName && updates.displayName.trim() === "") {
+      return NextResponse.json({ success: false, error: "Display name cannot be empty." }, { status: 400 });
+    }
+
+    const updatedProfile = await dataStore.updateProfile(user.id, updates);
+
+    // Record activity & audit log
+    await dataStore.createActivityEvent({
+      actorId: user.id,
+      actorName: user.displayName || "Member",
+      actorUsername: user.username || "member",
+      actorMediaUrl: user.mediaUrl,
+      actionType: "PROFILE_UPDATED",
+      targetType: "PROFILE",
+      targetId: user.id,
+      title: `${user.displayName} updated their profile details`,
+      details: "Updated skills, bio, or links.",
+      link: `/team/${user.username}`,
+    });
+
+    await dataStore.logAudit(
+      "PROFILE_UPDATED",
+      user.id,
+      `User @${user.username} (${user.role}) updated their profile details.`
+    );
+
+    return NextResponse.json({
+      success: true,
+      message: "Profile saved successfully.",
+      profile: updatedProfile,
+    });
+  } catch (err: any) {
+    console.error("[PATCH /api/profile] Error:", err);
+    return NextResponse.json({ success: false, error: "Failed to update profile." }, { status: 500 });
+  }
+}

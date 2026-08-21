@@ -323,7 +323,7 @@ export default function MemberProfilePage() {
                 </div>
 
                 {/* Action Buttons: Message / Edit */}
-                <div className="flex items-center justify-center md:justify-end gap-2.5 pt-1">
+                <div className="flex items-center justify-center md:justify-end gap-2.5 pt-1 flex-wrap">
                   {!isSelf && (
                     <button
                       onClick={handleDirectMessage}
@@ -332,13 +332,29 @@ export default function MemberProfilePage() {
                       <MessageSquare className="w-3.5 h-3.5" /> Message
                     </button>
                   )}
-                  {canEdit && (
+                  {isSelf && (
                     <button
                       onClick={() => setEditModalOpen(true)}
                       className="px-4 py-2 rounded-xl bg-[#151515] hover:bg-deep-red/20 border border-crimson/30 text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center gap-1.5"
                     >
                       <Edit3 className="w-3.5 h-3.5 text-bright-red" /> Edit Profile
                     </button>
+                  )}
+                  {!isSelf && isOwner && (
+                    <>
+                      <button
+                        onClick={() => setEditModalOpen(true)}
+                        className="px-4 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(217,4,41,0.3)] flex items-center gap-1.5"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" /> Edit Member Profile
+                      </button>
+                      <Link
+                        href="/owner"
+                        className="px-4 py-2 rounded-xl bg-[#151515] hover:bg-deep-red/20 border border-crimson/30 text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center gap-1.5"
+                      >
+                        <Shield className="w-3.5 h-3.5 text-bright-red" /> Manage Account
+                      </Link>
+                    </>
                   )}
                 </div>
               </div>

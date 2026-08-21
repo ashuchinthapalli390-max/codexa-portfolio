@@ -6,6 +6,7 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
+  User,
   Users,
   Inbox,
   FolderGit2,
@@ -31,6 +32,7 @@ import {
   Check,
   X,
   Edit,
+  Edit3,
   Eye,
   RefreshCw,
   Mail,
@@ -41,7 +43,13 @@ import {
   ToggleLeft,
   ToggleRight,
   Share2,
-  ChevronRight
+  ChevronRight,
+  Globe,
+  Github,
+  Linkedin,
+  Archive,
+  RotateCcw,
+  Camera
 } from "lucide-react";
 import { 
   Profile, 
@@ -53,26 +61,41 @@ import {
   AuditLogItem, 
   Post, 
   PostComment, 
-  SiteSettings 
+  SiteSettings,
+  ActivityEvent
 } from "@/lib/data-store";
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
 import { CodeXaMediaSelectorModal } from "@/components/ui/CodeXaMediaSelectorModal";
 
-type TabType = "overview" | "accounts" | "inquiries" | "projects" | "feed" | "chat" | "notifications" | "audit" | "settings";
+type OwnerTab = 
+  | "overview" 
+  | "my-profile"
+  | "team" 
+  | "accounts" 
+  | "projects" 
+  | "homepage" 
+  | "feed" 
+  | "chat" 
+  | "notifications" 
+  | "inquiries" 
+  | "activity" 
+  | "audit" 
+  | "settings";
 
 function OwnerDashboardContent() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<TabType>("overview");
+  const [activeTab, setActiveTab] = useState<OwnerTab>("overview");
   const [loading, setLoading] = useState(true);
 
-  // Data states (Zero Dummy Data Guarantee)
+  // Real Data states (Zero Dummy Data Guarantee)
   const [accounts, setAccounts] = useState<Profile[]>([]);
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
+  const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
   const [unreadNotifsCount, setUnreadNotifsCount] = useState(0);
   const [siteSettings, setSiteSettings] = useState<SiteSettings>({
     mainProjectsHomeVisible: true,
@@ -84,7 +107,6 @@ function OwnerDashboardContent() {
   const [activeConversationId, setActiveConversationId] = useState<string>("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [newMessageText, setNewMessageText] = useState("");
-  const [memberSearchQuery, setMemberSearchQuery] = useState("");
 
   // Social Feed state
   const [newPostContent, setNewPostContent] = useState("");
@@ -100,6 +122,13 @@ function OwnerDashboardContent() {
   const [newPasswordInput, setNewPasswordInput] = useState("");
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
   const [mediaSelectorOpen, setMediaSelectorOpen] = useState(false);
+  const [editSelfModalOpen, setEditSelfModalOpen] = useState(false);
+  const [editMemberModalUser, setEditMemberModalUser] = useState<Profile | null>(null);
+  const [createProjectModalOpen, setCreateProjectModalOpen] = useState(false);
+  const [editProjectModalData, setEditProjectModalData] = useState<Project | null>(null);
+
+  // Search
+  const [globalSearch, setGlobalSearch] = useState("");
 
   // Form states for creating account
   const [accountFormData, setAccountFormData] = useState({
@@ -107,6 +136,7 @@ function OwnerDashboardContent() {
     username: "",
     email: "",
     role: "TEAM_MEMBER",
+    leadershipPosition: "",
     temporaryPassword: "",
     headline: "",
     bio: ""
@@ -114,11 +144,56 @@ function OwnerDashboardContent() {
   const [accountFormState, setAccountFormState] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [accountFormMsg, setAccountFormMsg] = useState("");
 
+  // Form states for editing self profile
+  const [selfFormData, setSelfFormData] = useState({
+    displayName: "",
+    headline: "",
+    bio: "",
+    skillsStr: "",
+    githubUrl: "",
+    linkedinUrl: "",
+    portfolioUrl: "",
+  });
+  const [selfFormSaving, setSelfFormSaving] = useState(false);
+  const [selfFormFeedback, setSelfFormFeedback] = useState<string | null>(null);
+
+  // Form states for editing team member profile
+  const [memberFormData, setMemberFormData] = useState({
+    displayName: "",
+    headline: "",
+    bio: "",
+    skillsStr: "",
+    githubUrl: "",
+    linkedinUrl: "",
+    portfolioUrl: "",
+    role: "TEAM_MEMBER",
+    leadershipPosition: "",
+    memberType: "CORE_TEAM",
+    isActive: true,
+  });
+  const [memberFormSaving, setMemberFormSaving] = useState(false);
+  const [memberFormFeedback, setMemberFormFeedback] = useState<string | null>(null);
+
+  // Form states for project creator
+  const [newProjectData, setNewProjectData] = useState({
+    title: "",
+    category: "AI",
+    shortDesc: "",
+    overview: "",
+    techStackStr: "TypeScript, React, TailwindCSS",
+    liveUrl: "",
+    repoUrl: "",
+    isMainProject: false,
+    isHomepageVisible: true,
+    status: "PRODUCTION",
+  });
+  const [projectSaving, setProjectSaving] = useState(false);
+
   // Inquiries filter
   const [inquiryStatusFilter, setInquiryStatusFilter] = useState("ALL");
   const [inquirySearch, setInquirySearch] = useState("");
+  const [projectCategoryFilter, setProjectCategoryFilter] = useState("ALL");
 
-  // Fetch session & initial data
   useEffect(() => {
     fetch("/api/session")
       .then((r) => r.json())
@@ -128,66 +203,183 @@ function OwnerDashboardContent() {
           return;
         }
         if (data.user.role !== "OWNER") {
-          if (data.user.role === "ADMIN") router.replace("/admin");
-          else router.replace("/dashboard");
+          router.replace("/dashboard");
           return;
         }
         setCurrentUser(data.user);
-        loadAllData();
+        setSelfFormData({
+          displayName: data.user.displayName || "",
+          headline: data.user.headline || "",
+          bio: data.user.bio || "",
+          skillsStr: Array.isArray(data.user.skills) ? data.user.skills.join(", ") : "",
+          githubUrl: data.user.githubUrl || "",
+          linkedinUrl: data.user.linkedinUrl || "",
+          portfolioUrl: data.user.portfolioUrl || "",
+        });
+        loadAllOwnerData();
       })
       .catch(() => router.replace("/login"));
   }, [router]);
 
-  const loadAllData = () => {
+  const loadAllOwnerData = () => {
     setLoading(true);
     Promise.all([
       fetch("/api/owner/accounts").then((r) => r.json()).catch(() => ({ accounts: [] })),
       fetch("/api/inquiries").then((r) => r.json()).catch(() => ({ inquiries: [] })),
       fetch("/api/projects").then((r) => r.json()).catch(() => ({ projects: [] })),
       fetch("/api/feed/posts").then((r) => r.json()).catch(() => ({ posts: [] })),
-      fetch("/api/site-settings").then((r) => r.json()).catch(() => ({ settings: { mainProjectsHomeVisible: true, teamProjectsHomeVisible: true } })),
       fetch("/api/notifications").then((r) => r.json()).catch(() => ({ notifications: [], unreadCount: 0 })),
       fetch("/api/audit-logs").then((r) => r.json()).catch(() => ({ logs: [] })),
+      fetch("/api/activity").then((r) => r.json()).catch(() => ({ events: [] })),
+      fetch("/api/site-settings").then((r) => r.json()).catch(() => ({ settings: null })),
       fetch("/api/chat/conversations").then((r) => r.json()).catch(() => ({ conversations: [] })),
+      fetch("/api/profile").then((r) => r.json()).catch(() => ({ profile: null })),
     ])
-      .then(([accRes, inqRes, projRes, feedRes, settRes, notifRes, auditRes, convRes]) => {
+      .then(([accRes, inqRes, projRes, feedRes, notifRes, auditRes, actRes, siteRes, convRes, profRes]) => {
         if (accRes.accounts) setAccounts(accRes.accounts);
         if (inqRes.inquiries) setInquiries(inqRes.inquiries);
         if (projRes.projects) setProjects(projRes.projects);
         if (feedRes.posts) setPosts(feedRes.posts);
-        if (settRes.settings) setSiteSettings(settRes.settings);
         if (notifRes.notifications) {
           setNotifications(notifRes.notifications);
           setUnreadNotifsCount(notifRes.unreadCount || 0);
         }
         if (auditRes.logs) setAuditLogs(auditRes.logs);
+        if (actRes.events) setActivityEvents(actRes.events);
+        if (siteRes.settings) setSiteSettings(siteRes.settings);
         if (convRes.conversations) {
           setConversations(convRes.conversations);
           if (convRes.conversations.length > 0 && !activeConversationId) {
             setActiveConversationId(convRes.conversations[0].id);
           }
         }
+        if (profRes.profile) {
+          setCurrentUser(profRes.profile);
+          setSelfFormData({
+            displayName: profRes.profile.displayName || "",
+            headline: profRes.profile.headline || "",
+            bio: profRes.profile.bio || "",
+            skillsStr: Array.isArray(profRes.profile.skills) ? profRes.profile.skills.join(", ") : "",
+            githubUrl: profRes.profile.githubUrl || "",
+            linkedinUrl: profRes.profile.linkedinUrl || "",
+            portfolioUrl: profRes.profile.portfolioUrl || "",
+          });
+        }
       })
       .finally(() => setLoading(false));
   };
 
-  // Load chat messages when active conversation changes
   useEffect(() => {
     if (!activeConversationId) return;
     fetch(`/api/chat/messages?conversationId=${activeConversationId}`)
       .then((r) => r.json())
       .then((data) => {
-        if (data.success) setChatMessages(data.messages);
+        if (data.success && data.messages) {
+          setChatMessages(data.messages);
+        }
       })
       .catch(() => {});
   }, [activeConversationId]);
 
-  const handleLogout = async () => {
-    await fetch("/api/logout", { method: "POST" }).catch(() => {});
-    router.replace("/login");
+  // ── Self Profile Save ───────────────────────────────────────────────────────
+  const handleSaveSelfProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSelfFormSaving(true);
+    setSelfFormFeedback(null);
+
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          displayName: selfFormData.displayName,
+          headline: selfFormData.headline,
+          bio: selfFormData.bio,
+          skills: selfFormData.skillsStr.split(",").map((s) => s.trim()).filter(Boolean),
+          githubUrl: selfFormData.githubUrl,
+          linkedinUrl: selfFormData.linkedinUrl,
+          portfolioUrl: selfFormData.portfolioUrl,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSelfFormFeedback("Profile saved successfully!");
+        setCurrentUser(data.profile);
+        setAccounts((prev) => prev.map((a) => a.id === data.profile.id ? { ...a, ...data.profile } : a));
+        setTimeout(() => {
+          setEditSelfModalOpen(false);
+          setSelfFormFeedback(null);
+        }, 1200);
+      } else {
+        setSelfFormFeedback(data.error || "Failed to update profile.");
+      }
+    } catch {
+      setSelfFormFeedback("Network error saving profile.");
+    } finally {
+      setSelfFormSaving(false);
+    }
   };
 
-  // ── Account Actions ────────────────────────────────────────────────────────
+  // ── Member Profile Edit (Owner Overriding Member) ───────────────────────────
+  const handleOpenEditMemberModal = (member: Profile) => {
+    setEditMemberModalUser(member);
+    setMemberFormData({
+      displayName: member.displayName || "",
+      headline: member.headline || "",
+      bio: member.bio || "",
+      skillsStr: Array.isArray(member.skills) ? member.skills.join(", ") : "",
+      githubUrl: member.githubUrl || "",
+      linkedinUrl: member.linkedinUrl || "",
+      portfolioUrl: member.portfolioUrl || "",
+      role: member.role || "TEAM_MEMBER",
+      leadershipPosition: member.leadershipPosition || "",
+      memberType: member.memberType || "CORE_TEAM",
+      isActive: member.isActive ?? true,
+    });
+    setMemberFormFeedback(null);
+  };
+
+  const handleSaveMemberProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editMemberModalUser) return;
+    setMemberFormSaving(true);
+    setMemberFormFeedback(null);
+
+    try {
+      const res = await fetch(`/api/profile/${editMemberModalUser.username}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          displayName: memberFormData.displayName,
+          headline: memberFormData.headline,
+          bio: memberFormData.bio,
+          skills: memberFormData.skillsStr.split(",").map((s) => s.trim()).filter(Boolean),
+          githubUrl: memberFormData.githubUrl,
+          linkedinUrl: memberFormData.linkedinUrl,
+          portfolioUrl: memberFormData.portfolioUrl,
+          role: memberFormData.role,
+          isActive: memberFormData.isActive,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setMemberFormFeedback("Member profile updated successfully!");
+        setAccounts((prev) => prev.map((a) => a.id === editMemberModalUser.id ? { ...a, ...data.profile } : a));
+        setTimeout(() => {
+          setEditMemberModalUser(null);
+          setMemberFormFeedback(null);
+        }, 1200);
+      } else {
+        setMemberFormFeedback(data.error || "Failed to update member profile.");
+      }
+    } catch {
+      setMemberFormFeedback("Network error updating member.");
+    } finally {
+      setMemberFormSaving(false);
+    }
+  };
+
+  // ── Account Provisioning ────────────────────────────────────────────────────
   const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     setAccountFormState("loading");
@@ -203,31 +395,34 @@ function OwnerDashboardContent() {
 
       if (res.ok && data.success) {
         setAccountFormState("success");
-        setAccountFormMsg(data.message);
-        setAccounts((prev) => [...prev, data.account]);
+        setAccountFormMsg(data.message || "Account provisioned successfully.");
+        setAccounts((prev) => [data.account, ...prev]);
         setTimeout(() => {
           setCreateAccountModalOpen(false);
           setAccountFormState("idle");
+          setAccountFormMsg("");
           setAccountFormData({
             fullName: "",
             username: "",
             email: "",
             role: "TEAM_MEMBER",
+            leadershipPosition: "",
             temporaryPassword: "",
             headline: "",
             bio: ""
           });
-        }, 1200);
+        }, 1500);
       } else {
         setAccountFormState("error");
-        setAccountFormMsg(data.error || "Failed to provision account.");
+        setAccountFormMsg(data.error || "Failed to create account.");
       }
     } catch {
       setAccountFormState("error");
-      setAccountFormMsg("Network error.");
+      setAccountFormMsg("Network error communicating with server.");
     }
   };
 
+  // ── Account Actions ────────────────────────────────────────────────────────
   const handleToggleAccountActive = async (account: Profile) => {
     const newStatus = !account.isActive;
     try {
@@ -264,7 +459,7 @@ function OwnerDashboardContent() {
         body: JSON.stringify({ newPassword: newPasswordInput }),
       });
       if (res.ok) {
-        alert(`Password for @${resetPasswordModalUser.username} updated successfully.`);
+        alert(`Password for @${resetPasswordModalUser.username} reset successfully.`);
         setResetPasswordModalUser(null);
         setNewPasswordInput("");
       }
@@ -272,7 +467,7 @@ function OwnerDashboardContent() {
   };
 
   const handleDeleteAccount = async (account: Profile) => {
-    if (!confirm(`Are you sure you want to permanently delete account @${account.username}?`)) return;
+    if (!confirm(`Are you sure you want to permanently delete account @${account.username}? This action is irreversible.`)) return;
     try {
       const res = await fetch(`/api/owner/accounts/${account.id}`, { method: "DELETE" });
       if (res.ok) {
@@ -298,7 +493,7 @@ function OwnerDashboardContent() {
     } catch {}
   };
 
-  // ── Project Main Approval ──────────────────────────────────────────────────
+  // ── Project Actions ────────────────────────────────────────────────────────
   const handleToggleMainProject = async (project: Project) => {
     const newState = !project.isMainProject;
     try {
@@ -313,7 +508,79 @@ function OwnerDashboardContent() {
     } catch {}
   };
 
-  // ── Homepage Section Visibility Toggle ─────────────────────────────────────
+  const handleToggleHomepageVisibility = async (project: Project) => {
+    const newState = !project.isHomepageVisible;
+    try {
+      const res = await fetch(`/api/projects/${project.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isHomepageVisible: newState }),
+      });
+      if (res.ok) {
+        setProjects((prev) => prev.map((p) => p.id === project.id ? { ...p, isHomepageVisible: newState } : p));
+      }
+    } catch {}
+  };
+
+  const handleArchiveProject = async (project: Project) => {
+    const newState = project.status === "ARCHIVED" ? "PRODUCTION" : "ARCHIVED";
+    try {
+      const res = await fetch(`/api/projects/${project.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newState }),
+      });
+      if (res.ok) {
+        setProjects((prev) => prev.map((p) => p.id === project.id ? { ...p, status: newState as any } : p));
+      }
+    } catch {}
+  };
+
+  const handleDeleteProject = async (project: Project) => {
+    if (!confirm(`Are you sure you want to permanently delete project "${project.title}"?`)) return;
+    try {
+      const res = await fetch(`/api/projects/${project.id}`, { method: "DELETE" });
+      if (res.ok) {
+        setProjects((prev) => prev.filter((p) => p.id !== project.id));
+      }
+    } catch {}
+  };
+
+  const handleCreateProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProjectSaving(true);
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...newProjectData,
+          techStack: newProjectData.techStackStr.split(",").map((s) => s.trim()).filter(Boolean),
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setProjects((prev) => [data.project, ...prev]);
+        setCreateProjectModalOpen(false);
+        setNewProjectData({
+          title: "",
+          category: "AI",
+          shortDesc: "",
+          overview: "",
+          techStackStr: "TypeScript, React, TailwindCSS",
+          liveUrl: "",
+          repoUrl: "",
+          isMainProject: false,
+          isHomepageVisible: true,
+          status: "PRODUCTION",
+        });
+      }
+    } catch {} finally {
+      setProjectSaving(false);
+    }
+  };
+
+  // ── Homepage Controls ──────────────────────────────────────────────────────
   const handleToggleHomepageSection = async (section: "mainProjectsHomeVisible" | "teamProjectsHomeVisible") => {
     const newSettings = { ...siteSettings, [section]: !siteSettings[section] };
     try {
@@ -352,61 +619,12 @@ function OwnerDashboardContent() {
     } catch {}
   };
 
-  const handleToggleLike = async (postId: string) => {
+  const handleDeletePost = async (postId: string) => {
+    if (!confirm("Are you sure you want to remove this post from the feed?")) return;
     try {
-      const res = await fetch("/api/feed/likes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ postId }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setPosts((prev) =>
-          prev.map((p) =>
-            p.id === postId
-              ? { ...p, hasLiked: data.liked, likesCount: data.totalLikes }
-              : p
-          )
-        );
-      }
-    } catch {}
-  };
-
-  const handleLoadComments = async (postId: string) => {
-    if (openCommentPostId === postId) {
-      setOpenCommentPostId(null);
-      return;
-    }
-    setOpenCommentPostId(postId);
-    try {
-      const res = await fetch(`/api/feed/comments?postId=${postId}`);
-      const data = await res.json();
-      if (data.success) {
-        setSelectedPostComments((prev) => ({ ...prev, [postId]: data.comments }));
-      }
-    } catch {}
-  };
-
-  const handleAddComment = async (postId: string) => {
-    const text = newCommentTexts[postId];
-    if (!text || !text.trim()) return;
-
-    try {
-      const res = await fetch("/api/feed/comments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ postId, content: text.trim() }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setSelectedPostComments((prev) => ({
-          ...prev,
-          [postId]: [...(prev[postId] || []), data.comment],
-        }));
-        setNewCommentTexts((prev) => ({ ...prev, [postId]: "" }));
-        setPosts((prev) =>
-          prev.map((p) => (p.id === postId ? { ...p, commentsCount: p.commentsCount + 1 } : p))
-        );
+      const res = await fetch(`/api/feed/posts/${postId}`, { method: "DELETE" });
+      if (res.ok) {
+        setPosts((prev) => prev.filter((p) => p.id !== postId));
       }
     } catch {}
   };
@@ -448,6 +666,7 @@ function OwnerDashboardContent() {
           setConversations((prev) => [data.conversation, ...prev]);
         }
         setActiveConversationId(data.conversation.id);
+        setActiveTab("chat");
       }
     } catch {}
   };
@@ -462,82 +681,121 @@ function OwnerDashboardContent() {
     return matchStatus && matchSearch;
   });
 
+  const filteredProjects = projects.filter((p) => {
+    if (projectCategoryFilter === "MAIN") return p.isMainProject;
+    if (projectCategoryFilter === "HIDDEN") return !p.isHomepageVisible;
+    if (projectCategoryFilter === "ARCHIVED") return p.status === "ARCHIVED";
+    return true;
+  });
+
   return (
     <div className="min-h-screen bg-[#070707] text-white flex flex-col">
       {/* ─── TOP COMMAND BAR ──────────────────────────────────────────────── */}
-      <header className="h-16 border-b border-crimson/20 bg-[#090909]/95 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-40">
+      <header className="h-16 border-b border-crimson/20 bg-[#090909]/95 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between sticky top-0 z-40">
         <div className="flex items-center gap-3">
           <div className="p-1.5 rounded-lg bg-deep-red/30 border border-crimson/40">
             <Shield className="w-5 h-5 text-bright-red" />
           </div>
           <span className="font-orbitron font-black text-sm tracking-[0.2em] text-white">
-            CODEXA <span className="text-crimson text-xs font-normal">COMMAND CENTER</span>
+            CODEXA <span className="text-crimson text-xs font-normal">FOUNDER CORE</span>
           </span>
-          <span className="hidden sm:inline-block ml-3 px-2 py-0.5 rounded bg-crimson/20 border border-crimson/30 text-[9px] font-orbitron font-bold text-bright-red uppercase">
-            OWNER ACCESS
+          <span className="hidden sm:inline-block ml-2 px-2 py-0.5 rounded bg-crimson/20 border border-crimson/30 text-[9px] font-orbitron font-bold text-bright-red uppercase">
+            OWNER
           </span>
         </div>
 
-        <div className="flex items-center gap-4">
+        {/* Global Search */}
+        <div className="hidden md:flex items-center relative w-72">
+          <Search className="w-3.5 h-3.5 text-[#666] absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={globalSearch}
+            onChange={(e) => setGlobalSearch(e.target.value)}
+            placeholder="Search members, builds, leads..."
+            className="w-full bg-[#121212] border border-crimson/20 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-[#555] outline-none focus:border-bright-red transition-colors"
+          />
+        </div>
+
+        <div className="flex items-center gap-3">
           <Link
             href="/"
             target="_blank"
-            className="hidden md:flex items-center gap-1.5 text-xs font-orbitron text-[#888] hover:text-white transition-colors uppercase tracking-wider"
+            className="hidden lg:flex items-center gap-1.5 text-xs font-orbitron text-[#888] hover:text-white transition-colors uppercase tracking-wider"
           >
             Public Site <ArrowUpRight className="w-3.5 h-3.5" />
           </Link>
 
-          {/* Owner Profile */}
+          {/* Quick Create Dropdown / Trigger */}
+          <button
+            onClick={() => setCreateAccountModalOpen(true)}
+            className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-crimson hover:bg-bright-red text-white text-[11px] font-orbitron font-bold uppercase transition-all shadow-[0_0_12px_rgba(217,4,41,0.3)]"
+          >
+            <Plus className="w-3.5 h-3.5" /> New Account
+          </button>
+
+          {/* Notifications Bell */}
+          <button
+            onClick={() => setActiveTab("notifications")}
+            className="p-2 rounded-xl bg-[#121212] hover:bg-deep-red/20 border border-crimson/20 text-[#888] hover:text-white transition-colors relative"
+            title="Notifications"
+          >
+            <Bell className="w-4 h-4" />
+            {unreadNotifsCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-crimson text-white font-mono text-[9px] font-bold flex items-center justify-center animate-pulse">
+                {unreadNotifsCount}
+              </span>
+            )}
+          </button>
+
+          {/* Owner Avatar Pill */}
           <div
-            onClick={() => setMediaSelectorOpen(true)}
-            className="flex items-center gap-2 pl-3 border-l border-white/10 cursor-pointer group"
-            title="Click to Change Profile Picture"
+            onClick={() => setActiveTab("my-profile")}
+            className="flex items-center gap-2 pl-2 cursor-pointer group"
+            title="My Profile"
           >
             <CodeXaAvatar
               src={currentUser?.mediaUrl || "/assets/images/128acbeb739b3eb8bc4d1d9ae15fcfb2.jpg"}
               alt="Ashu"
               size="sm"
               showGlow
-              className="group-hover:border-bright-red transition-all"
             />
             <div className="hidden sm:block text-left">
-              <p className="text-xs font-orbitron font-bold text-white group-hover:text-bright-red transition-colors leading-tight">Ashu</p>
-              <p className="text-[9px] font-mono text-crimson">@ashu (Edit PFP)</p>
+              <span className="block text-xs font-orbitron font-bold text-white group-hover:text-bright-red transition-colors">
+                {currentUser?.displayName || "Ashu"}
+              </span>
+              <span className="block text-[9px] font-mono text-crimson">@ashu</span>
             </div>
           </div>
-
-          <button
-            onClick={handleLogout}
-            className="p-2 rounded-lg bg-[#111] hover:bg-deep-red/30 border border-crimson/20 text-[#888] hover:text-bright-red transition-colors"
-            title="Logout"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
         </div>
       </header>
 
-      {/* ─── MAIN DASHBOARD BODY (Sidebar + Content) ──────────────────────── */}
+      {/* ─── MAIN WORKSPACE BODY ──────────────────────────────────────────── */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar */}
-        <aside className="w-60 border-r border-crimson/15 bg-[#080808] flex flex-col justify-between p-4 flex-shrink-0">
-          <nav className="space-y-1.5">
+        
+        {/* Sidebar Navigation */}
+        <aside className="w-64 border-r border-crimson/15 bg-[#080808] flex flex-col justify-between p-4 flex-shrink-0 overflow-y-auto">
+          <nav className="space-y-1">
             {[
               { id: "overview", label: "Overview", icon: LayoutDashboard },
-              { id: "accounts", label: "Accounts & Team", icon: Users, badge: accounts.length },
-              { id: "inquiries", label: "Inquiries Console", icon: Inbox, badge: inquiries.filter((i) => i.status === "NEW").length },
-              { id: "projects", label: "Projects Pipeline", icon: FolderGit2, badge: projects.filter((p) => p.isMainProject).length },
+              { id: "my-profile", label: "My Profile", icon: User },
               { id: "feed", label: "Social Feed", icon: Share2, badge: posts.length },
-              { id: "chat", label: "Internal Chat", icon: MessageSquare },
-              { id: "notifications", label: "Notifications", icon: Bell, badge: unreadNotifsCount || undefined },
+              { id: "team", label: "Team Members", icon: Users, badge: accounts.length },
+              { id: "accounts", label: "Accounts & Security", icon: Key },
+              { id: "projects", label: "Projects Pipeline", icon: FolderGit2, badge: projects.length },
+              { id: "homepage", label: "Homepage Controls", icon: ToggleRight },
+              { id: "chat", label: "Internal Messages", icon: MessageSquare },
+              { id: "notifications", label: "Signals & Alerts", icon: Bell, badge: unreadNotifsCount || undefined },
+              { id: "inquiries", label: "Client Inquiries", icon: Inbox, badge: inquiries.filter((i) => i.status === "NEW").length },
+              { id: "activity", label: "Activity Pulse", icon: Clock },
               { id: "audit", label: "Security & Audit", icon: Shield },
-              { id: "settings", label: "System Settings", icon: Settings },
+              { id: "settings", label: "System Config", icon: Settings },
             ].map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
               return (
                 <button
                   key={item.id}
-                  onClick={() => setActiveTab(item.id as TabType)}
+                  onClick={() => setActiveTab(item.id as OwnerTab)}
                   className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-orbitron text-xs font-semibold uppercase tracking-wider transition-all ${
                     isActive
                       ? "bg-crimson text-white border border-bright-red shadow-[0_0_15px_rgba(217,4,41,0.3)]"
@@ -559,336 +817,464 @@ function OwnerDashboardContent() {
               );
             })}
           </nav>
+
+          <div className="pt-4 border-t border-white/5 space-y-2">
+            <Link
+              href={`/team/${currentUser?.username || "ashu"}`}
+              className="w-full py-2 rounded-xl bg-[#121212] hover:bg-deep-red/20 text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5"
+            >
+              Public Profile <ExternalLink className="w-3.5 h-3.5 text-bright-red" />
+            </Link>
+            <button
+              onClick={() => {
+                fetch("/api/auth/logout", { method: "POST" }).finally(() => router.replace("/login"));
+              }}
+              className="w-full py-2 rounded-xl bg-[#121212] hover:bg-deep-red/40 text-[#AAA] hover:text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5"
+            >
+              <LogOut className="w-3.5 h-3.5 text-crimson" /> Sign Out
+            </button>
+          </div>
         </aside>
 
         {/* Dynamic Content Panel */}
-        <main className="flex-1 bg-[#070707] overflow-y-auto p-6 md:p-8">
+        <main className="flex-1 bg-[#070707] overflow-y-auto p-6 md:p-8 space-y-6">
           
-          {/* ═══ OVERVIEW ════════════════════════════════════════════════════ */}
+          {/* ═══ TAB 1: OVERVIEW ════════════════════════════════════════════ */}
           {activeTab === "overview" && (
             <div className="space-y-8">
-              <div>
-                <span className="text-[10px] font-orbitron text-bright-red tracking-[0.3em] uppercase font-bold">
-                  EXECUTIVE SUMMARY
-                </span>
-                <h1 className="font-orbitron font-black text-2xl sm:text-3xl text-white uppercase mt-1">
-                  CodeXa Agency Metrics
-                </h1>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <span className="text-[10px] font-orbitron text-bright-red tracking-[0.3em] uppercase font-bold">
+                    FOUNDER DASHBOARD &bull; EXECUTIVE PULSE
+                  </span>
+                  <h1 className="font-orbitron font-black text-2xl sm:text-3xl text-white uppercase mt-1">
+                    CodeXa Agency Overview
+                  </h1>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <button
+                    onClick={() => setEditSelfModalOpen(true)}
+                    className="px-4 py-2 rounded-xl bg-[#151515] hover:bg-deep-red/20 border border-crimson/30 text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center gap-1.5"
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-bright-red" /> Edit My Profile
+                  </button>
+                  <button
+                    onClick={() => setCreateProjectModalOpen(true)}
+                    className="px-4 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(217,4,41,0.3)] flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add Project
+                  </button>
+                </div>
               </div>
 
               {/* Zero-dummy Metric Cards */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
                 {[
-                  { label: "Total Members", value: accounts.length, sub: "Owner & Core Team", icon: Users, color: "text-bright-red", action: () => setActiveTab("accounts") },
-                  { label: "New Inquiries", value: inquiries.filter((i) => i.status === "NEW").length, sub: `${inquiries.length} Total Pipeline`, icon: Inbox, color: "text-amber-400", action: () => setActiveTab("inquiries") },
-                  { label: "Main Projects", value: projects.filter((p) => p.isMainProject).length, sub: `${projects.length} Total Builds`, icon: Sparkles, color: "text-emerald-400", action: () => setActiveTab("projects") },
-                  { label: "Feed Posts", value: posts.length, sub: "Community Updates", icon: Share2, color: "text-blue-400", action: () => setActiveTab("feed") },
+                  { label: "Active Members", value: accounts.filter((a) => a.isActive).length, sub: `${accounts.length} Total Registered`, icon: Users, color: "text-bright-red", action: () => setActiveTab("team") },
+                  { label: "Client Inquiries", value: inquiries.filter((i) => i.status === "NEW").length, sub: `${inquiries.length} Total Leads`, icon: Inbox, color: "text-amber-400", action: () => setActiveTab("inquiries") },
+                  { label: "Main Flagships", value: projects.filter((p) => p.isMainProject).length, sub: `${projects.length} Total Builds`, icon: Sparkles, color: "text-emerald-400", action: () => setActiveTab("projects") },
+                  { label: "Feed Updates", value: posts.length, sub: "Community Streams", icon: Share2, color: "text-blue-400", action: () => setActiveTab("feed") },
                 ].map((card, idx) => {
                   const Icon = card.icon;
                   return (
                     <div
                       key={idx}
                       onClick={card.action}
-                      className="p-5 rounded-2xl bg-[#0A0A0A] border border-crimson/20 hover:border-bright-red/50 cursor-pointer transition-all duration-300 group shadow-lg"
+                      className="cyber-card p-5 cursor-pointer flex flex-col justify-between"
                     >
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-[10px] font-orbitron font-bold text-[#888] uppercase tracking-wider">{card.label}</span>
                         <Icon className={`w-4 h-4 ${card.color}`} />
                       </div>
-                      <div className="text-3xl font-orbitron font-black text-white group-hover:text-bright-red transition-colors">
+                      <div className="text-3xl font-orbitron font-black text-white">
                         {card.value}
                       </div>
-                      <p className="text-[11px] text-[#666] mt-1 font-light">{card.sub}</p>
+                      <p className="text-[10px] font-mono text-[#777] mt-1">{card.sub}</p>
                     </div>
                   );
                 })}
               </div>
 
-              {/* Recent Inquiries List */}
-              <div className="rounded-2xl bg-[#090909] border border-crimson/20 p-6 space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-white/5">
-                  <h3 className="font-orbitron font-bold text-sm text-white uppercase tracking-wider">
-                    Recent Inquiries
-                  </h3>
-                  <button onClick={() => setActiveTab("inquiries")} className="text-xs font-orbitron text-bright-red hover:underline flex items-center gap-1">
-                    View Pipeline <ChevronRight className="w-3 h-3" />
-                  </button>
+              {/* Quick Actions Grid */}
+              <div className="p-6 rounded-3xl bg-[#0A0A0A] border border-crimson/20 space-y-4">
+                <h3 className="font-orbitron font-bold text-xs text-bright-red uppercase tracking-wider">
+                  Founder Quick Action Center
+                </h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                  {[
+                    { label: "My Profile", icon: User, action: () => setActiveTab("my-profile") },
+                    { label: "New Member", icon: Plus, action: () => setCreateAccountModalOpen(true) },
+                    { label: "New Project", icon: FolderGit2, action: () => setCreateProjectModalOpen(true) },
+                    { label: "Homepage On/Off", icon: ToggleRight, action: () => setActiveTab("homepage") },
+                    { label: "Open Inquiries", icon: Inbox, action: () => setActiveTab("inquiries") },
+                    { label: "Security Logs", icon: Shield, action: () => setActiveTab("audit") },
+                  ].map((btn, i) => {
+                    const Icon = btn.icon;
+                    return (
+                      <button
+                        key={i}
+                        onClick={btn.action}
+                        className="p-3.5 rounded-2xl bg-[#121212] hover:bg-crimson/20 border border-white/5 hover:border-bright-red/50 transition-all flex flex-col items-center justify-center gap-2 group"
+                      >
+                        <Icon className="w-4 h-4 text-bright-red group-hover:scale-110 transition-transform" />
+                        <span className="text-[10px] font-orbitron font-bold text-white uppercase text-center">{btn.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
-
-                {inquiries.length === 0 ? (
-                  <p className="text-xs text-[#666] text-center py-6">No inquiries yet.</p>
-                ) : (
-                  inquiries.slice(0, 4).map((inq) => (
-                    <div
-                      key={inq.id}
-                      onClick={() => { setSelectedInquiry(inq); setActiveTab("inquiries"); }}
-                      className="p-4 rounded-xl bg-[#111] hover:bg-[#161616] border border-white/5 cursor-pointer transition-all flex items-center justify-between"
-                    >
-                      <div>
-                        <span className="font-mono text-xs font-bold text-white">{inq.fullName} &bull; <span className="text-crimson">{inq.referenceId}</span></span>
-                        <p className="text-xs text-[#777] line-clamp-1 mt-0.5">{inq.message}</p>
-                      </div>
-                      <span className="text-[9px] font-orbitron font-bold px-2 py-0.5 rounded uppercase border bg-amber-500/10 text-amber-400 border-amber-500/30">
-                        {inq.status}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* ═══ SOCIAL FEED ══════════════════════════════════════════════════ */}
-          {activeTab === "feed" && (
-            <div className="space-y-6 max-w-3xl mx-auto">
-              <div>
-                <span className="text-[10px] font-orbitron text-bright-red tracking-[0.3em] uppercase font-bold">
-                  INTERNAL NETWORK
-                </span>
-                <h1 className="font-orbitron font-black text-2xl text-white uppercase mt-1">
-                  CodeXa Team Feed
-                </h1>
               </div>
 
-              {/* Create Post Composer */}
-              <form onSubmit={handleCreatePost} className="p-5 rounded-2xl bg-[#090909] border border-crimson/25 space-y-4 shadow-xl">
-                <textarea
-                  rows={3}
-                  value={newPostContent}
-                  onChange={(e) => setNewPostContent(e.target.value)}
-                  placeholder="Share a development milestone, architecture insight, or announcement with CodeXa..."
-                  className="w-full bg-[#111] border border-crimson/20 focus:border-bright-red rounded-xl p-4 text-xs text-white placeholder-[#555] outline-none resize-none transition-all"
-                />
+              {/* Recent Activity & Recent Inquiries Side by Side */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+                {/* Live Activity Pulse */}
+                <div className="p-6 rounded-3xl bg-[#0A0A0A] border border-crimson/20 space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                    <h3 className="font-orbitron font-bold text-xs text-white uppercase tracking-wider">
+                      Realtime Activity Pulse
+                    </h3>
+                    <button onClick={() => setActiveTab("activity")} className="text-[10px] font-orbitron text-bright-red uppercase hover:underline">
+                      View All &rarr;
+                    </button>
+                  </div>
 
-                <div className="flex items-center justify-between pt-1">
-                  <label className="flex items-center gap-2 cursor-pointer text-xs font-orbitron text-[#888] hover:text-white">
-                    <input
-                      type="checkbox"
-                      checked={isPostAnnouncement}
-                      onChange={(e) => setIsPostAnnouncement(e.target.checked)}
-                      className="accent-crimson"
-                    />
-                    <span className="text-[10px] uppercase font-bold text-bright-red">Mark as Official Announcement</span>
-                  </label>
-
-                  <button
-                    type="submit"
-                    disabled={!newPostContent.trim()}
-                    className="px-5 py-2.5 rounded-xl bg-crimson hover:bg-bright-red disabled:opacity-50 text-white text-xs font-orbitron font-bold uppercase transition-all shadow-md flex items-center gap-2"
-                  >
-                    <Send className="w-3.5 h-3.5" /> Publish Post
-                  </button>
-                </div>
-              </form>
-
-              {/* Feed Posts List */}
-              {posts.length === 0 ? (
-                <div className="text-center py-12 rounded-2xl bg-[#090909] border border-white/5 space-y-2">
-                  <Share2 className="w-8 h-8 text-[#555] mx-auto" />
-                  <p className="text-xs text-[#777] font-orbitron uppercase">No posts yet.</p>
-                </div>
-              ) : (
-                posts.map((post) => (
-                  <motion.div
-                    key={post.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="rounded-2xl bg-[#090909] border border-crimson/20 p-6 space-y-4 shadow-lg"
-                  >
-                    {/* Author Bar */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full overflow-hidden border border-crimson/30 bg-[#111]">
-                          <img src={post.author?.mediaUrl || "/assets/images/logo.jpeg"} alt={post.author?.displayName || "Author"} className="w-full h-full object-cover" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-orbitron font-bold text-sm text-white">{post.author?.displayName || "CodeXa Member"}</span>
-                            {post.isAnnouncement && (
-                              <span className="bg-crimson text-white text-[8px] font-orbitron font-black px-2 py-0.5 rounded-full uppercase">
-                                ANNOUNCEMENT
-                              </span>
-                            )}
+                  <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                    {activityEvents.length === 0 ? (
+                      <p className="text-xs text-[#666] text-center py-8">No recent events recorded yet.</p>
+                    ) : (
+                      activityEvents.slice(0, 5).map((ev) => (
+                        <div key={ev.id} className="p-3 rounded-2xl bg-[#111] border border-white/5 flex items-start gap-3">
+                          <CodeXaAvatar src={ev.actorMediaUrl} size="xs" />
+                          <div className="flex-1 text-xs">
+                            <p className="text-white font-orbitron font-semibold">{ev.title}</p>
+                            <p className="text-[#888] text-[11px] mt-0.5">{ev.details}</p>
+                            <span className="text-[9px] font-mono text-[#555] block mt-1">
+                              {new Date(ev.createdAt).toLocaleTimeString()} &bull; {new Date(ev.createdAt).toLocaleDateString()}
+                            </span>
                           </div>
-                          <span className="text-[10px] font-mono text-[#666]">
-                            @{post.author?.username} &bull; {new Date(post.createdAt).toLocaleDateString()}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Recent Inquiries */}
+                <div className="p-6 rounded-3xl bg-[#0A0A0A] border border-crimson/20 space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                    <h3 className="font-orbitron font-bold text-xs text-white uppercase tracking-wider">
+                      Recent Client Inquiries
+                    </h3>
+                    <button onClick={() => setActiveTab("inquiries")} className="text-[10px] font-orbitron text-bright-red uppercase hover:underline">
+                      Manage &rarr;
+                    </button>
+                  </div>
+
+                  <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                    {inquiries.length === 0 ? (
+                      <p className="text-xs text-[#666] text-center py-8">No client inquiries yet.</p>
+                    ) : (
+                      inquiries.slice(0, 5).map((inq) => (
+                        <div key={inq.id} className="p-3 rounded-2xl bg-[#111] border border-white/5 flex items-center justify-between">
+                          <div>
+                            <p className="text-xs font-orbitron font-bold text-white">{inq.fullName}</p>
+                            <p className="text-[10px] text-[#888]">{inq.projectType} &bull; <span className="text-emerald-400 font-mono">{inq.budget}</span></p>
+                          </div>
+                          <span className="px-2 py-0.5 rounded bg-crimson/20 border border-crimson/30 text-[9px] font-orbitron font-bold text-bright-red uppercase">
+                            {inq.status}
                           </span>
                         </div>
-                      </div>
-                    </div>
-
-                    {/* Post Content */}
-                    <p className="text-xs sm:text-sm text-[#DDD] leading-relaxed whitespace-pre-line font-light">
-                      {post.content}
-                    </p>
-
-                    {/* Project Link Attachment */}
-                    {post.project && (
-                      <Link
-                        href={`/projects/${post.project.slug}`}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#141414] border border-crimson/20 text-xs font-orbitron text-bright-red hover:text-white transition-colors"
-                      >
-                        <FolderGit2 className="w-3.5 h-3.5" /> Project: {post.project.title} &rarr;
-                      </Link>
+                      ))
                     )}
+                  </div>
+                </div>
 
-                    {/* Like & Comment Action Buttons */}
-                    <div className="flex items-center gap-6 pt-3 border-t border-white/5 text-xs font-orbitron">
-                      <button
-                        onClick={() => handleToggleLike(post.id)}
-                        className={`flex items-center gap-1.5 transition-colors ${
-                          post.hasLiked ? "text-bright-red font-bold" : "text-[#888] hover:text-white"
-                        }`}
-                      >
-                        <Heart className={`w-4 h-4 ${post.hasLiked ? "fill-bright-red text-bright-red" : ""}`} />
-                        <span>{post.likesCount} Likes</span>
-                      </button>
-
-                      <button
-                        onClick={() => handleLoadComments(post.id)}
-                        className="flex items-center gap-1.5 text-[#888] hover:text-white transition-colors"
-                      >
-                        <MessageCircle className="w-4 h-4" />
-                        <span>{post.commentsCount} Comments</span>
-                      </button>
-                    </div>
-
-                    {/* Expandable Comment Drawer */}
-                    {openCommentPostId === post.id && (
-                      <div className="pt-3 space-y-3 border-t border-white/5">
-                        <div className="space-y-2 max-h-48 overflow-y-auto">
-                          {(selectedPostComments[post.id] || []).map((comm) => (
-                            <div key={comm.id} className="p-3 rounded-xl bg-[#111] text-xs">
-                              <span className="font-bold text-bright-red font-orbitron text-[11px] block">
-                                {comm.author?.displayName || "Member"}
-                              </span>
-                              <p className="text-[#CCC] mt-0.5">{comm.content}</p>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Add Comment */}
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={newCommentTexts[post.id] || ""}
-                            onChange={(e) => setNewCommentTexts({ ...newCommentTexts, [post.id]: e.target.value })}
-                            placeholder="Add a reply..."
-                            className="flex-1 bg-[#111] border border-crimson/20 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-bright-red"
-                          />
-                          <button
-                            onClick={() => handleAddComment(post.id)}
-                            className="px-4 py-2 rounded-lg bg-crimson text-white text-xs font-orbitron font-bold uppercase"
-                          >
-                            Reply
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </motion.div>
-                ))
-              )}
+              </div>
             </div>
           )}
 
-          {/* ═══ ACCOUNTS & TEAM ══════════════════════════════════════════════ */}
-          {activeTab === "accounts" && (
-            <div className="space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          {/* ═══ TAB 2: MY PROFILE (FOUNDER PROFILE HUB) ═══════════════════ */}
+          {activeTab === "my-profile" && (
+            <div className="space-y-6 max-w-4xl">
+              <div className="flex items-center justify-between pb-4 border-b border-crimson/20">
                 <div>
                   <span className="text-[10px] font-orbitron text-bright-red tracking-[0.3em] uppercase font-bold">
-                    OWNER ACCESS ONLY
+                    DIGITAL IDENTITY
                   </span>
-                  <h1 className="font-orbitron font-black text-2xl text-white uppercase mt-1">
-                    Team & Account Management
+                  <h1 className="font-orbitron font-black text-2xl sm:text-3xl text-white uppercase mt-1">
+                    Owner Digital Profile
+                  </h1>
+                </div>
+                <div className="flex gap-2.5">
+                  <button
+                    onClick={() => setEditSelfModalOpen(true)}
+                    className="px-5 py-2.5 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(217,4,41,0.3)] flex items-center gap-1.5"
+                  >
+                    <Edit3 className="w-4 h-4" /> Edit Profile
+                  </button>
+                  <Link
+                    href={`/team/${currentUser?.username || "ashu"}`}
+                    target="_blank"
+                    className="px-4 py-2.5 rounded-xl bg-[#151515] hover:bg-deep-red/20 border border-crimson/30 text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center gap-1.5"
+                  >
+                    <ExternalLink className="w-4 h-4 text-bright-red" /> View Public
+                  </Link>
+                </div>
+              </div>
+
+              {/* Profile Card Preview */}
+              <div className="rounded-3xl bg-[#0A0A0A] border border-crimson/25 p-8 space-y-6 shadow-2xl">
+                <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 text-center sm:text-left">
+                  <div className="relative group">
+                    <CodeXaAvatar
+                      src={currentUser?.mediaUrl}
+                      alt={currentUser?.displayName}
+                      size="2xl"
+                      showGlow
+                    />
+                    <button
+                      onClick={() => setMediaSelectorOpen(true)}
+                      className="absolute inset-0 rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-orbitron font-bold uppercase"
+                    >
+                      <Camera className="w-5 h-5 mb-1 text-bright-red" /> Change PFP
+                    </button>
+                  </div>
+
+                  <div className="space-y-2 flex-1">
+                    <div className="flex items-center justify-center sm:justify-start gap-2.5 flex-wrap">
+                      <h2 className="font-orbitron font-black text-2xl text-white uppercase">{currentUser?.displayName}</h2>
+                      <span className="px-3 py-0.5 rounded-full bg-crimson text-white text-[9px] font-orbitron font-black uppercase tracking-wider">
+                        {currentUser?.leadershipPosition || "FOUNDER"}
+                      </span>
+                    </div>
+                    <p className="text-xs font-mono text-crimson">@{currentUser?.username || "ashu"}</p>
+                    <p className="text-xs font-orbitron text-[#BBB] pt-1">{currentUser?.headline || "CodeXa Founder & Lead Architect"}</p>
+                    <p className="text-xs text-[#888] leading-relaxed max-w-2xl whitespace-pre-line pt-1">
+                      {currentUser?.bio || "Architecting next-generation autonomous software and agency operations."}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Skills */}
+                <div className="pt-4 border-t border-white/5">
+                  <h4 className="text-[10px] font-orbitron font-bold uppercase text-[#777] mb-2.5">Competencies & Skills</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {currentUser?.skills?.map((s: string, i: number) => (
+                      <span key={i} className="px-3 py-1 rounded-xl bg-[#141414] border border-crimson/20 text-xs font-orbitron text-white">
+                        {s}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* External Links */}
+                <div className="pt-4 border-t border-white/5 flex flex-wrap gap-3">
+                  {currentUser?.githubUrl && (
+                    <a href={currentUser.githubUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#121212] border border-white/5 text-xs text-[#CCC] hover:text-white">
+                      <Github className="w-3.5 h-3.5" /> GitHub
+                    </a>
+                  )}
+                  {currentUser?.linkedinUrl && (
+                    <a href={currentUser.linkedinUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#121212] border border-white/5 text-xs text-[#CCC] hover:text-white">
+                      <Linkedin className="w-3.5 h-3.5" /> LinkedIn
+                    </a>
+                  )}
+                  {currentUser?.portfolioUrl && (
+                    <a href={currentUser.portfolioUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#121212] border border-white/5 text-xs text-[#CCC] hover:text-white">
+                      <Globe className="w-3.5 h-3.5" /> Portfolio
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ═══ TAB 3: TEAM MEMBERS ═══════════════════════════════════════ */}
+          {activeTab === "team" && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-crimson/20">
+                <div>
+                  <span className="text-[10px] font-orbitron text-bright-red tracking-[0.3em] uppercase font-bold">
+                    CORE ROSTER
+                  </span>
+                  <h1 className="font-orbitron font-black text-2xl sm:text-3xl text-white uppercase mt-1">
+                    Team Members & Profiles
                   </h1>
                 </div>
                 <button
                   onClick={() => setCreateAccountModalOpen(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase tracking-wider shadow-lg transition-all"
+                  className="px-4 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(217,4,41,0.3)] inline-flex items-center gap-1.5"
                 >
-                  <Plus className="w-4 h-4" /> Provision New Account
+                  <Plus className="w-3.5 h-3.5" /> Create Member
                 </button>
               </div>
 
-              {/* Accounts Table */}
-              <div className="rounded-2xl bg-[#090909] border border-crimson/20 overflow-hidden shadow-2xl">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-[#111] border-b border-white/5 font-orbitron text-[10px] text-[#888] uppercase tracking-wider">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {accounts.map((member) => (
+                  <div
+                    key={member.id}
+                    className="cyber-card p-6 flex flex-col justify-between space-y-4"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3.5">
+                        <CodeXaAvatar src={member.mediaUrl} alt={member.displayName} size="md" showGlow />
+                        <div className="flex-1">
+                          <h4 className="font-orbitron font-bold text-sm text-white">{member.displayName}</h4>
+                          <p className="text-[10px] font-mono text-crimson">@{member.username}</p>
+                          <span className="inline-block mt-0.5 px-2 py-0.2 rounded-full bg-crimson/15 border border-crimson/30 text-[8px] font-orbitron font-bold text-bright-red uppercase">
+                            {member.leadershipPosition || member.role.replace("_", " ")}
+                          </span>
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-[#888] line-clamp-2 leading-relaxed">
+                        {member.headline || member.bio || "Specialized CodeXa developer."}
+                      </p>
+
+                      {/* Skills */}
+                      {member.skills && member.skills.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {member.skills.slice(0, 3).map((s, idx) => (
+                            <span key={idx} className="px-2 py-0.5 rounded bg-[#141414] border border-white/5 text-[9px] font-orbitron text-[#AAA]">
+                              {s}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Owner Management Controls */}
+                    <div className="space-y-2 pt-3 border-t border-white/5">
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => handleOpenEditMemberModal(member)}
+                          className="py-2 rounded-xl bg-[#141414] hover:bg-crimson text-white text-[10px] font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1"
+                        >
+                          <Edit3 className="w-3 h-3 text-bright-red" /> Edit Profile
+                        </button>
+                        <Link
+                          href={`/team/${member.username}`}
+                          target="_blank"
+                          className="py-2 rounded-xl bg-[#141414] hover:bg-[#202020] text-white text-[10px] font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1"
+                        >
+                          <Eye className="w-3 h-3 text-[#888]" /> View
+                        </Link>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleStartDirectChat(member.id)}
+                          className="flex-1 py-1.5 rounded-lg bg-[#111] hover:bg-deep-red/20 text-[#888] hover:text-white text-[9px] font-orbitron uppercase transition-colors flex items-center justify-center gap-1"
+                        >
+                          <MessageSquare className="w-3 h-3" /> Message
+                        </button>
+                        {member.role !== "OWNER" && (
+                          <button
+                            onClick={() => handleToggleAccountActive(member)}
+                            className={`px-3 py-1.5 rounded-lg text-[9px] font-orbitron uppercase transition-colors ${
+                              member.isActive ? "bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20" : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20"
+                            }`}
+                          >
+                            {member.isActive ? "Deactivate" : "Activate"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ═══ TAB 4: ACCOUNTS & SECURITY ═════════════════════════════════ */}
+          {activeTab === "accounts" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between pb-4 border-b border-crimson/20">
+                <div>
+                  <span className="text-[10px] font-orbitron text-bright-red tracking-[0.3em] uppercase font-bold">
+                    SECURITY GOVERNANCE
+                  </span>
+                  <h1 className="font-orbitron font-black text-2xl sm:text-3xl text-white uppercase mt-1">
+                    Accounts Management
+                  </h1>
+                </div>
+                <button
+                  onClick={() => setCreateAccountModalOpen(true)}
+                  className="px-4 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(217,4,41,0.3)] inline-flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Provision Account
+                </button>
+              </div>
+
+              <div className="overflow-x-auto rounded-3xl bg-[#0A0A0A] border border-crimson/25 p-6 shadow-xl">
+                <table className="w-full text-xs text-left">
+                  <thead className="text-[10px] font-orbitron uppercase text-[#777] border-b border-white/5">
                     <tr>
-                      <th className="p-4">Member</th>
-                      <th className="p-4">Role</th>
-                      <th className="p-4">Status</th>
-                      <th className="p-4">Projects</th>
-                      <th className="p-4 text-right">Actions</th>
+                      <th className="pb-3">User</th>
+                      <th className="pb-3">Email</th>
+                      <th className="pb-3">Role</th>
+                      <th className="pb-3">Status</th>
+                      <th className="pb-3">Created Date</th>
+                      <th className="pb-3 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-white/5 font-light">
-                    {accounts.map((account) => (
-                      <tr key={account.id} className="hover:bg-[#0E0E0E] transition-colors">
-                        <td className="p-4">
+                  <tbody className="divide-y divide-white/5">
+                    {accounts.map((acc) => (
+                      <tr key={acc.id} className="hover:bg-[#111] transition-colors">
+                        <td className="py-3.5">
                           <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-full overflow-hidden border border-crimson/30 bg-[#111] flex-shrink-0">
-                              <img src={account.mediaUrl || "/assets/images/logo.jpeg"} alt={account.displayName} className="w-full h-full object-cover" />
-                            </div>
+                            <CodeXaAvatar src={acc.mediaUrl} size="xs" />
                             <div>
-                              <p className="font-orbitron font-bold text-white">{account.displayName}</p>
-                              <p className="text-[11px] font-mono text-[#777]">@{account.username} &bull; {account.email}</p>
+                              <p className="font-orbitron font-bold text-white">{acc.displayName}</p>
+                              <p className="text-[9px] font-mono text-crimson">@{acc.username}</p>
                             </div>
                           </div>
                         </td>
-                        <td className="p-4">
-                          <select
-                            value={account.role}
-                            onChange={(e) => handleChangeRole(account, e.target.value)}
-                            disabled={account.id === currentUser?.id}
-                            className="bg-[#141414] border border-crimson/20 rounded px-2.5 py-1 text-xs font-orbitron uppercase text-white outline-none focus:border-bright-red"
-                          >
-                            <option value="OWNER">OWNER</option>
-                            <option value="ADMIN">ADMIN</option>
-                            <option value="TEAM_MEMBER">TEAM MEMBER</option>
-                          </select>
-                        </td>
-                        <td className="p-4">
-                          <button
-                            onClick={() => handleToggleAccountActive(account)}
-                            disabled={account.id === currentUser?.id}
-                            className={`px-2.5 py-1 rounded-full text-[9px] font-orbitron font-bold uppercase border transition-all ${
-                              account.isActive
-                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                                : "bg-red-500/10 text-red-400 border-red-500/30"
-                            }`}
-                          >
-                            {account.isActive ? "ACTIVE" : "DEACTIVATED"}
-                          </button>
-                        </td>
-                        <td className="p-4 font-mono text-white">
-                          {account.projectsCount || 0} Builds
-                        </td>
-                        <td className="p-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <Link
-                              href={`/team/${account.username}`}
-                              target="_blank"
-                              className="p-1.5 rounded bg-[#141414] hover:bg-[#222] text-[#A5A5A5] hover:text-white"
-                              title="View Public Profile"
+                        <td className="py-3 text-[#AAA] font-mono">{acc.email}</td>
+                        <td className="py-3">
+                          {acc.role === "OWNER" ? (
+                            <span className="px-2 py-0.5 rounded bg-crimson text-white font-orbitron text-[9px] font-black uppercase">
+                              OWNER
+                            </span>
+                          ) : (
+                            <select
+                              value={acc.role}
+                              onChange={(e) => handleChangeRole(acc, e.target.value)}
+                              className="bg-[#141414] border border-crimson/20 rounded-lg px-2 py-1 text-[9px] font-orbitron text-white outline-none"
                             >
-                              <Eye className="w-3.5 h-3.5" />
-                            </Link>
+                              <option value="TEAM_MEMBER">TEAM_MEMBER</option>
+                              <option value="ADMIN">ADMIN</option>
+                            </select>
+                          )}
+                        </td>
+                        <td className="py-3">
+                          <span className={`px-2 py-0.5 rounded text-[8px] font-orbitron font-bold uppercase ${
+                            acc.isActive ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30"
+                          }`}>
+                            {acc.isActive ? "ACTIVE" : "DISABLED"}
+                          </span>
+                        </td>
+                        <td className="py-3 text-[#777] font-mono">
+                          {new Date(acc.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="py-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
                             <button
-                              onClick={() => { setResetPasswordModalUser(account); setNewPasswordInput(""); }}
-                              className="p-1.5 rounded bg-[#141414] hover:bg-[#222] text-[#A5A5A5] hover:text-amber-400"
+                              onClick={() => {
+                                setResetPasswordModalUser(acc);
+                                setNewPasswordInput("");
+                              }}
+                              className="p-1.5 rounded-lg bg-[#141414] hover:bg-deep-red/20 text-[#888] hover:text-white transition-colors"
                               title="Reset Password"
                             >
-                              <Key className="w-3.5 h-3.5" />
+                              <Key className="w-3.5 h-3.5 text-amber-400" />
                             </button>
-                            {account.id !== currentUser?.id && (
+                            {acc.role !== "OWNER" && (
                               <button
-                                onClick={() => handleDeleteAccount(account)}
-                                className="p-1.5 rounded bg-[#141414] hover:bg-red-900/30 text-[#A5A5A5] hover:text-red-400"
+                                onClick={() => handleDeleteAccount(acc)}
+                                className="p-1.5 rounded-lg bg-[#141414] hover:bg-crimson text-[#888] hover:text-white transition-colors"
                                 title="Delete Account"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Trash2 className="w-3.5 h-3.5 text-bright-red" />
                               </button>
                             )}
                           </div>
@@ -901,247 +1287,113 @@ function OwnerDashboardContent() {
             </div>
           )}
 
-          {/* ═══ INQUIRIES CONSOLE ════════════════════════════════════════════ */}
-          {activeTab === "inquiries" && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h1 className="font-orbitron font-black text-2xl text-white uppercase">Inquiries Pipeline ({filteredInquiries.length})</h1>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                <div className="lg:col-span-6 space-y-3">
-                  {filteredInquiries.length === 0 ? (
-                    <p className="text-xs text-[#666] p-6 text-center bg-[#090909] rounded-2xl">No inquiries found.</p>
-                  ) : (
-                    filteredInquiries.map((inq) => (
-                      <div
-                        key={inq.id}
-                        onClick={() => setSelectedInquiry(inq)}
-                        className={`p-4 rounded-2xl border cursor-pointer transition-all ${
-                          selectedInquiry?.id === inq.id ? "bg-deep-red/15 border-bright-red" : "bg-[#090909] border-crimson/15"
-                        }`}
-                      >
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="font-mono text-xs font-bold text-bright-red">{inq.referenceId}</span>
-                          <span className="text-[9px] font-orbitron font-bold px-2 py-0.5 rounded uppercase border bg-amber-500/10 text-amber-400 border-amber-500/30">
-                            {inq.status}
-                          </span>
-                        </div>
-                        <h4 className="font-orbitron font-bold text-sm text-white">{inq.fullName}</h4>
-                        <p className="text-xs text-[#777] line-clamp-1">{inq.message}</p>
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                <div className="lg:col-span-6">
-                  {selectedInquiry ? (
-                    <div className="rounded-2xl bg-[#090909] border border-crimson/25 p-6 space-y-4">
-                      <div className="flex justify-between items-center pb-3 border-b border-white/5">
-                        <h3 className="font-orbitron font-bold text-base text-white">{selectedInquiry.fullName}</h3>
-                        <button onClick={() => setSelectedInquiry(null)}><X className="w-4 h-4 text-[#888]" /></button>
-                      </div>
-                      <div className="space-y-2 text-xs bg-[#111] p-3.5 rounded-xl">
-                        <div><span className="text-[#777]">Email:</span> <a href={`mailto:${selectedInquiry.email}`} className="text-bright-red">{selectedInquiry.email}</a></div>
-                        <div><span className="text-[#777]">Budget:</span> <span className="text-emerald-400 font-bold">{selectedInquiry.budget}</span></div>
-                      </div>
-                      <div className="bg-[#050505] p-3.5 rounded-xl border border-white/5 text-xs text-[#CCC] whitespace-pre-line">
-                        {selectedInquiry.message}
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Update Status</label>
-                        <select
-                          value={selectedInquiry.status}
-                          onChange={(e) => handleUpdateInquiryStatus(selectedInquiry.id, e.target.value)}
-                          className="w-full bg-[#111] border border-crimson/30 rounded-lg p-2 text-xs font-orbitron text-white outline-none"
-                        >
-                          <option value="NEW">NEW</option>
-                          <option value="CONTACTED">CONTACTED</option>
-                          <option value="DISCUSSION">DISCUSSION</option>
-                          <option value="IN_PROGRESS">IN PROGRESS</option>
-                          <option value="COMPLETED">COMPLETED</option>
-                        </select>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="h-48 rounded-2xl bg-[#090909] border border-white/5 flex items-center justify-center text-xs font-orbitron text-[#666]">
-                      Select an inquiry to view details.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ═══ PROJECTS PIPELINE (Main Project Approvals) ═══════════════════ */}
+          {/* ═══ TAB 5: PROJECTS PIPELINE ═══════════════════════════════════ */}
           {activeTab === "projects" && (
             <div className="space-y-6">
-              <h1 className="font-orbitron font-black text-2xl text-white uppercase">Projects Pipeline</h1>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {projects.map((proj) => (
-                  <div key={proj.id} className="rounded-2xl bg-[#090909] border border-crimson/20 p-5 flex flex-col justify-between space-y-4">
-                    <div>
-                      <div className="h-40 rounded-xl overflow-hidden bg-[#111] mb-3">
-                        <img src={proj.thumbnailUrl || "/assets/images/4e56a053e3ee0019b13c19c5b3f614fe.jpg"} alt={proj.title} className="w-full h-full object-cover" />
-                      </div>
-                      <h4 className="font-orbitron font-bold text-base text-white">{proj.title}</h4>
-                      <p className="text-xs text-[#777] line-clamp-2 mt-1">{proj.shortDesc}</p>
-                    </div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-crimson/20">
+                <div>
+                  <span className="text-[10px] font-orbitron text-bright-red tracking-[0.3em] uppercase font-bold">
+                    BUILD GOVERNANCE
+                  </span>
+                  <h1 className="font-orbitron font-black text-2xl sm:text-3xl text-white uppercase mt-1">
+                    Projects & Systems Pipeline
+                  </h1>
+                </div>
+                <button
+                  onClick={() => setCreateProjectModalOpen(true)}
+                  className="px-4 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(217,4,41,0.3)] inline-flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add Project
+                </button>
+              </div>
 
-                    <div className="space-y-2 pt-3 border-t border-white/5 text-xs font-orbitron">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[#888]">Main Official Build:</span>
-                        <button
-                          onClick={() => handleToggleMainProject(proj)}
-                          className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase border transition-all ${
-                            proj.isMainProject
-                              ? "bg-crimson text-white border-bright-red shadow-[0_0_10px_rgba(217,4,41,0.4)]"
-                              : "bg-[#141414] text-[#666] border-white/10"
-                          }`}
-                        >
-                          {proj.isMainProject ? "APPROVED" : "APPROVE"}
-                        </button>
-                      </div>
-                      <div className="pt-2 text-right">
-                        <Link href={`/projects/${proj.slug}`} target="_blank" className="text-[10px] text-bright-red uppercase flex items-center justify-end gap-1">
-                          Case Study <ArrowUpRight className="w-3 h-3" />
-                        </Link>
-                      </div>
-                    </div>
-                  </div>
+              {/* Filter Pills */}
+              <div className="flex gap-2">
+                {[
+                  { id: "ALL", label: "All Builds" },
+                  { id: "MAIN", label: "Main Flagships" },
+                  { id: "HIDDEN", label: "Hidden" },
+                  { id: "ARCHIVED", label: "Archived" },
+                ].map((f) => (
+                  <button
+                    key={f.id}
+                    onClick={() => setProjectCategoryFilter(f.id)}
+                    className={`px-3 py-1 rounded-xl text-[10px] font-orbitron font-bold uppercase transition-all ${
+                      projectCategoryFilter === f.id ? "bg-crimson text-white" : "bg-[#111] text-[#888] hover:text-white"
+                    }`}
+                  >
+                    {f.label}
+                  </button>
                 ))}
               </div>
-            </div>
-          )}
 
-          {/* ═══ INTERNAL CHAT ════════════════════════════════════════════════ */}
-          {activeTab === "chat" && (
-            <div className="h-[75vh] rounded-2xl bg-[#090909] border border-crimson/25 overflow-hidden flex shadow-2xl">
-              {/* Channel list */}
-              <div className="w-72 border-r border-crimson/15 bg-[#060606] flex flex-col">
-                <div className="p-4 border-b border-white/5">
-                  <span className="text-[10px] font-orbitron text-bright-red uppercase tracking-wider font-bold">CHANNELS</span>
-                  <h3 className="font-orbitron font-bold text-sm text-white">Direct & Team Rooms</h3>
-                </div>
-                <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                  {conversations.map((conv) => (
-                    <button
-                      key={conv.id}
-                      onClick={() => setActiveConversationId(conv.id)}
-                      className={`w-full text-left p-3 rounded-xl transition-all ${
-                        conv.id === activeConversationId ? "bg-deep-red/20 border border-crimson/40 text-white" : "hover:bg-[#111] text-[#888]"
-                      }`}
-                    >
-                      <p className="font-orbitron font-bold text-xs truncate text-white">{conv.title}</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Chat messages */}
-              <div className="flex-1 flex flex-col justify-between bg-[#080808]">
-                <div className="flex-1 overflow-y-auto p-6 space-y-3">
-                  {chatMessages.map((msg) => (
-                    <div key={msg.id} className="p-3 rounded-xl bg-[#141414] text-xs max-w-md">
-                      <span className="font-bold text-bright-red text-[11px] block">{msg.sender?.displayName || "Member"}</span>
-                      {msg.message}
-                    </div>
-                  ))}
-                </div>
-
-                <form onSubmit={handleSendMessage} className="p-4 border-t border-white/5 bg-[#0A0A0A] flex gap-3">
-                  <input
-                    type="text"
-                    value={newMessageText}
-                    onChange={(e) => setNewMessageText(e.target.value)}
-                    placeholder="Type internal encrypted message..."
-                    className="flex-1 bg-[#111] border border-crimson/20 rounded-xl px-4 py-2.5 text-xs text-white outline-none"
-                  />
-                  <button type="submit" className="px-5 py-2.5 rounded-xl bg-crimson text-white text-xs font-orbitron font-bold">
-                    <Send className="w-3.5 h-3.5" />
-                  </button>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {/* ═══ SETTINGS (Homepage Section Visibility Toggles) ═══════════════ */}
-          {activeTab === "settings" && (
-            <div className="space-y-6 max-w-3xl">
-              <div>
-                <span className="text-[10px] font-orbitron text-bright-red tracking-[0.3em] uppercase font-bold">
-                  INFRASTRUCTURE CONFIG
-                </span>
-                <h1 className="font-orbitron font-black text-2xl text-white uppercase mt-1">
-                  Homepage Section Visibility & Controls
-                </h1>
-              </div>
-
-              <div className="rounded-2xl bg-[#090909] border border-crimson/20 p-6 space-y-5">
-                <h3 className="font-orbitron font-bold text-sm text-white uppercase tracking-wider pb-3 border-b border-white/5">
-                  Homepage Dynamic Sections
-                </h3>
-
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 rounded-xl bg-[#111] border border-white/5">
-                    <div>
-                      <p className="font-orbitron font-bold text-xs text-white">Main Projects Showcase</p>
-                      <p className="text-[11px] text-[#666]">Renders official CodeXa flagship builds section on homepage</p>
-                    </div>
-                    <button
-                      onClick={() => handleToggleHomepageSection("mainProjectsHomeVisible")}
-                      className={`px-4 py-1.5 rounded-full text-xs font-orbitron font-bold uppercase transition-all border ${
-                        siteSettings.mainProjectsHomeVisible
-                          ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40"
-                          : "bg-red-500/20 text-red-400 border-red-500/40"
-                      }`}
-                    >
-                      {siteSettings.mainProjectsHomeVisible ? "VISIBLE ON HOMEPAGE" : "HIDDEN FROM HOMEPAGE"}
-                    </button>
-                  </div>
-
-                  <div className="flex items-center justify-between p-4 rounded-xl bg-[#111] border border-white/5">
-                    <div>
-                      <p className="font-orbitron font-bold text-xs text-white">Team Projects Showcase</p>
-                      <p className="text-[11px] text-[#666]">Renders category-filtered developer builds section on homepage</p>
-                    </div>
-                    <button
-                      onClick={() => handleToggleHomepageSection("teamProjectsHomeVisible")}
-                      className={`px-4 py-1.5 rounded-full text-xs font-orbitron font-bold uppercase transition-all border ${
-                        siteSettings.teamProjectsHomeVisible
-                          ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40"
-                          : "bg-red-500/20 text-red-400 border-red-500/40"
-                      }`}
-                    >
-                      {siteSettings.teamProjectsHomeVisible ? "VISIBLE ON HOMEPAGE" : "HIDDEN FROM HOMEPAGE"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ═══ AUDIT LOGS ═══════════════════════════════════════════════════ */}
-          {activeTab === "audit" && (
-            <div className="space-y-6">
-              <h1 className="font-orbitron font-black text-2xl text-white uppercase">Security Audit Logs</h1>
-              <div className="rounded-2xl bg-[#090909] border border-crimson/20 overflow-hidden">
-                <table className="w-full text-left text-xs font-mono">
-                  <thead className="bg-[#111] border-b border-white/5 text-[10px] text-[#888] uppercase">
+              <div className="overflow-x-auto rounded-3xl bg-[#0A0A0A] border border-crimson/25 p-6 shadow-xl">
+                <table className="w-full text-xs text-left">
+                  <thead className="text-[10px] font-orbitron uppercase text-[#777] border-b border-white/5">
                     <tr>
-                      <th className="p-4">Timestamp</th>
-                      <th className="p-4">Action</th>
-                      <th className="p-4">Actor</th>
-                      <th className="p-4">Details</th>
+                      <th className="pb-3">Title / Slug</th>
+                      <th className="pb-3">Category</th>
+                      <th className="pb-3">Creator</th>
+                      <th className="pb-3">Main Project</th>
+                      <th className="pb-3">Homepage</th>
+                      <th className="pb-3">Status</th>
+                      <th className="pb-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {auditLogs.map((log) => (
-                      <tr key={log.id} className="hover:bg-[#0E0E0E]">
-                        <td className="p-4 text-[#777]">{new Date(log.createdAt).toLocaleString()}</td>
-                        <td className="p-4 text-bright-red font-bold">{log.action}</td>
-                        <td className="p-4 text-white">{log.actorName || "System"}</td>
-                        <td className="p-4 text-[#AAA] font-sans">{log.details}</td>
+                    {filteredProjects.map((proj) => (
+                      <tr key={proj.id} className="hover:bg-[#111] transition-colors">
+                        <td className="py-3.5">
+                          <Link href={`/projects/${proj.slug}`} className="font-orbitron font-bold text-white hover:text-bright-red transition-colors flex items-center gap-1">
+                            {proj.title} <ArrowUpRight className="w-3 h-3 text-bright-red" />
+                          </Link>
+                          <span className="text-[9px] font-mono text-[#666]">/projects/{proj.slug}</span>
+                        </td>
+                        <td className="py-3 text-[#AAA]">{proj.category}</td>
+                        <td className="py-3 font-mono text-crimson">@{proj.creator?.username || "member"}</td>
+                        <td className="py-3">
+                          <button
+                            onClick={() => handleToggleMainProject(proj)}
+                            className={`px-2.5 py-0.5 rounded-lg text-[9px] font-orbitron font-bold uppercase transition-all ${
+                              proj.isMainProject ? "bg-crimson text-white" : "bg-[#141414] text-[#888] border border-white/5"
+                            }`}
+                          >
+                            {proj.isMainProject ? "FLAGSHIP" : "NORMAL"}
+                          </button>
+                        </td>
+                        <td className="py-3">
+                          <button
+                            onClick={() => handleToggleHomepageVisibility(proj)}
+                            className={`px-2.5 py-0.5 rounded-lg text-[9px] font-orbitron font-bold uppercase transition-all ${
+                              proj.isHomepageVisible ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-[#141414] text-[#666]"
+                            }`}
+                          >
+                            {proj.isHomepageVisible ? "SHOW" : "HIDE"}
+                          </button>
+                        </td>
+                        <td className="py-3">
+                          <span className="px-2 py-0.5 rounded bg-black/60 text-[#AAA] text-[8px] font-orbitron uppercase">
+                            {proj.status}
+                          </span>
+                        </td>
+                        <td className="py-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => handleArchiveProject(proj)}
+                              className="p-1.5 rounded-lg bg-[#141414] hover:bg-deep-red/20 text-[#888] hover:text-white"
+                              title={proj.status === "ARCHIVED" ? "Restore" : "Archive"}
+                            >
+                              <Archive className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteProject(proj)}
+                              className="p-1.5 rounded-lg bg-[#141414] hover:bg-crimson text-[#888] hover:text-white"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-bright-red" />
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1150,129 +1402,494 @@ function OwnerDashboardContent() {
             </div>
           )}
 
-          {/* ═══ NOTIFICATIONS ════════════════════════════════════════════════ */}
-          {activeTab === "notifications" && (
-            <div className="space-y-4">
-              <h1 className="font-orbitron font-black text-2xl text-white uppercase">System Notifications</h1>
-              {notifications.map((n) => (
-                <div key={n.id} className="p-4 rounded-xl bg-[#090909] border border-crimson/20 text-xs">
-                  <p className="font-bold text-bright-red">{n.title}</p>
-                  <p className="text-[#AAA] mt-0.5">{n.message}</p>
+          {/* ═══ TAB 6: HOMEPAGE CONTROLS ═══════════════════════════════════ */}
+          {activeTab === "homepage" && (
+            <div className="space-y-6 max-w-4xl">
+              <div className="pb-4 border-b border-crimson/20">
+                <span className="text-[10px] font-orbitron text-bright-red tracking-[0.3em] uppercase font-bold">
+                  LANDING PAGE LAYOUT
+                </span>
+                <h1 className="font-orbitron font-black text-2xl sm:text-3xl text-white uppercase mt-1">
+                  Homepage Section Governance
+                </h1>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="p-6 rounded-3xl bg-[#0A0A0A] border border-crimson/20 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-orbitron font-bold text-sm text-white">Main Projects Section</h3>
+                      <p className="text-xs text-[#888] mt-0.5">Controls the Flagship Main Projects showcase on the landing page.</p>
+                    </div>
+                    <button
+                      onClick={() => handleToggleHomepageSection("mainProjectsHomeVisible")}
+                      className={`px-4 py-2 rounded-xl text-xs font-orbitron font-bold uppercase transition-all ${
+                        siteSettings.mainProjectsHomeVisible ? "bg-crimson text-white" : "bg-[#141414] text-[#666]"
+                      }`}
+                    >
+                      {siteSettings.mainProjectsHomeVisible ? "ON (ACTIVE)" : "OFF"}
+                    </button>
+                  </div>
                 </div>
-              ))}
+
+                <div className="p-6 rounded-3xl bg-[#0A0A0A] border border-crimson/20 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-orbitron font-bold text-sm text-white">Team Projects Section</h3>
+                      <p className="text-xs text-[#888] mt-0.5">Controls the Community Team Projects repository grid on the landing page.</p>
+                    </div>
+                    <button
+                      onClick={() => handleToggleHomepageSection("teamProjectsHomeVisible")}
+                      className={`px-4 py-2 rounded-xl text-xs font-orbitron font-bold uppercase transition-all ${
+                        siteSettings.teamProjectsHomeVisible ? "bg-crimson text-white" : "bg-[#141414] text-[#666]"
+                      }`}
+                    >
+                      {siteSettings.teamProjectsHomeVisible ? "ON (ACTIVE)" : "OFF"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ═══ TAB 7: SOCIAL FEED ═════════════════════════════════════════ */}
+          {activeTab === "feed" && (
+            <div className="space-y-6 max-w-3xl">
+              <div className="pb-4 border-b border-crimson/20">
+                <span className="text-[10px] font-orbitron text-bright-red tracking-[0.3em] uppercase font-bold">
+                  TEAM STREAM
+                </span>
+                <h1 className="font-orbitron font-black text-2xl sm:text-3xl text-white uppercase mt-1">
+                  Team Core Social Feed
+                </h1>
+              </div>
+
+              {/* Composer */}
+              <form onSubmit={handleCreatePost} className="p-5 rounded-3xl bg-[#0A0A0A] border border-crimson/25 space-y-3 shadow-xl">
+                <textarea
+                  rows={3}
+                  value={newPostContent}
+                  onChange={(e) => setNewPostContent(e.target.value)}
+                  placeholder="Broadcast an update or announcement to the entire CodeXa Agency..."
+                  className="w-full bg-[#121212] border border-crimson/20 rounded-2xl p-3 text-xs text-white outline-none focus:border-bright-red resize-none"
+                />
+                <div className="flex items-center justify-between pt-1">
+                  <label className="flex items-center gap-2 text-xs font-orbitron text-[#AAA] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isPostAnnouncement}
+                      onChange={(e) => setIsPostAnnouncement(e.target.checked)}
+                      className="accent-crimson"
+                    />
+                    <span>Mark as Official Announcement</span>
+                  </label>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(217,4,41,0.3)] flex items-center gap-1.5"
+                  >
+                    <Send className="w-3.5 h-3.5" /> Broadcast
+                  </button>
+                </div>
+              </form>
+
+              {/* Feed Stream */}
+              <div className="space-y-4">
+                {posts.map((post) => (
+                  <div key={post.id} className="cyber-card p-5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Link href={`/team/${post.author?.username}`} className="flex items-center gap-3">
+                        <CodeXaAvatar src={post.author?.mediaUrl} size="sm" />
+                        <div>
+                          <p className="font-orbitron font-bold text-xs text-white">{post.author?.displayName}</p>
+                          <span className="text-[9px] font-mono text-crimson">@{post.author?.username}</span>
+                        </div>
+                      </Link>
+                      <button
+                        onClick={() => handleDeletePost(post.id)}
+                        className="px-3 py-1.5 rounded-xl bg-deep-red/20 hover:bg-crimson text-bright-red hover:text-white text-[10px] font-orbitron font-bold uppercase transition-colors flex items-center gap-1"
+                      >
+                        <Trash2 className="w-3 h-3" /> Remove Post
+                      </button>
+                    </div>
+                    <p className="text-xs text-[#DDD] leading-relaxed whitespace-pre-line">{post.content}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ═══ TAB 8: INTERNAL MESSAGES ═══════════════════════════════════ */}
+          {activeTab === "chat" && (
+            <div className="space-y-6">
+              <div className="pb-4 border-b border-crimson/20">
+                <span className="text-[10px] font-orbitron text-bright-red tracking-[0.3em] uppercase font-bold">
+                  ENCRYPTED CHANNELS
+                </span>
+                <h1 className="font-orbitron font-black text-2xl sm:text-3xl text-white uppercase mt-1">
+                  Internal Messages
+                </h1>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 h-[600px] rounded-3xl bg-[#0A0A0A] border border-crimson/25 overflow-hidden shadow-2xl">
+                
+                {/* Conversation List */}
+                <div className="border-r border-white/5 p-4 flex flex-col justify-between overflow-y-auto">
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-orbitron font-bold uppercase text-[#777]">Direct Channels</span>
+                    {conversations.map((c) => (
+                      <div
+                        key={c.id}
+                        onClick={() => setActiveConversationId(c.id)}
+                        className={`p-3 rounded-2xl cursor-pointer transition-colors ${
+                          activeConversationId === c.id ? "bg-crimson text-white" : "bg-[#111] text-[#AAA] hover:bg-[#151515]"
+                        }`}
+                      >
+                        <p className="font-orbitron font-bold text-xs">Direct Channel</p>
+                        <p className="text-[10px] font-mono opacity-75">{new Date(c.updatedAt).toLocaleTimeString()}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Message Stream */}
+                <div className="md:col-span-2 p-5 flex flex-col justify-between h-full bg-[#070707]">
+                  <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+                    {chatMessages.length === 0 ? (
+                      <p className="text-xs text-[#666] text-center py-20">Select a conversation or start a chat.</p>
+                    ) : (
+                      chatMessages.map((m) => (
+                        <div key={m.id} className={`flex gap-3 ${m.senderId === currentUser?.id ? "justify-end" : "justify-start"}`}>
+                          <div className={`max-w-md p-3.5 rounded-2xl text-xs ${
+                            m.senderId === currentUser?.id ? "bg-crimson text-white" : "bg-[#141414] text-[#DDD] border border-white/5"
+                          }`}>
+                            <p className="font-bold text-[10px] font-orbitron mb-1">{m.senderName}</p>
+                            <p className="leading-relaxed">{m.message}</p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <form onSubmit={handleSendMessage} className="flex gap-2 pt-3 border-t border-white/5">
+                    <input
+                      type="text"
+                      value={newMessageText}
+                      onChange={(e) => setNewMessageText(e.target.value)}
+                      placeholder="Type your message..."
+                      className="flex-1 bg-[#111] border border-crimson/20 rounded-xl px-4 py-2 text-xs text-white outline-none"
+                    />
+                    <button type="submit" className="p-2.5 rounded-xl bg-crimson hover:bg-bright-red text-white">
+                      <Send className="w-4 h-4" />
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ═══ TAB 9: NOTIFICATIONS ═══════════════════════════════════════ */}
+          {activeTab === "notifications" && (
+            <div className="space-y-6 max-w-3xl">
+              <div className="flex items-center justify-between pb-4 border-b border-crimson/20">
+                <div>
+                  <span className="text-[10px] font-orbitron text-bright-red tracking-[0.3em] uppercase font-bold">
+                    SYSTEM SIGNALS
+                  </span>
+                  <h1 className="font-orbitron font-black text-2xl sm:text-3xl text-white uppercase mt-1">
+                    Notifications Console
+                  </h1>
+                </div>
+                <button
+                  onClick={() => {
+                    fetch("/api/notifications", { method: "PATCH" }).then(() => {
+                      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+                      setUnreadNotifsCount(0);
+                    });
+                  }}
+                  className="px-4 py-2 rounded-xl bg-[#141414] hover:bg-crimson text-white text-xs font-orbitron font-bold uppercase transition-colors"
+                >
+                  Mark All Read
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {notifications.length === 0 ? (
+                  <p className="text-xs text-[#666] text-center py-16">No notifications right now.</p>
+                ) : (
+                  notifications.map((n) => (
+                    <div key={n.id} className="p-4 rounded-2xl bg-[#0A0A0A] border border-crimson/20 flex items-center justify-between">
+                      <div className="space-y-1">
+                        <p className="font-orbitron font-bold text-xs text-bright-red">{n.title}</p>
+                        <p className="text-xs text-[#AAA]">{n.message}</p>
+                        <span className="text-[9px] font-mono text-[#666]">{new Date(n.createdAt).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ═══ TAB 10: INQUIRIES CONSOLE ══════════════════════════════════ */}
+          {activeTab === "inquiries" && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-crimson/20">
+                <div>
+                  <span className="text-[10px] font-orbitron text-bright-red tracking-[0.3em] uppercase font-bold">
+                    PIPELINE LEADS
+                  </span>
+                  <h1 className="font-orbitron font-black text-2xl sm:text-3xl text-white uppercase mt-1">
+                    Client Inquiries & Requests
+                  </h1>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {filteredInquiries.map((inq) => (
+                  <div key={inq.id} className="cyber-card p-6 space-y-4 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-[10px] text-bright-red">{inq.referenceId}</span>
+                        <span className="px-2 py-0.5 rounded bg-crimson/20 border border-crimson/30 text-[9px] font-orbitron font-bold text-bright-red uppercase">
+                          {inq.status}
+                        </span>
+                      </div>
+                      <h4 className="font-orbitron font-bold text-sm text-white">{inq.fullName}</h4>
+                      <p className="text-xs text-[#888]">{inq.email} &bull; {inq.phone || "No phone"}</p>
+                      <p className="text-xs text-[#CCC] line-clamp-3 bg-[#111] p-3 rounded-xl border border-white/5 leading-relaxed">
+                        &quot;{inq.message}&quot;
+                      </p>
+                    </div>
+
+                    <div className="space-y-2 pt-2 border-t border-white/5">
+                      <div className="flex justify-between text-[10px] font-mono text-[#AAA]">
+                        <span>{inq.projectType}</span>
+                        <span className="text-emerald-400 font-bold">{inq.budget}</span>
+                      </div>
+                      <div className="flex gap-1 pt-1">
+                        {["CONTACTED", "DISCUSSION", "APPROVED", "COMPLETED"].map((st) => (
+                          <button
+                            key={st}
+                            onClick={() => handleUpdateInquiryStatus(inq.id, st)}
+                            className={`flex-1 py-1 rounded text-[8px] font-orbitron font-bold uppercase transition-colors ${
+                              inq.status === st ? "bg-crimson text-white" : "bg-[#141414] text-[#888] hover:text-white"
+                            }`}
+                          >
+                            {st.slice(0, 4)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ═══ TAB 11: RECENT ACTIVITY ════════════════════════════════════ */}
+          {activeTab === "activity" && (
+            <div className="space-y-6 max-w-4xl">
+              <div className="pb-4 border-b border-crimson/20">
+                <span className="text-[10px] font-orbitron text-bright-red tracking-[0.3em] uppercase font-bold">
+                  SYSTEM LOGS
+                </span>
+                <h1 className="font-orbitron font-black text-2xl sm:text-3xl text-white uppercase mt-1">
+                  Recent Activity Stream
+                </h1>
+              </div>
+
+              <div className="space-y-3">
+                {activityEvents.map((ev) => (
+                  <div key={ev.id} className="p-4 rounded-2xl bg-[#0A0A0A] border border-crimson/20 flex items-start gap-4">
+                    <CodeXaAvatar src={ev.actorMediaUrl} size="sm" />
+                    <div className="flex-1 text-xs space-y-1">
+                      <p className="font-orbitron font-bold text-white">{ev.title}</p>
+                      <p className="text-[#AAA] leading-relaxed">{ev.details}</p>
+                      <span className="font-mono text-[9px] text-[#666] block">
+                        {new Date(ev.createdAt).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ═══ TAB 12: AUDIT LOGS ═════════════════════════════════════════ */}
+          {activeTab === "audit" && (
+            <div className="space-y-6">
+              <div className="pb-4 border-b border-crimson/20">
+                <span className="text-[10px] font-orbitron text-bright-red tracking-[0.3em] uppercase font-bold">
+                  FORENSIC TRACE
+                </span>
+                <h1 className="font-orbitron font-black text-2xl sm:text-3xl text-white uppercase mt-1">
+                  Owner Audit Trail
+                </h1>
+              </div>
+
+              <div className="overflow-x-auto rounded-3xl bg-[#0A0A0A] border border-crimson/25 p-6 shadow-xl">
+                <table className="w-full text-xs text-left">
+                  <thead className="text-[10px] font-orbitron uppercase text-[#777] border-b border-white/5">
+                    <tr>
+                      <th className="pb-3">Action</th>
+                      <th className="pb-3">Actor</th>
+                      <th className="pb-3">Details</th>
+                      <th className="pb-3">Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {auditLogs.map((log) => (
+                      <tr key={log.id} className="hover:bg-[#111] transition-colors">
+                        <td className="py-3 font-orbitron font-bold text-bright-red">{log.action}</td>
+                        <td className="py-3 font-mono text-[#AAA]">{log.actorName || log.actorId}</td>
+                        <td className="py-3 text-[#DDD]">{log.details}</td>
+                        <td className="py-3 font-mono text-[#666]">{new Date(log.timestamp).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ═══ TAB 13: SETTINGS ═══════════════════════════════════════════ */}
+          {activeTab === "settings" && (
+            <div className="space-y-6 max-w-3xl">
+              <div className="pb-4 border-b border-crimson/20">
+                <span className="text-[10px] font-orbitron text-bright-red tracking-[0.3em] uppercase font-bold">
+                  CONFIGURATION
+                </span>
+                <h1 className="font-orbitron font-black text-2xl sm:text-3xl text-white uppercase mt-1">
+                  System Settings
+                </h1>
+              </div>
+
+              <div className="p-6 rounded-3xl bg-[#0A0A0A] border border-crimson/20 space-y-4">
+                <h3 className="font-orbitron font-bold text-xs text-white uppercase">Platform Information</h3>
+                <div className="grid grid-cols-2 gap-4 text-xs">
+                  <div>
+                    <span className="text-[10px] font-orbitron text-[#777] uppercase block">Platform</span>
+                    <span className="font-orbitron font-semibold text-white">CodeXa Agency Core v2.0</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-orbitron text-[#777] uppercase block">Database</span>
+                    <span className="font-mono text-emerald-400">PostgreSQL (Supabase)</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-orbitron text-[#777] uppercase block">Security Authority</span>
+                    <span className="font-orbitron font-bold text-bright-red">OWNER // FOUNDER</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-orbitron text-[#777] uppercase block">Storage CDN</span>
+                    <span className="font-mono text-white">Supabase Storage</span>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
         </main>
       </div>
 
-      {/* ─── PROVISION ACCOUNT MODAL ──────────────────────────────────────── */}
+      {/* ─── MODAL: EDIT SELF PROFILE ───────────────────────────────────── */}
       <AnimatePresence>
-        {createAccountModalOpen && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4"
-            onClick={(e) => { if (e.target === e.currentTarget) setCreateAccountModalOpen(false); }}
-          >
+        {editSelfModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-[#0A0A0A] border border-crimson/30 rounded-2xl w-full max-w-lg p-6 md:p-8 relative shadow-2xl"
+              className="w-full max-w-lg bg-[#0D0D0D] border border-crimson/30 rounded-3xl p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl"
             >
-              <div className="flex justify-between items-center pb-4 border-b border-white/5 mb-5">
-                <h3 className="font-orbitron font-black text-xl text-white uppercase">Provision Member Account</h3>
-                <button onClick={() => setCreateAccountModalOpen(false)} className="text-[#888] hover:text-white"><X className="w-5 h-5" /></button>
+              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                <h3 className="font-orbitron font-bold text-sm text-white uppercase">Edit My Founder Profile</h3>
+                <button onClick={() => setEditSelfModalOpen(false)} className="p-1 rounded bg-[#1A1A1A] text-[#888] hover:text-white">
+                  <X className="w-4 h-4" />
+                </button>
               </div>
 
-              {accountFormState === "error" && (
-                <div className="p-3 rounded bg-deep-red/20 border border-bright-red text-xs text-bright-red mb-4">
-                  {accountFormMsg}
-                </div>
-              )}
-              {accountFormState === "success" && (
-                <div className="p-3 rounded bg-emerald-500/20 border border-emerald-500 text-xs text-emerald-400 mb-4">
-                  {accountFormMsg}
+              {selfFormFeedback && (
+                <div className="p-3 rounded-xl bg-deep-red/20 border border-bright-red/50 text-xs text-bright-red">
+                  {selfFormFeedback}
                 </div>
               )}
 
-              <form onSubmit={handleCreateAccount} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Full Name *</label>
-                    <input
-                      type="text"
-                      required
-                      value={accountFormData.fullName}
-                      onChange={(e) => setAccountFormData({ ...accountFormData, fullName: e.target.value })}
-                      placeholder="e.g. Aakash Varma"
-                      className="w-full bg-[#111] border border-crimson/20 rounded-lg p-2.5 text-xs text-white outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Username *</label>
-                    <input
-                      type="text"
-                      required
-                      value={accountFormData.username}
-                      onChange={(e) => setAccountFormData({ ...accountFormData, username: e.target.value })}
-                      placeholder="e.g. aakash"
-                      className="w-full bg-[#111] border border-crimson/20 rounded-lg p-2.5 text-xs text-white outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Email Address *</label>
-                    <input
-                      type="email"
-                      required
-                      value={accountFormData.email}
-                      onChange={(e) => setAccountFormData({ ...accountFormData, email: e.target.value })}
-                      placeholder="aakash@codexa.agency"
-                      className="w-full bg-[#111] border border-crimson/20 rounded-lg p-2.5 text-xs text-white outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Role *</label>
-                    <select
-                      value={accountFormData.role}
-                      onChange={(e) => setAccountFormData({ ...accountFormData, role: e.target.value })}
-                      className="w-full bg-[#111] border border-crimson/20 rounded-lg p-2.5 text-xs font-orbitron text-white outline-none"
-                    >
-                      <option value="TEAM_MEMBER">TEAM MEMBER</option>
-                      <option value="ADMIN">ADMIN</option>
-                      <option value="OWNER">OWNER</option>
-                    </select>
-                  </div>
-                </div>
-
+              <form onSubmit={handleSaveSelfProfile} className="space-y-3.5 text-xs">
                 <div>
-                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Temporary Password *</label>
+                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Display Name</label>
                   <input
                     type="text"
                     required
-                    value={accountFormData.temporaryPassword}
-                    onChange={(e) => setAccountFormData({ ...accountFormData, temporaryPassword: e.target.value })}
-                    placeholder="Min. 6 characters"
-                    className="w-full bg-[#111] border border-crimson/20 rounded-lg p-2.5 text-xs text-white outline-none font-mono"
+                    value={selfFormData.displayName}
+                    onChange={(e) => setSelfFormData({ ...selfFormData, displayName: e.target.value })}
+                    className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none focus:border-bright-red"
                   />
                 </div>
+                <div>
+                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Professional Headline</label>
+                  <input
+                    type="text"
+                    value={selfFormData.headline}
+                    onChange={(e) => setSelfFormData({ ...selfFormData, headline: e.target.value })}
+                    className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                    placeholder="e.g. Founder & Lead Architect &bull; Cybersecurity"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Bio</label>
+                  <textarea
+                    rows={4}
+                    value={selfFormData.bio}
+                    onChange={(e) => setSelfFormData({ ...selfFormData, bio: e.target.value })}
+                    className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none resize-none"
+                    placeholder="Describe your role and expertise..."
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Skills (Comma-separated)</label>
+                  <input
+                    type="text"
+                    value={selfFormData.skillsStr}
+                    onChange={(e) => setSelfFormData({ ...selfFormData, skillsStr: e.target.value })}
+                    className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                    placeholder="Full Stack, Architecture, Next.js, AI"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">GitHub URL</label>
+                    <input
+                      type="url"
+                      value={selfFormData.githubUrl}
+                      onChange={(e) => setSelfFormData({ ...selfFormData, githubUrl: e.target.value })}
+                      className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">LinkedIn URL</label>
+                    <input
+                      type="url"
+                      value={selfFormData.linkedinUrl}
+                      onChange={(e) => setSelfFormData({ ...selfFormData, linkedinUrl: e.target.value })}
+                      className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                    />
+                  </div>
+                </div>
 
-                <div className="pt-3 flex gap-3">
+                <div className="flex gap-3 pt-3">
                   <button
                     type="button"
-                    onClick={() => setCreateAccountModalOpen(false)}
-                    className="flex-1 py-2.5 rounded-lg bg-[#141414] text-xs font-orbitron text-[#888] uppercase"
+                    onClick={() => setEditSelfModalOpen(false)}
+                    className="flex-1 py-2.5 rounded-xl bg-[#141414] font-orbitron text-xs text-[#888] uppercase"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    disabled={accountFormState === "loading"}
-                    className="flex-1 py-2.5 rounded-lg bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase"
+                    disabled={selfFormSaving}
+                    className="flex-1 py-2.5 rounded-xl bg-crimson hover:bg-bright-red font-orbitron text-xs font-bold text-white uppercase shadow-[0_0_15px_rgba(217,4,41,0.3)] transition-all"
                   >
-                    {accountFormState === "loading" ? "PROVISIONING..." : "CREATE ACCOUNT"}
+                    {selfFormSaving ? "Saving..." : "Save Profile"}
                   </button>
                 </div>
               </form>
@@ -1281,60 +1898,414 @@ function OwnerDashboardContent() {
         )}
       </AnimatePresence>
 
-      {/* ─── RESET PASSWORD MODAL ─────────────────────────────────────────── */}
+      {/* ─── MODAL: EDIT MEMBER PROFILE ─────────────────────────────────── */}
       <AnimatePresence>
-        {resetPasswordModalUser && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4"
-            onClick={(e) => { if (e.target === e.currentTarget) setResetPasswordModalUser(null); }}
-          >
+        {editMemberModalUser && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-[#0A0A0A] border border-crimson/30 rounded-2xl w-full max-w-md p-6 shadow-2xl"
+              className="w-full max-w-lg bg-[#0D0D0D] border border-crimson/30 rounded-3xl p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl"
             >
-              <h3 className="font-orbitron font-bold text-lg text-white uppercase mb-1">Reset Password</h3>
-              <p className="text-xs text-[#888] mb-4">Update credentials for <strong>@{resetPasswordModalUser.username}</strong>.</p>
-              <div className="space-y-4">
-                <input
-                  type="text"
-                  value={newPasswordInput}
-                  onChange={(e) => setNewPasswordInput(e.target.value)}
-                  placeholder="Enter new password (min. 6 chars)..."
-                  className="w-full bg-[#111] border border-crimson/20 rounded-lg p-3 text-xs text-white font-mono outline-none"
-                />
-                <div className="flex gap-3">
-                  <button onClick={() => setResetPasswordModalUser(null)} className="flex-1 py-2.5 rounded-lg bg-[#141414] text-xs font-orbitron text-[#888] uppercase">Cancel</button>
-                  <button onClick={handleResetPassword} disabled={newPasswordInput.length < 6} className="flex-1 py-2.5 rounded-lg bg-crimson text-white text-xs font-orbitron font-bold uppercase">Update Password</button>
-                </div>
+              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                <h3 className="font-orbitron font-bold text-sm text-white uppercase">
+                  Edit Member &bull; @{editMemberModalUser.username}
+                </h3>
+                <button onClick={() => setEditMemberModalUser(null)} className="p-1 rounded bg-[#1A1A1A] text-[#888] hover:text-white">
+                  <X className="w-4 h-4" />
+                </button>
               </div>
+
+              {memberFormFeedback && (
+                <div className="p-3 rounded-xl bg-deep-red/20 border border-bright-red/50 text-xs text-bright-red">
+                  {memberFormFeedback}
+                </div>
+              )}
+
+              <form onSubmit={handleSaveMemberProfile} className="space-y-3.5 text-xs">
+                <div>
+                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Display Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={memberFormData.displayName}
+                    onChange={(e) => setMemberFormData({ ...memberFormData, displayName: e.target.value })}
+                    className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Headline</label>
+                  <input
+                    type="text"
+                    value={memberFormData.headline}
+                    onChange={(e) => setMemberFormData({ ...memberFormData, headline: e.target.value })}
+                    className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Bio</label>
+                  <textarea
+                    rows={3}
+                    value={memberFormData.bio}
+                    onChange={(e) => setMemberFormData({ ...memberFormData, bio: e.target.value })}
+                    className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none resize-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Skills (Comma-separated)</label>
+                  <input
+                    type="text"
+                    value={memberFormData.skillsStr}
+                    onChange={(e) => setMemberFormData({ ...memberFormData, skillsStr: e.target.value })}
+                    className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Account Role</label>
+                    <select
+                      value={memberFormData.role}
+                      onChange={(e) => setMemberFormData({ ...memberFormData, role: e.target.value })}
+                      className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                    >
+                      <option value="TEAM_MEMBER">TEAM_MEMBER</option>
+                      <option value="ADMIN">ADMIN</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Account Status</label>
+                    <select
+                      value={memberFormData.isActive ? "true" : "false"}
+                      onChange={(e) => setMemberFormData({ ...memberFormData, isActive: e.target.value === "true" })}
+                      className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                    >
+                      <option value="true">ACTIVE</option>
+                      <option value="false">DISABLED</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setEditMemberModalUser(null)}
+                    className="flex-1 py-2.5 rounded-xl bg-[#141414] font-orbitron text-xs text-[#888] uppercase"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={memberFormSaving}
+                    className="flex-1 py-2.5 rounded-xl bg-crimson hover:bg-bright-red font-orbitron text-xs font-bold text-white uppercase shadow-[0_0_15px_rgba(217,4,41,0.3)] transition-all"
+                  >
+                    {memberFormSaving ? "Saving..." : "Save Changes"}
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
-      {/* ─── MEDIA SELECTOR MODAL ─────────────────────────────────────── */}
+      {/* ─── MODAL: CREATE ACCOUNT ──────────────────────────────────────── */}
+      <AnimatePresence>
+        {createAccountModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md bg-[#0D0D0D] border border-crimson/30 rounded-3xl p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                <h3 className="font-orbitron font-bold text-sm text-white uppercase">Provision Team Account</h3>
+                <button onClick={() => setCreateAccountModalOpen(false)} className="p-1 rounded bg-[#1A1A1A] text-[#888] hover:text-white">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {accountFormMsg && (
+                <div className={`p-3 rounded-xl text-xs ${
+                  accountFormState === "success" ? "bg-emerald-500/20 text-emerald-400" : "bg-deep-red/20 text-bright-red"
+                }`}>
+                  {accountFormMsg}
+                </div>
+              )}
+
+              <form onSubmit={handleCreateAccount} className="space-y-3 text-xs">
+                <div>
+                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Full Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={accountFormData.fullName}
+                    onChange={(e) => setAccountFormData({ ...accountFormData, fullName: e.target.value })}
+                    className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                    placeholder="e.g. Sarah Connor"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Username</label>
+                  <input
+                    type="text"
+                    required
+                    value={accountFormData.username}
+                    onChange={(e) => setAccountFormData({ ...accountFormData, username: e.target.value.toLowerCase() })}
+                    className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                    placeholder="sarah"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Email</label>
+                  <input
+                    type="email"
+                    required
+                    value={accountFormData.email}
+                    onChange={(e) => setAccountFormData({ ...accountFormData, email: e.target.value })}
+                    className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                    placeholder="sarah@codxa-agency.online"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Temporary Password</label>
+                  <input
+                    type="password"
+                    required
+                    value={accountFormData.temporaryPassword}
+                    onChange={(e) => setAccountFormData({ ...accountFormData, temporaryPassword: e.target.value })}
+                    className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                    placeholder="At least 6 chars..."
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Role</label>
+                    <select
+                      value={accountFormData.role}
+                      onChange={(e) => setAccountFormData({ ...accountFormData, role: e.target.value })}
+                      className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                    >
+                      <option value="TEAM_MEMBER">TEAM_MEMBER</option>
+                      <option value="ADMIN">ADMIN</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Leadership Title</label>
+                    <input
+                      type="text"
+                      value={accountFormData.leadershipPosition}
+                      onChange={(e) => setAccountFormData({ ...accountFormData, leadershipPosition: e.target.value })}
+                      className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                      placeholder="e.g. Lead Engineer"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setCreateAccountModalOpen(false)}
+                    className="flex-1 py-2.5 rounded-xl bg-[#141414] font-orbitron text-xs text-[#888] uppercase"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={accountFormState === "loading"}
+                    className="flex-1 py-2.5 rounded-xl bg-crimson hover:bg-bright-red font-orbitron text-xs font-bold text-white uppercase shadow-[0_0_15px_rgba(217,4,41,0.3)] transition-all"
+                  >
+                    {accountFormState === "loading" ? "Provisioning..." : "Create Account"}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ─── MODAL: CREATE PROJECT ──────────────────────────────────────── */}
+      <AnimatePresence>
+        {createProjectModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-lg bg-[#0D0D0D] border border-crimson/30 rounded-3xl p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                <h3 className="font-orbitron font-bold text-sm text-white uppercase">Create New Build Project</h3>
+                <button onClick={() => setCreateProjectModalOpen(false)} className="p-1 rounded bg-[#1A1A1A] text-[#888] hover:text-white">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateProject} className="space-y-3 text-xs">
+                <div>
+                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Project Title</label>
+                  <input
+                    type="text"
+                    required
+                    value={newProjectData.title}
+                    onChange={(e) => setNewProjectData({ ...newProjectData, title: e.target.value })}
+                    className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                    placeholder="e.g. CyberGuard AI Engine"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Category</label>
+                    <select
+                      value={newProjectData.category}
+                      onChange={(e) => setNewProjectData({ ...newProjectData, category: e.target.value })}
+                      className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                    >
+                      <option value="AI">AI</option>
+                      <option value="WEB">WEB</option>
+                      <option value="MOBILE">MOBILE</option>
+                      <option value="CYBERSECURITY">CYBERSECURITY</option>
+                      <option value="CLOUD">CLOUD</option>
+                      <option value="AUTOMATION">AUTOMATION</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Build Status</label>
+                    <select
+                      value={newProjectData.status}
+                      onChange={(e) => setNewProjectData({ ...newProjectData, status: e.target.value })}
+                      className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                    >
+                      <option value="PRODUCTION">PRODUCTION</option>
+                      <option value="BETA">BETA</option>
+                      <option value="DEVELOPMENT">DEVELOPMENT</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Short Description</label>
+                  <input
+                    type="text"
+                    required
+                    value={newProjectData.shortDesc}
+                    onChange={(e) => setNewProjectData({ ...newProjectData, shortDesc: e.target.value })}
+                    className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Tech Stack (Comma-separated)</label>
+                  <input
+                    type="text"
+                    value={newProjectData.techStackStr}
+                    onChange={(e) => setNewProjectData({ ...newProjectData, techStackStr: e.target.value })}
+                    className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                  />
+                </div>
+                <div className="flex items-center gap-4 pt-1">
+                  <label className="flex items-center gap-2 text-xs font-orbitron text-[#AAA] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newProjectData.isMainProject}
+                      onChange={(e) => setNewProjectData({ ...newProjectData, isMainProject: e.target.checked })}
+                      className="accent-crimson"
+                    />
+                    <span>Main Flagship Build</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-xs font-orbitron text-[#AAA] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newProjectData.isHomepageVisible}
+                      onChange={(e) => setNewProjectData({ ...newProjectData, isHomepageVisible: e.target.checked })}
+                      className="accent-crimson"
+                    />
+                    <span>Showcase on Homepage</span>
+                  </label>
+                </div>
+
+                <div className="flex gap-3 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setCreateProjectModalOpen(false)}
+                    className="flex-1 py-2.5 rounded-xl bg-[#141414] font-orbitron text-xs text-[#888] uppercase"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={projectSaving}
+                    className="flex-1 py-2.5 rounded-xl bg-crimson hover:bg-bright-red font-orbitron text-xs font-bold text-white uppercase shadow-[0_0_15px_rgba(217,4,41,0.3)] transition-all"
+                  >
+                    {projectSaving ? "Creating..." : "Save Project"}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ─── MODAL: RESET PASSWORD ──────────────────────────────────────── */}
+      <AnimatePresence>
+        {resetPasswordModalUser && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <div className="w-full max-w-sm bg-[#0D0D0D] border border-crimson/30 rounded-3xl p-6 space-y-4 shadow-2xl">
+              <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                <h3 className="font-orbitron font-bold text-sm text-white uppercase">
+                  Reset Password &bull; @{resetPasswordModalUser.username}
+                </h3>
+                <button onClick={() => setResetPasswordModalUser(null)} className="p-1 rounded bg-[#1A1A1A] text-[#888]">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <p className="text-[#888]">Enter a new temporary password for this member (minimum 6 characters):</p>
+                <input
+                  type="password"
+                  value={newPasswordInput}
+                  onChange={(e) => setNewPasswordInput(e.target.value)}
+                  placeholder="New temporary password..."
+                  className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                />
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    onClick={() => setResetPasswordModalUser(null)}
+                    className="flex-1 py-2 rounded-xl bg-[#141414] text-xs font-orbitron text-[#888] uppercase"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleResetPassword}
+                    className="flex-1 py-2 rounded-xl bg-crimson hover:bg-bright-red text-xs font-orbitron font-bold text-white uppercase shadow-[0_0_15px_rgba(217,4,41,0.3)]"
+                  >
+                    Update Password
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ─── MODAL: MEDIA SELECTOR ──────────────────────────────────────── */}
       <CodeXaMediaSelectorModal
         isOpen={mediaSelectorOpen}
         onClose={() => setMediaSelectorOpen(false)}
         currentAvatarUrl={currentUser?.mediaUrl}
         onSuccess={(newAvatarUrl) => {
-          if (currentUser) {
-            setCurrentUser((prev: any) => ({ ...prev, mediaUrl: newAvatarUrl }));
-          }
-          setAccounts((prev) =>
-            prev.map((a) => (a.id === currentUser?.id ? { ...a, mediaUrl: newAvatarUrl } : a))
-          );
+          setCurrentUser((prev: any) => (prev ? { ...prev, mediaUrl: newAvatarUrl } : null));
+          setAccounts((prev) => prev.map((a) => a.id === currentUser?.id ? { ...a, mediaUrl: newAvatarUrl } : a));
         }}
       />
+
     </div>
   );
 }
 
 export default function OwnerPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#070707]" />}>
+    <Suspense fallback={<div className="min-h-screen bg-[#070707] text-white flex items-center justify-center font-orbitron">Loading Founder Console...</div>}>
       <OwnerDashboardContent />
     </Suspense>
   );
