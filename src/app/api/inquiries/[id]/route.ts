@@ -32,13 +32,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
 
     // Log audit
-    await dataStore.logAudit({
-      actorId: user.id,
-      actorName: user.displayName,
-      action: "INQUIRY_STATUS_CHANGED",
-      details: `Inquiry [${updated.referenceId}] updated. Status: ${updated.status}, Priority: ${updated.priority}`,
-      ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
-    });
+    await dataStore.logAudit(
+      "INQUIRY_STATUS_CHANGED",
+      user.id,
+      `Inquiry [${updated.referenceId}] updated. Status: ${updated.status}, Priority: ${updated.priority}`,
+      req.headers.get("x-forwarded-for") || "127.0.0.1"
+    );
 
     return NextResponse.json({ success: true, inquiry: updated });
   } catch (err: any) {

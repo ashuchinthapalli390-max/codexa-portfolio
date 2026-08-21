@@ -16,7 +16,7 @@ export async function GET() {
       return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401 });
     }
 
-    const profile = await dataStore.getProfileByUserId(user.id);
+    const profile = await dataStore.getProfileById(user.id);
     if (!profile) {
       return NextResponse.json({ success: false, error: "Profile not found." }, { status: 404 });
     }

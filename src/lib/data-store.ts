@@ -86,6 +86,8 @@ export interface Project {
   isPublic: boolean;
   isFeatured: boolean;
   isMainProject: boolean;
+  isHomepageVisible?: boolean;
+  showInTeamProjects?: boolean;
   displayOrder: number;
   createdBy: string;
   createdAt: string;
@@ -97,6 +99,7 @@ export interface Project {
     mediaUrl?: string | null;
     role: string;
   };
+  collaboratorIds?: string[];
   collaborators?: Array<{
     id: string;
     username: string;
@@ -175,12 +178,38 @@ export interface Inquiry {
   updatedAt: string;
 }
 
+export interface ChatMessageAttachment {
+  id: string;
+  url: string;
+  mimeType: string;
+  name: string;
+  size?: number;
+}
+
+export interface ChatMessageReaction {
+  id: string;
+  messageId: string;
+  userId: string;
+  userName: string;
+  emoji: string;
+  createdAt: string;
+}
+
+export interface ConversationMember {
+  conversationId: string;
+  userId: string;
+  lastReadAt?: string;
+  lastReadMessageId?: string;
+  joinedAt: string;
+}
+
 export interface Conversation {
   id: string;
-  type: "DIRECT" | "GROUP" | "PROJECT";
+  type: "DIRECT" | "GROUP" | "CHANNEL" | "PROJECT";
   title?: string;
   projectId?: string | null;
   createdBy?: string | null;
+  participantIds?: string[];
   createdAt: string;
   updatedAt: string;
   members?: Array<{
@@ -189,8 +218,19 @@ export interface Conversation {
     displayName: string;
     mediaUrl?: string | null;
     role: string;
+    headline?: string;
   }>;
+  otherMember?: {
+    id: string;
+    username: string;
+    displayName: string;
+    mediaUrl?: string | null;
+    role: string;
+    headline?: string;
+  } | null;
   lastMessage?: ChatMessage | null;
+  lastMessageText?: string;
+  lastMessageAt?: string;
   unreadCount?: number;
 }
 
@@ -199,10 +239,28 @@ export interface ChatMessage {
   conversationId: string;
   senderId: string;
   message: string;
+  attachments?: ChatMessageAttachment[];
   fileUrl?: string;
   fileName?: string;
   isDeleted: boolean;
+  isEdited?: boolean;
+  editedAt?: string;
   replyToId?: string | null;
+  replyTo?: {
+    id: string;
+    message: string;
+    senderName: string;
+  } | null;
+  reactions?: Array<{
+    emoji: string;
+    count: number;
+    userIds: string[];
+    userNames: string[];
+  }>;
+  userReactions?: Array<{
+    userId: string;
+    emoji: string;
+  }>;
   createdAt: string;
   updatedAt?: string;
   sender?: {
@@ -210,6 +268,7 @@ export interface ChatMessage {
     username: string;
     displayName: string;
     mediaUrl?: string | null;
+    role?: string;
   };
 }
 
@@ -279,7 +338,9 @@ export interface ActivityEvent {
 
 // ─── SEED DATA ───────────────────────────────────────────────────────────────
 
-let memoryProfiles: Profile[] = [
+const g = globalThis as any;
+
+let memoryProfiles: Profile[] = (g.__cxa_profiles = g.__cxa_profiles || [
   {
     id: "profile-ashu-001",
     username: process.env.INITIAL_OWNER_USERNAME || "ashu",
@@ -365,9 +426,9 @@ let memoryProfiles: Profile[] = [
     updatedAt: "2026-01-01T00:00:00Z",
     projectsCount: 2,
   }
-];
+]);
 
-let memoryProjects: Project[] = [
+let memoryProjects: Project[] = (g.__cxa_projects = g.__cxa_projects || [
   {
     id: "proj-hirelens-001",
     title: "HireLens AI",
@@ -433,9 +494,9 @@ let memoryProjects: Project[] = [
     createdAt: "2026-02-05T00:00:00Z",
     updatedAt: "2026-02-05T00:00:00Z",
   }
-];
+]);
 
-let memoryPosts: Post[] = [
+let memoryPosts: Post[] = (g.__cxa_posts = g.__cxa_posts || [
   {
     id: "post-001",
     authorId: "profile-ashu-001",
@@ -457,14 +518,14 @@ let memoryPosts: Post[] = [
     likesCount: 3,
     commentsCount: 1,
   }
-];
+]);
 
-let memoryLikes: Array<{ id: string; postId: string; profileId: string; createdAt: string }> = [
+let memoryLikes: Array<{ id: string; postId: string; profileId: string; createdAt: string }> = (g.__cxa_likes = g.__cxa_likes || [
   { id: "like-1", postId: "post-001", profileId: "profile-deepak-002", createdAt: "2026-02-21T10:00:00Z" },
   { id: "like-2", postId: "post-001", profileId: "profile-aakash-004", createdAt: "2026-02-21T10:05:00Z" },
-];
+]);
 
-let memoryComments: PostComment[] = [
+let memoryComments: PostComment[] = (g.__cxa_comments = g.__cxa_comments || [
   {
     id: "comm-001",
     postId: "post-001",
@@ -481,9 +542,9 @@ let memoryComments: PostComment[] = [
     createdAt: new Date(Date.now() - 3600000).toISOString(),
     updatedAt: new Date(Date.now() - 3600000).toISOString(),
   }
-];
+]);
 
-let memoryInquiries: Inquiry[] = [
+let memoryInquiries: Inquiry[] = (g.__cxa_inquiries = g.__cxa_inquiries || [
   {
     id: "inq-001",
     referenceId: "CXA-2026-000101",
@@ -500,19 +561,20 @@ let memoryInquiries: Inquiry[] = [
     createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
     updatedAt: new Date(Date.now() - 3600000 * 5).toISOString(),
   }
-];
+]);
 
-let memoryConversations: Conversation[] = [
+let memoryConversations: Conversation[] = (g.__cxa_conversations = g.__cxa_conversations || [
   {
     id: "conv-general-001",
     type: "GROUP",
     title: "CodeXa General",
+    participantIds: ["profile-ashu-001", "profile-deepak-002", "profile-venu-003", "profile-aakash-004", "profile-karan-005", "profile-sathwik-006"],
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
   }
-];
+]);
 
-let memoryMessages: ChatMessage[] = [
+let memoryMessages: ChatMessage[] = (g.__cxa_messages = g.__cxa_messages || [
   {
     id: "msg-001",
     conversationId: "conv-general-001",
@@ -521,9 +583,12 @@ let memoryMessages: ChatMessage[] = [
     isDeleted: false,
     createdAt: new Date(Date.now() - 3600000 * 8).toISOString(),
   }
-];
+]);
 
-let memoryNotifications: NotificationItem[] = [
+let memoryReactions: ChatMessageReaction[] = (g.__cxa_reactions = g.__cxa_reactions || []);
+let memoryConversationMembers: ConversationMember[] = (g.__cxa_conversationMembers = g.__cxa_conversationMembers || []);
+
+let memoryNotifications: NotificationItem[] = (g.__cxa_notifications = g.__cxa_notifications || [
   {
     id: "notif-001",
     userId: "profile-ashu-001",
@@ -534,18 +599,18 @@ let memoryNotifications: NotificationItem[] = [
     isRead: false,
     createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
   }
-];
+]);
 
-let memoryAuthOtps: AuthOtpRecord[] = [];
-let memoryMediaAssets: MediaAsset[] = [];
+let memoryAuthOtps: AuthOtpRecord[] = (g.__cxa_authOtps = g.__cxa_authOtps || []);
+let memoryMediaAssets: MediaAsset[] = (g.__cxa_mediaAssets = g.__cxa_mediaAssets || []);
 
-let memorySiteSettings: SiteSettings = {
+let memorySiteSettings: SiteSettings = (g.__cxa_siteSettings = g.__cxa_siteSettings || {
   mainProjectsHomeVisible: true,
   teamProjectsHomeVisible: true,
   updatedAt: new Date().toISOString(),
-};
+});
 
-let memoryAuditLogs: AuditLogItem[] = [
+let memoryAuditLogs: AuditLogItem[] = (g.__cxa_auditLogs = g.__cxa_auditLogs || [
   {
     id: "log-001",
     actorId: "profile-ashu-001",
@@ -555,9 +620,9 @@ let memoryAuditLogs: AuditLogItem[] = [
     ipAddress: "127.0.0.1",
     createdAt: "2026-01-01T00:00:00Z",
   }
-];
+]);
 
-let memoryActivityEvents: ActivityEvent[] = [
+let memoryActivityEvents: ActivityEvent[] = (g.__cxa_activityEvents = g.__cxa_activityEvents || [
   {
     id: "act-001",
     actorId: "profile-ashu-001",
@@ -614,7 +679,7 @@ let memoryActivityEvents: ActivityEvent[] = [
     link: "/projects/hirelens-ai",
     createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
   }
-];
+]);
 
 // ─── DATA STORE METHODS ──────────────────────────────────────────────────────
 
@@ -721,6 +786,12 @@ export const dataStore = {
 
   async createProject(data: Partial<Project>): Promise<Project> {
     const slug = data.slug || data.title!.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const collaboratorIds = data.collaboratorIds || [];
+    const collaborators = collaboratorIds.map((cid) => {
+      const mem = memoryProfiles.find((p) => p.id === cid || p.username === cid);
+      return mem ? { id: mem.id, username: mem.username, displayName: mem.displayName, mediaUrl: mem.mediaUrl, role: mem.role } : null;
+    }).filter(Boolean) as any[];
+
     const newProj: Project = {
       id: `proj-${Date.now()}`,
       title: data.title!,
@@ -738,11 +809,15 @@ export const dataStore = {
       repoUrl: data.repoUrl,
       liveUrl: data.liveUrl,
       isDraft: !!data.isDraft,
-      isPublic: !data.isDraft,
-      isFeatured: false,
-      isMainProject: false,
+      isPublic: data.isPublic ?? !data.isDraft,
+      isFeatured: !!data.isFeatured,
+      isMainProject: !!data.isMainProject,
+      isHomepageVisible: data.isHomepageVisible ?? true,
+      showInTeamProjects: data.showInTeamProjects ?? true,
       displayOrder: memoryProjects.length + 1,
       createdBy: data.createdBy || "profile-ashu-001",
+      collaboratorIds,
+      collaborators,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -798,6 +873,15 @@ export const dataStore = {
     };
     memoryPosts.unshift(newPost);
     return newPost;
+  },
+
+  async deletePost(id: string, userId?: string): Promise<boolean> {
+    const idx = memoryPosts.findIndex((p) => p.id === id);
+    if (idx === -1) return false;
+    memoryPosts.splice(idx, 1);
+    memoryLikes = memoryLikes.filter((l) => l.postId !== id);
+    memoryComments = memoryComments.filter((c) => c.postId !== id);
+    return true;
   },
 
   async togglePostLike(postId: string, profileId: string): Promise<{ liked: boolean; totalLikes: number }> {
@@ -928,8 +1012,23 @@ export const dataStore = {
   },
 
   // ── Inquiries ──────────────────────────────────────────────────────────────
-  async getInquiries(): Promise<Inquiry[]> {
-    return [...memoryInquiries].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  async getInquiries(filters?: { status?: string | null; priority?: string | null; search?: string | null }): Promise<Inquiry[]> {
+    let list = [...memoryInquiries];
+    if (filters?.status && filters.status !== "ALL") {
+      list = list.filter((i) => i.status === filters.status);
+    }
+    if (filters?.priority && filters.priority !== "ALL") {
+      list = list.filter((i) => i.priority === filters.priority);
+    }
+    if (filters?.search) {
+      const q = filters.search.toLowerCase();
+      list = list.filter((i) =>
+        i.fullName.toLowerCase().includes(q) ||
+        i.email.toLowerCase().includes(q) ||
+        i.referenceId.toLowerCase().includes(q)
+      );
+    }
+    return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
 
   async createInquiry(data: Partial<Inquiry>): Promise<Inquiry> {
@@ -967,68 +1066,339 @@ export const dataStore = {
 
   // ── Chat & Direct Messaging ────────────────────────────────────────────────
   async getConversations(userId?: string): Promise<Conversation[]> {
-    return memoryConversations.map((conv) => {
-      const messages = memoryMessages.filter((m) => m.conversationId === conv.id);
-      const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-      return {
-        ...conv,
-        lastMessage: lastMessage ? {
-          ...lastMessage,
-          sender: memoryProfiles.find((p) => p.id === lastMessage.senderId),
-        } : null,
-      };
+    const list = memoryConversations.filter((conv) => {
+      if (conv.type !== "DIRECT") return true;
+      if (!userId) return true;
+      return (
+        conv.participantIds?.includes(userId) ||
+        conv.members?.some((m) => m.id === userId || m.username === userId)
+      );
     });
+
+    return list
+      .map((conv) => {
+        const messages = memoryMessages.filter((m) => m.conversationId === conv.id);
+        const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+
+        let otherMember = null;
+        let title = conv.title || "Conversation";
+
+        if (conv.type === "DIRECT" && userId) {
+          const otherId = conv.participantIds?.find((id) => id !== userId);
+          otherMember = otherId
+            ? memoryProfiles.find((p) => p.id === otherId || p.username === otherId) || null
+            : conv.members?.find((m) => m.id !== userId) || null;
+          if (otherMember) {
+            title = otherMember.displayName;
+          }
+        }
+
+        // Calculate unread count for this user
+        let unreadCount = 0;
+        if (userId) {
+          const memberRecord = memoryConversationMembers.find(
+            (m) => m.conversationId === conv.id && m.userId === userId
+          );
+          const lastReadTime = memberRecord?.lastReadAt ? new Date(memberRecord.lastReadAt).getTime() : 0;
+          unreadCount = messages.filter(
+            (m) => !m.isDeleted && m.senderId !== userId && new Date(m.createdAt).getTime() > lastReadTime
+          ).length;
+        }
+
+        return {
+          ...conv,
+          title,
+          otherMember,
+          unreadCount,
+          lastMessage: lastMessage ? {
+            ...lastMessage,
+            sender: memoryProfiles.find((p) => p.id === lastMessage.senderId),
+          } : null,
+          lastMessageText: lastMessage?.isDeleted ? "Message unsent" : lastMessage?.message || (lastMessage?.attachments && lastMessage.attachments.length > 0 ? "📷 Photo" : undefined),
+          lastMessageAt: lastMessage?.createdAt || conv.updatedAt,
+        };
+      })
+      .sort((a, b) => {
+        const timeA = new Date(a.lastMessageAt || a.updatedAt).getTime();
+        const timeB = new Date(b.lastMessageAt || b.updatedAt).getTime();
+        return timeB - timeA;
+      });
+  },
+
+  async getConversationById(convId: string, userId?: string): Promise<Conversation | null> {
+    const conv = memoryConversations.find((c) => c.id === convId);
+    if (!conv) return null;
+
+    let otherMember = null;
+    let title = conv.title || "Conversation";
+
+    if (conv.type === "DIRECT" && userId) {
+      const otherId = conv.participantIds?.find((id) => id !== userId);
+      otherMember = otherId
+        ? memoryProfiles.find((p) => p.id === otherId || p.username === otherId) || null
+        : conv.members?.find((m) => m.id !== userId) || null;
+      if (otherMember) {
+        title = otherMember.displayName;
+      }
+    }
+
+    return {
+      ...conv,
+      title,
+      otherMember,
+    };
   },
 
   async getOrCreateDirectConversation(user1Id: string, user2Id: string): Promise<Conversation> {
-    // Check if direct conversation already exists between these 2 users
+    const u1 = memoryProfiles.find((p) => p.id === user1Id || p.username === user1Id);
+    const u2 = memoryProfiles.find((p) => p.id === user2Id || p.username === user2Id);
+
+    const id1 = u1?.id || user1Id;
+    const id2 = u2?.id || user2Id;
+
+    // Check if direct conversation already exists between these 2 users (canonical key match)
     const existing = memoryConversations.find(
-      (c) => c.type === "DIRECT" && c.members?.some((m) => m.id === user1Id) && c.members?.some((m) => m.id === user2Id)
+      (c) =>
+        c.type === "DIRECT" &&
+        c.participantIds &&
+        c.participantIds.includes(id1) &&
+        c.participantIds.includes(id2)
     );
-    if (existing) return existing;
 
-    const u1 = memoryProfiles.find((p) => p.id === user1Id);
-    const u2 = memoryProfiles.find((p) => p.id === user2Id);
+    if (existing) {
+      const other = id1 === user1Id ? u2 : u1;
+      return {
+        ...existing,
+        title: other?.displayName || existing.title,
+        otherMember: other ? { id: other.id, username: other.username, displayName: other.displayName, mediaUrl: other.mediaUrl, role: other.role, headline: other.headline } : null,
+      };
+    }
 
+    const sortedIds = [id1, id2].sort();
     const newConv: Conversation = {
-      id: `conv-direct-${Date.now()}`,
+      id: `conv-direct-${sortedIds[0]}-${sortedIds[1]}`,
       type: "DIRECT",
-      title: `${u1?.displayName || "Member"} & ${u2?.displayName || "Member"}`,
+      title: u2?.displayName || "Direct Message",
+      participantIds: [id1, id2],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       members: [
-        u1 ? { id: u1.id, username: u1.username, displayName: u1.displayName, mediaUrl: u1.mediaUrl, role: u1.role } : ({} as any),
-        u2 ? { id: u2.id, username: u2.username, displayName: u2.displayName, mediaUrl: u2.mediaUrl, role: u2.role } : ({} as any),
+        u1 ? { id: u1.id, username: u1.username, displayName: u1.displayName, mediaUrl: u1.mediaUrl, role: u1.role, headline: u1.headline } : ({} as any),
+        u2 ? { id: u2.id, username: u2.username, displayName: u2.displayName, mediaUrl: u2.mediaUrl, role: u2.role, headline: u2.headline } : ({} as any),
       ],
+      otherMember: u2 ? { id: u2.id, username: u2.username, displayName: u2.displayName, mediaUrl: u2.mediaUrl, role: u2.role, headline: u2.headline } : null,
     };
-    memoryConversations.push(newConv);
+
+    memoryConversations.unshift(newConv);
     return newConv;
   },
 
-  async getMessages(conversationId: string): Promise<ChatMessage[]> {
-    return memoryMessages
-      .filter((m) => m.conversationId === conversationId && !m.isDeleted)
-      .map((m) => ({
-        ...m,
-        sender: memoryProfiles.find((p) => p.id === m.senderId),
-      }))
+  async getMessages(conversationId: string, userId?: string): Promise<ChatMessage[]> {
+    const msgs = memoryMessages.filter((m) => m.conversationId === conversationId);
+
+    return msgs
+      .map((m) => {
+        const sender = memoryProfiles.find((p) => p.id === m.senderId);
+        let replyTo = null;
+        if (m.replyToId) {
+          const orig = memoryMessages.find((origMsg) => origMsg.id === m.replyToId);
+          if (orig) {
+            const origSender = memoryProfiles.find((p) => p.id === orig.senderId);
+            replyTo = {
+              id: orig.id,
+              message: orig.isDeleted ? "Message unsent" : orig.message,
+              senderName: origSender?.displayName || "Member",
+            };
+          }
+        }
+
+        // Aggregate reactions
+        const msgReactions = memoryReactions.filter((r) => r.messageId === m.id);
+        const reactionMap = new Map<string, { count: number; userIds: string[]; userNames: string[] }>();
+        msgReactions.forEach((r) => {
+          if (!reactionMap.has(r.emoji)) {
+            reactionMap.set(r.emoji, { count: 0, userIds: [], userNames: [] });
+          }
+          const item = reactionMap.get(r.emoji)!;
+          item.count += 1;
+          item.userIds.push(r.userId);
+          item.userNames.push(r.userName);
+        });
+
+        const reactions = Array.from(reactionMap.entries()).map(([emoji, data]) => ({
+          emoji,
+          count: data.count,
+          userIds: data.userIds,
+          userNames: data.userNames,
+        }));
+
+        const userReactions = msgReactions
+          .filter((r) => !userId || r.userId === userId)
+          .map((r) => ({ userId: r.userId, emoji: r.emoji }));
+
+        return {
+          ...m,
+          sender,
+          replyTo,
+          reactions,
+          userReactions,
+        };
+      })
       .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   },
 
-  async createMessage(data: { conversationId: string; senderId: string; message: string; fileUrl?: string; fileName?: string }): Promise<ChatMessage> {
+  async sendMessage(data: {
+    conversationId: string;
+    senderId: string;
+    message: string;
+    attachments?: ChatMessageAttachment[];
+    fileUrl?: string;
+    fileName?: string;
+    replyToId?: string | null;
+  }): Promise<ChatMessage> {
     const newMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
+      id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       conversationId: data.conversationId,
       senderId: data.senderId,
-      message: data.message,
+      message: data.message || "",
+      attachments: data.attachments || (data.fileUrl ? [{ id: `att-${Date.now()}`, url: data.fileUrl, name: data.fileName || "Image", mimeType: "image/jpeg" }] : []),
       fileUrl: data.fileUrl,
       fileName: data.fileName,
+      replyToId: data.replyToId || null,
       isDeleted: false,
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
+
     memoryMessages.push(newMsg);
+
+    // Update conversation timestamp
+    const convIdx = memoryConversations.findIndex((c) => c.id === data.conversationId);
+    if (convIdx !== -1) {
+      memoryConversations[convIdx].updatedAt = new Date().toISOString();
+      memoryConversations[convIdx].lastMessageText = data.message || (newMsg.attachments && newMsg.attachments.length > 0 ? "📷 Photo" : "");
+      memoryConversations[convIdx].lastMessageAt = newMsg.createdAt;
+    }
+
     const sender = memoryProfiles.find((p) => p.id === data.senderId);
-    return { ...newMsg, sender };
+
+    // Create notification for other participant if direct conversation
+    if (convIdx !== -1 && memoryConversations[convIdx].type === "DIRECT") {
+      const recipientId = memoryConversations[convIdx].participantIds?.find((id) => id !== data.senderId);
+      if (recipientId) {
+        memoryNotifications.unshift({
+          id: `notif-${Date.now()}`,
+          userId: recipientId,
+          type: "CHAT",
+          title: `New message from ${sender?.displayName || "Teammate"}`,
+          message: data.message ? (data.message.length > 60 ? `${data.message.slice(0, 60)}...` : data.message) : "Sent a photo",
+          link: `/dashboard/messages?conversation=${data.conversationId}`,
+          isRead: false,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    }
+
+    return { ...newMsg, sender, reactions: [] };
+  },
+
+  async editMessage(messageId: string, senderId: string, newMessage: string): Promise<ChatMessage | null> {
+    const msg = memoryMessages.find((m) => m.id === messageId);
+    if (!msg || msg.isDeleted) return null;
+
+    const sender = memoryProfiles.find((p) => p.id === senderId || p.username === senderId);
+    const isSender = msg.senderId === senderId || (sender && msg.senderId === sender.id);
+    if (!isSender) return null;
+
+    msg.message = newMessage.trim();
+    msg.isEdited = true;
+    msg.editedAt = new Date().toISOString();
+    msg.updatedAt = new Date().toISOString();
+
+    const senderProfile = memoryProfiles.find((p) => p.id === msg.senderId);
+    return { ...msg, sender: senderProfile };
+  },
+
+  async deleteMessage(messageId: string, senderId: string): Promise<boolean> {
+    const msg = memoryMessages.find((m) => m.id === messageId);
+    if (!msg) return false;
+
+    const sender = memoryProfiles.find((p) => p.id === senderId || p.username === senderId);
+    const isSender = msg.senderId === senderId || (sender && msg.senderId === sender.id);
+    if (!isSender) return false;
+
+    msg.isDeleted = true;
+    msg.message = "";
+    msg.updatedAt = new Date().toISOString();
+    return true;
+  },
+
+  async toggleReaction(messageId: string, userId: string, emoji: string): Promise<{ reactions: Array<{ emoji: string; count: number; userIds: string[]; userNames: string[] }> }> {
+    const user = memoryProfiles.find((p) => p.id === userId);
+    const userName = user?.displayName || "Member";
+
+    const existingIdx = memoryReactions.findIndex((r) => r.messageId === messageId && r.userId === userId);
+    if (existingIdx !== -1) {
+      if (memoryReactions[existingIdx].emoji === emoji) {
+        // Remove reaction
+        memoryReactions.splice(existingIdx, 1);
+      } else {
+        // Change reaction emoji
+        memoryReactions[existingIdx].emoji = emoji;
+        memoryReactions[existingIdx].userName = userName;
+      }
+    } else {
+      // Add new reaction
+      memoryReactions.push({
+        id: `react-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        messageId,
+        userId,
+        userName,
+        emoji,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    // Return aggregated reactions for this message
+    const msgReactions = memoryReactions.filter((r) => r.messageId === messageId);
+    const reactionMap = new Map<string, { count: number; userIds: string[]; userNames: string[] }>();
+    msgReactions.forEach((r) => {
+      if (!reactionMap.has(r.emoji)) {
+        reactionMap.set(r.emoji, { count: 0, userIds: [], userNames: [] });
+      }
+      const item = reactionMap.get(r.emoji)!;
+      item.count += 1;
+      item.userIds.push(r.userId);
+      item.userNames.push(r.userName);
+    });
+
+    const reactions = Array.from(reactionMap.entries()).map(([em, data]) => ({
+      emoji: em,
+      count: data.count,
+      userIds: data.userIds,
+      userNames: data.userNames,
+    }));
+
+    return { reactions };
+  },
+
+  async markConversationRead(conversationId: string, userId: string): Promise<boolean> {
+    const existingIdx = memoryConversationMembers.findIndex(
+      (m) => m.conversationId === conversationId && m.userId === userId
+    );
+
+    const now = new Date().toISOString();
+    if (existingIdx !== -1) {
+      memoryConversationMembers[existingIdx].lastReadAt = now;
+    } else {
+      memoryConversationMembers.push({
+        conversationId,
+        userId,
+        lastReadAt: now,
+        joinedAt: now,
+      });
+    }
+    return true;
   },
 
   // ── Notifications ──────────────────────────────────────────────────────────
@@ -1038,7 +1408,21 @@ export const dataStore = {
     return { notifications: list, unreadCount };
   },
 
+  async markNotificationRead(notificationId: string): Promise<boolean> {
+    const idx = memoryNotifications.findIndex((n) => n.id === notificationId);
+    if (idx !== -1) {
+      memoryNotifications[idx].isRead = true;
+      return true;
+    }
+    return false;
+  },
+
   async markNotificationsRead(userId?: string): Promise<boolean> {
+    memoryNotifications = memoryNotifications.map((n) => (!userId || n.userId === userId ? { ...n, isRead: true } : n));
+    return true;
+  },
+
+  async markAllNotificationsRead(userId?: string): Promise<boolean> {
     memoryNotifications = memoryNotifications.map((n) => (!userId || n.userId === userId ? { ...n, isRead: true } : n));
     return true;
   },
@@ -1200,13 +1584,32 @@ export const dataStore = {
     return [...memoryAuditLogs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
 
-  async logAudit(action: string, actorId?: string, details?: string, ipAddress?: string): Promise<AuditLogItem> {
+  async logAudit(
+    actionOrData: string | { action: string; actorId?: string; actorName?: string; targetId?: string; details?: string; ipAddress?: string },
+    actorId?: string,
+    details?: string,
+    ipAddress?: string
+  ): Promise<AuditLogItem> {
+    if (typeof actionOrData === "object") {
+      const item: AuditLogItem = {
+        id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        actorId: actionOrData.actorId,
+        actorName: actionOrData.actorName || (actionOrData.actorId ? memoryProfiles.find((p) => p.id === actionOrData.actorId)?.displayName : undefined) || "System",
+        action: actionOrData.action,
+        details: actionOrData.details,
+        ipAddress: actionOrData.ipAddress || "127.0.0.1",
+        createdAt: new Date().toISOString(),
+      };
+      memoryAuditLogs.unshift(item);
+      return item;
+    }
+
     const actor = actorId ? memoryProfiles.find((p) => p.id === actorId) : null;
     const item: AuditLogItem = {
-      id: `log-${Date.now()}`,
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       actorId,
       actorName: actor?.displayName || "System",
-      action,
+      action: actionOrData,
       details,
       ipAddress: ipAddress || "127.0.0.1",
       createdAt: new Date().toISOString(),

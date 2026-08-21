@@ -534,7 +534,7 @@ function OwnerDashboardContent() {
   };
 
   const handleArchiveProject = async (project: Project) => {
-    const newState = project.status === "ARCHIVED" ? "PRODUCTION" : "ARCHIVED";
+    const newState: "Live" | "Archived" = project.status === "Archived" ? "Live" : "Archived";
     try {
       const res = await fetch(`/api/projects/${project.id}`, {
         method: "PATCH",
@@ -542,7 +542,7 @@ function OwnerDashboardContent() {
         body: JSON.stringify({ status: newState }),
       });
       if (res.ok) {
-        setProjects((prev) => prev.map((p) => p.id === project.id ? { ...p, status: newState as any } : p));
+        setProjects((prev) => prev.map((p) => p.id === project.id ? { ...p, status: newState } : p));
       }
     } catch {}
   };
@@ -667,21 +667,7 @@ function OwnerDashboardContent() {
   };
 
   const handleStartDirectChat = async (recipientId: string) => {
-    try {
-      const res = await fetch("/api/chat/conversations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recipientId }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        if (!conversations.some((c) => c.id === data.conversation.id)) {
-          setConversations((prev) => [data.conversation, ...prev]);
-        }
-        setActiveConversationId(data.conversation.id);
-        setActiveTab("messages");
-      }
-    } catch {}
+    router.push(`/dashboard/messages?user=${recipientId}`);
   };
 
   // Filtered lists
@@ -699,7 +685,7 @@ function OwnerDashboardContent() {
     if (activeTab === "main-projects") return projects.filter((p) => p.isMainProject);
     if (activeTab === "team-projects") return projects.filter((p) => !p.isMainProject);
     if (activeTab === "hidden-projects") return projects.filter((p) => !p.isHomepageVisible);
-    if (activeTab === "archived-projects") return projects.filter((p) => p.status === "ARCHIVED");
+    if (activeTab === "archived-projects") return projects.filter((p) => p.status === "Archived");
     return projects;
   };
 
@@ -1509,7 +1495,7 @@ function OwnerDashboardContent() {
                             <button
                               onClick={() => handleArchiveProject(proj)}
                               className="p-1.5 rounded-lg bg-[#141414] hover:bg-deep-red/20 text-[#888] hover:text-white"
-                              title={proj.status === "ARCHIVED" ? "Restore" : "Archive"}
+                              title={proj.status === "Archived" ? "Restore" : "Archive"}
                             >
                               <Archive className="w-3.5 h-3.5" />
                             </button>
@@ -1690,7 +1676,7 @@ function OwnerDashboardContent() {
                           <div className={`max-w-md p-3.5 rounded-2xl text-xs ${
                             m.senderId === currentUser?.id ? "bg-crimson text-white" : "bg-[#141414] text-[#DDD] border border-white/5"
                           }`}>
-                            <p className="font-bold text-[10px] font-orbitron mb-1">{m.senderName}</p>
+                            <p className="font-bold text-[10px] font-orbitron mb-1">{m.sender?.displayName || "Member"}</p>
                             <p className="leading-relaxed">{m.message}</p>
                           </div>
                         </div>
@@ -1871,7 +1857,7 @@ function OwnerDashboardContent() {
                         <td className="py-3 font-orbitron font-bold text-bright-red">{log.action}</td>
                         <td className="py-3 font-mono text-[#AAA]">{log.actorName || log.actorId}</td>
                         <td className="py-3 text-[#DDD]">{log.details}</td>
-                        <td className="py-3 font-mono text-[#666]">{new Date(log.timestamp).toLocaleString()}</td>
+                        <td className="py-3 font-mono text-[#666]">{new Date(log.createdAt).toLocaleString()}</td>
                       </tr>
                     ))}
                   </tbody>

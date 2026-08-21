@@ -20,6 +20,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const { id } = params;
 
   try {
+    const body = await req.json();
     const { role, leadershipPosition, displayName, isActive, newPassword, isPublic } = body;
 
     const updates: any = {};
@@ -67,14 +68,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
 
     // Audit log
-    await dataStore.logAudit({
-      actorId: currentUser.id,
-      actorName: currentUser.displayName,
-      targetId: updatedProfile.id,
-      action: newPassword ? "PASSWORD_RESET" : updates.role ? "ROLE_CHANGED" : "ACCOUNT_UPDATED",
-      details: `Owner modified account @${updatedProfile.username}. Updates: ${JSON.stringify(updates)} ${newPassword ? "(Password Reset)" : ""}`,
-      ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
-    });
+    await dataStore.logAudit(
+      newPassword ? "PASSWORD_RESET" : updates.role ? "ROLE_CHANGED" : "ACCOUNT_UPDATED",
+      currentUser.id,
+      `Owner modified account @${updatedProfile.username}. Updates: ${JSON.stringify(updates)} ${newPassword ? "(Password Reset)" : ""}`,
+      req.headers.get("x-forwarded-for") || "127.0.0.1"
+    );
 
     return NextResponse.json({ success: true, account: updatedProfile });
   } catch (err: any) {
@@ -110,14 +109,12 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
       return NextResponse.json({ error: "Account not found." }, { status: 404 });
     }
 
-    await dataStore.logAudit({
-      actorId: currentUser.id,
-      actorName: currentUser.displayName,
-      targetId: id,
-      action: "ACCOUNT_DELETED",
-      details: `Owner permanently removed account @${profile?.username || id}`,
-      ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
-    });
+    await dataStore.logAudit(
+      "ACCOUNT_DELETED",
+      currentUser.id,
+      `Owner permanently removed account @${profile?.username || id}`,
+      req.headers.get("x-forwarded-for") || "127.0.0.1"
+    );
 
     return NextResponse.json({ success: true, message: "Account deleted successfully." });
   } catch (err: any) {

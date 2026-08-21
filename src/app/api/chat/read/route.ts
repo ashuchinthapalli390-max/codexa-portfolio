@@ -1,3 +1,7 @@
+/**
+ * POST /api/chat/read
+ * Marks a conversation as read for the current user.
+ */
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { dataStore } from "@/lib/data-store";
@@ -12,20 +16,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401 });
     }
 
-    const { postId } = await req.json();
-    if (!postId) {
-      return NextResponse.json({ success: false, error: "Post ID is required." }, { status: 400 });
+    const body = await req.json();
+    const { conversationId } = body;
+
+    if (!conversationId) {
+      return NextResponse.json({ success: false, error: "conversationId is required." }, { status: 400 });
     }
 
-    const result = await dataStore.togglePostLike(postId, user.id);
+    await dataStore.markConversationRead(conversationId, user.id);
 
     return NextResponse.json({
       success: true,
-      hasLiked: result.liked,
-      likesCount: result.totalLikes,
+      conversationId,
     });
   } catch (err: any) {
-    console.error("[POST /api/feed/like] Error:", err);
-    return NextResponse.json({ success: false, error: "Failed to toggle like." }, { status: 500 });
+    console.error("[POST /api/chat/read]", err);
+    return NextResponse.json({ success: false, error: "Failed to mark as read." }, { status: 500 });
   }
 }

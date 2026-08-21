@@ -95,8 +95,13 @@ export async function destroySession(token: string): Promise<void> {
   });
 }
 
-export async function validateSession(token: string): Promise<AuthenticatedUser | null> {
-  if (!token) return null;
+export async function validateSession(rawToken: string): Promise<AuthenticatedUser | null> {
+  if (!rawToken) return null;
+
+  let token = rawToken;
+  try {
+    token = decodeURIComponent(rawToken);
+  } catch {}
 
   // 0. Support JSON-encoded session cookie from 2-Stage OTP verification
   if (token.startsWith("{") && token.endsWith("}")) {

@@ -18,7 +18,7 @@ export async function GET() {
       success: true,
       gallery,
       total: gallery.length,
-      currentAvatarUrl: user.mediaUrl || user.avatarUrl || null,
+      currentAvatarUrl: user.mediaUrl || null,
     });
   } catch (err: any) {
     return NextResponse.json(
@@ -43,7 +43,7 @@ export async function DELETE(req: NextRequest) {
     }
 
     // Check if the asset is currently used as active avatar
-    const activeMediaUrl = user.mediaUrl || user.avatarUrl;
+    const activeMediaUrl = user.mediaUrl || null;
     const gallery = await dataStore.getMediaAssets(user.id, "AVATAR");
     const asset = gallery.find((g) => g.id === id);
 

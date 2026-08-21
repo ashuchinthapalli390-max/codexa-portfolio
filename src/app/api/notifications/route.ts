@@ -16,9 +16,12 @@ export async function GET() {
   }
 
   try {
-    const notifications = await dataStore.getNotifications(user.id);
-    const unreadCount = notifications.filter((n) => !n.isRead).length;
-    return NextResponse.json({ success: true, notifications, unreadCount });
+    const result = await dataStore.getNotifications(user.id);
+    return NextResponse.json({
+      success: true,
+      notifications: result.notifications,
+      unreadCount: result.unreadCount,
+    });
   } catch (err: any) {
     console.error("[GET /api/notifications]", err);
     return NextResponse.json({ error: "Failed to load notifications." }, { status: 500 });

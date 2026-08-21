@@ -50,6 +50,7 @@ export async function POST(req: NextRequest) {
       budget: inquiry.budget,
       timeline: inquiry.timeline,
       message: inquiry.message,
+      submittedAt: inquiry.createdAt || new Date().toISOString(),
     };
 
     // Fire Resend emails asynchronously

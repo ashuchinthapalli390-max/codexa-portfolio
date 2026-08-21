@@ -408,7 +408,7 @@ export default function AdminWorkspacePage() {
                       </td>
                       <td className="py-3">
                         <button
-                          onClick={() => handleToggleHomepage(proj.id, proj.isHomepageVisible)}
+                          onClick={() => handleToggleHomepage(proj.id, !!proj.isHomepageVisible)}
                           className={`px-3 py-1 rounded-xl text-[9px] font-orbitron font-bold uppercase transition-all ${
                             proj.isHomepageVisible
                               ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"

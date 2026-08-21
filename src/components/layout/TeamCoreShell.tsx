@@ -52,9 +52,10 @@ export function TeamCoreShell({
   const [loadingSession, setLoadingSession] = useState(true);
   const [sessionError, setSessionError] = useState(false);
 
-  // Notifications state
+  // Notifications & Messages state
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadNotifsCount, setUnreadNotifsCount] = useState(0);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
 
   // Global search query
@@ -76,6 +77,17 @@ export function TeamCoreShell({
           .then((nData) => {
             if (nData.notifications) setNotifications(nData.notifications);
             if (nData.unreadCount !== undefined) setUnreadNotifsCount(nData.unreadCount);
+          })
+          .catch(() => {});
+
+        // Load chat conversations to calculate unread DM count
+        fetch("/api/chat/conversations")
+          .then((cr) => cr.json())
+          .then((cData) => {
+            if (cData.conversations) {
+              const totalUnread = cData.conversations.reduce((sum: number, c: any) => sum + (c.unreadCount || 0), 0);
+              setUnreadMessagesCount(totalUnread);
+            }
           })
           .catch(() => {});
       })
@@ -134,10 +146,9 @@ export function TeamCoreShell({
     { label: "Overview", href: "/dashboard", icon: LayoutDashboard },
     { label: "Team Core Feed", href: "/dashboard/feed", icon: Share2 },
     { label: "Team Directory", href: "/team", icon: Users },
-    { label: "Projects", href: "/dashboard/projects", icon: FolderGit2 },
-    { label: "Messages", href: "/dashboard/messages", icon: MessageSquare },
+    { label: "DIRECT MESSAGES", href: "/dashboard/messages", icon: MessageSquare, badge: unreadMessagesCount || undefined },
     { label: "My Profile", href: "/dashboard/profile", icon: User },
-    { label: "Notifications", href: "/dashboard/notifications", icon: Bell, badge: unreadNotifsCount },
+    { label: "Notifications", href: "/dashboard/notifications", icon: Bell, badge: unreadNotifsCount || undefined },
   ];
 
   const executiveNavItems = [

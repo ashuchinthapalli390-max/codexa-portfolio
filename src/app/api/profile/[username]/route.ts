@@ -85,10 +85,12 @@ export async function PATCH(
     if (socialLinks !== undefined) updates.socialLinks = socialLinks;
 
     // Role & Active status can only be modified by Owner or CEO (for non-owner)
-    if (role !== undefined && (isOwner || (isCeoOrAdmin && !isTargetOwner && role !== "OWNER"))) {
+    const userIsOwner = isOwner(user);
+    const userIsCeoOrAdmin = isCeoOrAdmin(user);
+    if (role !== undefined && (userIsOwner || (userIsCeoOrAdmin && !isTargetOwner && role !== "OWNER"))) {
       updates.role = role;
     }
-    if (isActive !== undefined && (isOwner || (isCeoOrAdmin && !isTargetOwner))) {
+    if (isActive !== undefined && (userIsOwner || (userIsCeoOrAdmin && !isTargetOwner))) {
       updates.isActive = isActive;
     }
 

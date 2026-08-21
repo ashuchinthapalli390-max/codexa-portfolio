@@ -31,7 +31,8 @@ import {
   ChevronRight,
   X,
   Camera,
-  AlertCircle
+  AlertCircle,
+  Key
 } from "lucide-react";
 import { CyberWebOverlay } from "@/components/ui/CyberWebOverlay";
 import { NeonButton } from "@/components/ui/NeonButton";
@@ -128,11 +129,12 @@ export default function MemberProfilePage() {
 
   // Direct Message action
   const handleDirectMessage = () => {
+    if (!profile) return;
     if (!currentSessionUser) {
-      router.push(`/login?redirect=/team/${username}`);
+      router.push(`/login?redirect=/dashboard/messages?user=${profile.id}`);
       return;
     }
-    router.push(`/dashboard?tab=chat&user=${profile?.id}`);
+    router.push(`/dashboard/messages?user=${profile.id}`);
   };
 
   // Save Profile Changes
@@ -392,7 +394,7 @@ export default function MemberProfilePage() {
                       <Edit3 className="w-3.5 h-3.5 text-bright-red" /> Edit Profile
                     </button>
                   )}
-                  {!isSelf && isOwner && (
+                  {!isSelf && isOwnerViewer && (
                     <>
                       <button
                         onClick={() => setEditModalOpen(true)}
