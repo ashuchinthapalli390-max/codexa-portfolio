@@ -24,7 +24,9 @@ import {
   Check,
   X,
   AlertCircle,
-  Menu
+  Menu,
+  Key,
+  ToggleRight
 } from "lucide-react";
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
 import { isOwner, isCeoOrAdmin } from "@/lib/permissions";
@@ -139,8 +141,10 @@ export function TeamCoreShell({
   ];
 
   const executiveNavItems = [
-    { label: "Executive Center", href: isUserOwner ? "/owner" : "/admin", icon: Shield },
-    { label: "All Projects Pipeline", href: isUserOwner ? "/owner?tab=projects" : "/admin?tab=projects", icon: FolderGit2 },
+    { label: isUserOwner ? "Founder Console" : "Executive Center", href: isUserOwner ? "/owner" : "/admin", icon: Shield },
+    ...(isUserOwner ? [{ label: "Accounts & Security", href: "/owner?tab=accounts", icon: Key }] : []),
+    { label: "All Projects Pipeline", href: isUserOwner ? "/owner?tab=all-projects" : "/admin?tab=projects", icon: FolderGit2 },
+    ...(isUserOwner ? [{ label: "Homepage Control", href: "/owner?tab=homepage", icon: ToggleRight }] : []),
     { label: "Inquiries Console", href: isUserOwner ? "/owner?tab=inquiries" : "/admin?tab=inquiries", icon: Inbox },
     ...(isUserOwner ? [{ label: "Audit & Security Logs", href: "/owner?tab=audit", icon: Clock }] : []),
   ];

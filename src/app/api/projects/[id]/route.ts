@@ -83,6 +83,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (liveUrl !== undefined) updates.liveUrl = liveUrl;
     if (isDraft !== undefined) updates.isDraft = isDraft;
     if (isPublic !== undefined) updates.isPublic = isPublic;
+    if (body.isHomepageVisible !== undefined) updates.isHomepageVisible = Boolean(body.isHomepageVisible);
+    if (body.showInTeamProjects !== undefined) updates.showInTeamProjects = Boolean(body.showInTeamProjects);
     if (collaboratorIds !== undefined) updates.collaboratorIds = collaboratorIds;
 
     // Owner-only fields

@@ -87,7 +87,8 @@ export async function POST(req: NextRequest) {
       liveUrl: liveUrl?.trim() || "",
       isDraft: isDraft ?? false,
       isPublic: isPublic ?? true,
-      createdBy: user.id,
+      isMainProject: Boolean(body.isMainProject),
+      createdBy: (user.role === "OWNER" && body.createdBy) ? body.createdBy : user.id,
       collaboratorIds: Array.isArray(collaboratorIds) ? collaboratorIds : [],
     });
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dataStore } from "@/lib/data-store";
 import { getCurrentUser } from "@/lib/auth";
+import { canEditProfile, isOwner, isCeoOrAdmin } from "@/lib/permissions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,23 +51,14 @@ export async function PATCH(
       return NextResponse.json({ success: false, error: "Target profile not found." }, { status: 404 });
     }
 
-    // Permission check:
-    // User can edit own profile.
-    // Owner can edit any profile.
-    // CEO/Admin can edit normal member profiles, but NOT Owner.
-    const isSelf = user.id === targetProfile.id;
-    const isOwner = user.role === "OWNER";
-    const isCeoOrAdmin = user.role === "ADMIN";
-    const isTargetOwner = targetProfile.role === "OWNER";
-
-    if (!isSelf && !isOwner) {
-      if (isCeoOrAdmin && isTargetOwner) {
-        return NextResponse.json({ success: false, error: "Permission denied: Cannot edit Owner profile." }, { status: 403 });
-      }
-      if (!isCeoOrAdmin) {
-        return NextResponse.json({ success: false, error: "Permission denied: Cannot edit another member's profile." }, { status: 403 });
-      }
+    // Permission check via centralized permissions resolver
+    if (!canEditProfile(user, targetProfile)) {
+      return NextResponse.json({ success: false, error: "Permission denied: You do not have authorization to edit this profile." }, { status: 403 });
     }
+
+    const isActorOwner = isOwner(user);
+    const isActorCeoOrAdmin = isCeoOrAdmin(user);
+    const isTargetOwner = targetProfile.role === "OWNER";
 
     const body = await req.json();
     const {

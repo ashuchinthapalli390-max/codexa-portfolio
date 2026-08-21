@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, Suspense } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -31,7 +31,6 @@ import {
   Filter,
   Check,
   X,
-  Edit,
   Edit3,
   Eye,
   RefreshCw,
@@ -49,7 +48,8 @@ import {
   Linkedin,
   Archive,
   RotateCcw,
-  Camera
+  Camera,
+  Menu
 } from "lucide-react";
 import { 
   Profile, 
@@ -70,25 +70,34 @@ import { CodeXaMediaSelectorModal } from "@/components/ui/CodeXaMediaSelectorMod
 type OwnerTab = 
   | "overview" 
   | "my-profile"
-  | "team" 
+  | "feed"
+  | "team-profiles" 
   | "accounts" 
-  | "projects" 
+  | "all-projects" 
+  | "main-projects"
+  | "team-projects"
+  | "hidden-projects"
+  | "archived-projects"
   | "homepage" 
-  | "feed" 
-  | "chat" 
+  | "messages" 
   | "notifications" 
   | "inquiries" 
+  | "feed-moderation"
   | "activity" 
   | "audit" 
   | "settings";
 
 function OwnerDashboardContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedTab = searchParams?.get("tab") as OwnerTab | null;
+
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<OwnerTab>("overview");
+  const [activeTab, setActiveTab] = useState<OwnerTab>(requestedTab || "overview");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Real Data states (Zero Dummy Data Guarantee)
+  // Real Database Data states (Zero Dummy Data)
   const [accounts, setAccounts] = useState<Profile[]>([]);
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -111,26 +120,25 @@ function OwnerDashboardContent() {
   // Social Feed state
   const [newPostContent, setNewPostContent] = useState("");
   const [isPostAnnouncement, setIsPostAnnouncement] = useState(false);
-  const [selectedPostComments, setSelectedPostComments] = useState<{ [postId: string]: PostComment[] }>({});
-  const [newCommentTexts, setNewCommentTexts] = useState<{ [postId: string]: string }>({});
-  const [openCommentPostId, setOpenCommentPostId] = useState<string | null>(null);
 
-  // Modals & Drawers
+  // Modals
   const [createAccountModalOpen, setCreateAccountModalOpen] = useState(false);
   const [selectedInquiry, setSelectedInquiry] = useState<Inquiry | null>(null);
   const [resetPasswordModalUser, setResetPasswordModalUser] = useState<Profile | null>(null);
   const [newPasswordInput, setNewPasswordInput] = useState("");
-  const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
   const [mediaSelectorOpen, setMediaSelectorOpen] = useState(false);
   const [editSelfModalOpen, setEditSelfModalOpen] = useState(false);
   const [editMemberModalUser, setEditMemberModalUser] = useState<Profile | null>(null);
   const [createProjectModalOpen, setCreateProjectModalOpen] = useState(false);
   const [editProjectModalData, setEditProjectModalData] = useState<Project | null>(null);
 
-  // Search
+  // Search & Filter state
   const [globalSearch, setGlobalSearch] = useState("");
+  const [inquiryStatusFilter, setInquiryStatusFilter] = useState("ALL");
+  const [inquirySearch, setInquirySearch] = useState("");
+  const [activityFilter, setActivityFilter] = useState("ALL");
 
-  // Form states for creating account
+  // Form: Create account
   const [accountFormData, setAccountFormData] = useState({
     fullName: "",
     username: "",
@@ -144,7 +152,7 @@ function OwnerDashboardContent() {
   const [accountFormState, setAccountFormState] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [accountFormMsg, setAccountFormMsg] = useState("");
 
-  // Form states for editing self profile
+  // Form: Self profile
   const [selfFormData, setSelfFormData] = useState({
     displayName: "",
     headline: "",
@@ -157,7 +165,7 @@ function OwnerDashboardContent() {
   const [selfFormSaving, setSelfFormSaving] = useState(false);
   const [selfFormFeedback, setSelfFormFeedback] = useState<string | null>(null);
 
-  // Form states for editing team member profile
+  // Form: Edit team member
   const [memberFormData, setMemberFormData] = useState({
     displayName: "",
     headline: "",
@@ -174,10 +182,11 @@ function OwnerDashboardContent() {
   const [memberFormSaving, setMemberFormSaving] = useState(false);
   const [memberFormFeedback, setMemberFormFeedback] = useState<string | null>(null);
 
-  // Form states for project creator
+  // Form: New project
   const [newProjectData, setNewProjectData] = useState({
     title: "",
     category: "AI",
+    creatorId: "",
     shortDesc: "",
     overview: "",
     techStackStr: "TypeScript, React, TailwindCSS",
@@ -189,10 +198,12 @@ function OwnerDashboardContent() {
   });
   const [projectSaving, setProjectSaving] = useState(false);
 
-  // Inquiries filter
-  const [inquiryStatusFilter, setInquiryStatusFilter] = useState("ALL");
-  const [inquirySearch, setInquirySearch] = useState("");
-  const [projectCategoryFilter, setProjectCategoryFilter] = useState("ALL");
+  // Sync tab from URL query params
+  useEffect(() => {
+    if (requestedTab) {
+      setActiveTab(requestedTab);
+    }
+  }, [requestedTab]);
 
   useEffect(() => {
     fetch("/api/session")
@@ -556,6 +567,7 @@ function OwnerDashboardContent() {
         body: JSON.stringify({
           ...newProjectData,
           techStack: newProjectData.techStackStr.split(",").map((s) => s.trim()).filter(Boolean),
+          createdBy: newProjectData.creatorId || currentUser?.id,
         }),
       });
       const data = await res.json();
@@ -565,6 +577,7 @@ function OwnerDashboardContent() {
         setNewProjectData({
           title: "",
           category: "AI",
+          creatorId: "",
           shortDesc: "",
           overview: "",
           techStackStr: "TypeScript, React, TailwindCSS",
@@ -666,11 +679,12 @@ function OwnerDashboardContent() {
           setConversations((prev) => [data.conversation, ...prev]);
         }
         setActiveConversationId(data.conversation.id);
-        setActiveTab("chat");
+        setActiveTab("messages");
       }
     } catch {}
   };
 
+  // Filtered lists
   const filteredInquiries = inquiries.filter((inq) => {
     const matchStatus = inquiryStatusFilter === "ALL" || inq.status === inquiryStatusFilter;
     const q = inquirySearch.toLowerCase();
@@ -681,18 +695,76 @@ function OwnerDashboardContent() {
     return matchStatus && matchSearch;
   });
 
-  const filteredProjects = projects.filter((p) => {
-    if (projectCategoryFilter === "MAIN") return p.isMainProject;
-    if (projectCategoryFilter === "HIDDEN") return !p.isHomepageVisible;
-    if (projectCategoryFilter === "ARCHIVED") return p.status === "ARCHIVED";
-    return true;
-  });
+  const getFilteredProjects = () => {
+    if (activeTab === "main-projects") return projects.filter((p) => p.isMainProject);
+    if (activeTab === "team-projects") return projects.filter((p) => !p.isMainProject);
+    if (activeTab === "hidden-projects") return projects.filter((p) => !p.isHomepageVisible);
+    if (activeTab === "archived-projects") return projects.filter((p) => p.status === "ARCHIVED");
+    return projects;
+  };
+
+  // Nav Groups definition
+  const navSections = [
+    {
+      title: "CORE",
+      items: [
+        { id: "overview" as OwnerTab, label: "Overview", icon: LayoutDashboard },
+        { id: "my-profile" as OwnerTab, label: "My Profile", icon: User },
+        { id: "feed" as OwnerTab, label: "Team Core Feed", icon: Share2, badge: posts.length },
+        { id: "team-profiles" as OwnerTab, label: "Team Directory", icon: Users, badge: accounts.length },
+        { id: "messages" as OwnerTab, label: "Messages", icon: MessageSquare },
+        { id: "notifications" as OwnerTab, label: "Notifications", icon: Bell, badge: unreadNotifsCount || undefined },
+      ]
+    },
+    {
+      title: "PEOPLE & ACCESS",
+      items: [
+        { id: "accounts" as OwnerTab, label: "Accounts & Security", icon: Key },
+        { id: "team-profiles" as OwnerTab, label: "Team Profiles", icon: UserCheck },
+      ]
+    },
+    {
+      title: "PROJECTS & BUILDS",
+      items: [
+        { id: "all-projects" as OwnerTab, label: "All Projects", icon: FolderGit2, badge: projects.length },
+        { id: "main-projects" as OwnerTab, label: "Main Projects", icon: Sparkles, badge: projects.filter((p) => p.isMainProject).length },
+        { id: "team-projects" as OwnerTab, label: "Team Projects", icon: FolderGit2 },
+        { id: "hidden-projects" as OwnerTab, label: "Hidden Builds", icon: Eye },
+        { id: "archived-projects" as OwnerTab, label: "Archived Builds", icon: Archive },
+      ]
+    },
+    {
+      title: "OPERATIONS",
+      items: [
+        { id: "homepage" as OwnerTab, label: "Homepage Control", icon: ToggleRight },
+        { id: "inquiries" as OwnerTab, label: "Inquiries Console", icon: Inbox, badge: inquiries.filter((i) => i.status === "NEW").length },
+        { id: "feed-moderation" as OwnerTab, label: "Feed Moderation", icon: Shield },
+        { id: "activity" as OwnerTab, label: "Recent Activity", icon: Clock },
+      ]
+    },
+    {
+      title: "SYSTEM",
+      items: [
+        { id: "audit" as OwnerTab, label: "Audit Logs", icon: Shield },
+        { id: "settings" as OwnerTab, label: "System Config", icon: Settings },
+      ]
+    }
+  ];
 
   return (
-    <div className="min-h-screen bg-[#070707] text-white flex flex-col">
+    <div className="min-h-screen bg-[#070707] text-white flex flex-col selection:bg-crimson selection:text-white">
+      
       {/* ─── TOP COMMAND BAR ──────────────────────────────────────────────── */}
       <header className="h-16 border-b border-crimson/20 bg-[#090909]/95 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between sticky top-0 z-40">
+        
+        {/* Brand & Mobile Hamburger */}
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="md:hidden p-2 rounded-xl bg-[#141414] text-[#888] hover:text-white"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
           <div className="p-1.5 rounded-lg bg-deep-red/30 border border-crimson/40">
             <Shield className="w-5 h-5 text-bright-red" />
           </div>
@@ -704,7 +776,7 @@ function OwnerDashboardContent() {
           </span>
         </div>
 
-        {/* Global Search */}
+        {/* Search */}
         <div className="hidden md:flex items-center relative w-72">
           <Search className="w-3.5 h-3.5 text-[#666] absolute left-3 top-1/2 -translate-y-1/2" />
           <input
@@ -716,6 +788,7 @@ function OwnerDashboardContent() {
           />
         </div>
 
+        {/* Actions & Profile Pill */}
         <div className="flex items-center gap-3">
           <Link
             href="/"
@@ -725,7 +798,6 @@ function OwnerDashboardContent() {
             Public Site <ArrowUpRight className="w-3.5 h-3.5" />
           </Link>
 
-          {/* Quick Create Dropdown / Trigger */}
           <button
             onClick={() => setCreateAccountModalOpen(true)}
             className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-crimson hover:bg-bright-red text-white text-[11px] font-orbitron font-bold uppercase transition-all shadow-[0_0_12px_rgba(217,4,41,0.3)]"
@@ -733,7 +805,7 @@ function OwnerDashboardContent() {
             <Plus className="w-3.5 h-3.5" /> New Account
           </button>
 
-          {/* Notifications Bell */}
+          {/* Notifications */}
           <button
             onClick={() => setActiveTab("notifications")}
             className="p-2 rounded-xl bg-[#121212] hover:bg-deep-red/20 border border-crimson/20 text-[#888] hover:text-white transition-colors relative"
@@ -747,7 +819,7 @@ function OwnerDashboardContent() {
             )}
           </button>
 
-          {/* Owner Avatar Pill */}
+          {/* Owner Avatar Identity Pill */}
           <div
             onClick={() => setActiveTab("my-profile")}
             className="flex items-center gap-2 pl-2 cursor-pointer group"
@@ -763,7 +835,7 @@ function OwnerDashboardContent() {
               <span className="block text-xs font-orbitron font-bold text-white group-hover:text-bright-red transition-colors">
                 {currentUser?.displayName || "Ashu"}
               </span>
-              <span className="block text-[9px] font-mono text-crimson">@ashu</span>
+              <span className="block text-[9px] font-mono text-crimson">@ashu &bull; Founder</span>
             </div>
           </div>
         </div>
@@ -772,53 +844,46 @@ function OwnerDashboardContent() {
       {/* ─── MAIN WORKSPACE BODY ──────────────────────────────────────────── */}
       <div className="flex-1 flex overflow-hidden">
         
-        {/* Sidebar Navigation */}
-        <aside className="w-64 border-r border-crimson/15 bg-[#080808] flex flex-col justify-between p-4 flex-shrink-0 overflow-y-auto">
-          <nav className="space-y-1">
-            {[
-              { id: "overview", label: "Overview", icon: LayoutDashboard },
-              { id: "my-profile", label: "My Profile", icon: User },
-              { id: "feed", label: "Social Feed", icon: Share2, badge: posts.length },
-              { id: "team", label: "Team Members", icon: Users, badge: accounts.length },
-              { id: "accounts", label: "Accounts & Security", icon: Key },
-              { id: "projects", label: "Projects Pipeline", icon: FolderGit2, badge: projects.length },
-              { id: "homepage", label: "Homepage Controls", icon: ToggleRight },
-              { id: "chat", label: "Internal Messages", icon: MessageSquare },
-              { id: "notifications", label: "Signals & Alerts", icon: Bell, badge: unreadNotifsCount || undefined },
-              { id: "inquiries", label: "Client Inquiries", icon: Inbox, badge: inquiries.filter((i) => i.status === "NEW").length },
-              { id: "activity", label: "Activity Pulse", icon: Clock },
-              { id: "audit", label: "Security & Audit", icon: Shield },
-              { id: "settings", label: "System Config", icon: Settings },
-            ].map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id as OwnerTab)}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-orbitron text-xs font-semibold uppercase tracking-wider transition-all ${
-                    isActive
-                      ? "bg-crimson text-white border border-bright-red shadow-[0_0_15px_rgba(217,4,41,0.3)]"
-                      : "text-[#888] hover:text-white hover:bg-[#111] border border-transparent"
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Icon className="w-4 h-4" />
-                    <span>{item.label}</span>
-                  </div>
-                  {item.badge !== undefined && item.badge > 0 && (
-                    <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
-                      isActive ? "bg-white text-crimson" : "bg-deep-red/30 text-bright-red border border-crimson/30"
-                    }`}>
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
+        {/* Desktop Sidebar Navigation */}
+        <aside className="hidden md:flex w-64 border-r border-crimson/15 bg-[#080808] flex-col justify-between p-4 flex-shrink-0 overflow-y-auto">
+          <div className="space-y-5">
+            {navSections.map((section, sIdx) => (
+              <div key={sIdx} className="space-y-1">
+                <span className="px-3 text-[9px] font-orbitron font-bold uppercase tracking-widest text-[#555] block mb-1">
+                  {section.title}
+                </span>
+                {section.items.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setActiveTab(item.id)}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl font-orbitron text-xs font-semibold uppercase tracking-wider transition-all ${
+                        isActive
+                          ? "bg-crimson text-white border border-bright-red shadow-[0_0_15px_rgba(217,4,41,0.3)]"
+                          : "text-[#888] hover:text-white hover:bg-[#111] border border-transparent"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Icon className="w-3.5 h-3.5" />
+                        <span className="truncate">{item.label}</span>
+                      </div>
+                      {item.badge !== undefined && item.badge > 0 && (
+                        <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
+                          isActive ? "bg-white text-crimson" : "bg-deep-red/30 text-bright-red border border-crimson/30"
+                        }`}>
+                          {item.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
 
-          <div className="pt-4 border-t border-white/5 space-y-2">
+          <div className="pt-4 border-t border-white/5 space-y-2 mt-4">
             <Link
               href={`/team/${currentUser?.username || "ashu"}`}
               className="w-full py-2 rounded-xl bg-[#121212] hover:bg-deep-red/20 text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5"
@@ -836,8 +901,72 @@ function OwnerDashboardContent() {
           </div>
         </aside>
 
-        {/* Dynamic Content Panel */}
-        <main className="flex-1 bg-[#070707] overflow-y-auto p-6 md:p-8 space-y-6">
+        {/* Mobile Slide-Out Drawer */}
+        <AnimatePresence>
+          {mobileMenuOpen && (
+            <div className="fixed inset-0 z-50 md:hidden flex">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setMobileMenuOpen(false)}
+                className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+              />
+              <motion.aside
+                initial={{ x: "-100%" }}
+                animate={{ x: 0 }}
+                exit={{ x: "-100%" }}
+                transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                className="relative w-72 bg-[#090909] border-r border-crimson/30 flex flex-col justify-between p-5 z-10 overflow-y-auto"
+              >
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                    <span className="font-orbitron font-black text-sm text-white uppercase">Menu</span>
+                    <button onClick={() => setMobileMenuOpen(false)} className="p-1 rounded bg-[#151515] text-[#888]">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  {navSections.map((section, sIdx) => (
+                    <div key={sIdx} className="space-y-1">
+                      <span className="text-[9px] font-orbitron font-bold uppercase text-[#555] block mb-1">
+                        {section.title}
+                      </span>
+                      {section.items.map((item) => {
+                        const Icon = item.icon;
+                        const isActive = activeTab === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            onClick={() => {
+                              setActiveTab(item.id);
+                              setMobileMenuOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl font-orbitron text-xs font-semibold uppercase ${
+                              isActive ? "bg-crimson text-white" : "text-[#888] hover:bg-[#151515]"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <Icon className="w-3.5 h-3.5" />
+                              <span>{item.label}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </motion.aside>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* Dynamic Main Workspace Container */}
+        <motion.main
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className="flex-1 bg-[#070707] overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6"
+        >
           
           {/* ═══ TAB 1: OVERVIEW ════════════════════════════════════════════ */}
           {activeTab === "overview" && (
@@ -845,7 +974,7 @@ function OwnerDashboardContent() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <span className="text-[10px] font-orbitron text-bright-red tracking-[0.3em] uppercase font-bold">
-                    FOUNDER DASHBOARD &bull; EXECUTIVE PULSE
+                    FOUNDER COMMAND CONSOLE
                   </span>
                   <h1 className="font-orbitron font-black text-2xl sm:text-3xl text-white uppercase mt-1">
                     CodeXa Agency Overview
@@ -853,7 +982,7 @@ function OwnerDashboardContent() {
                 </div>
                 <div className="flex items-center gap-2.5">
                   <button
-                    onClick={() => setEditSelfModalOpen(true)}
+                    onClick={() => setActiveTab("my-profile")}
                     className="px-4 py-2 rounded-xl bg-[#151515] hover:bg-deep-red/20 border border-crimson/30 text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center gap-1.5"
                   >
                     <Edit3 className="w-3.5 h-3.5 text-bright-red" /> Edit My Profile
@@ -870,10 +999,10 @@ function OwnerDashboardContent() {
               {/* Zero-dummy Metric Cards */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
                 {[
-                  { label: "Active Members", value: accounts.filter((a) => a.isActive).length, sub: `${accounts.length} Total Registered`, icon: Users, color: "text-bright-red", action: () => setActiveTab("team") },
+                  { label: "Active Members", value: accounts.filter((a) => a.isActive).length, sub: `${accounts.length} Total Registered`, icon: Users, color: "text-bright-red", action: () => setActiveTab("team-profiles") },
                   { label: "Client Inquiries", value: inquiries.filter((i) => i.status === "NEW").length, sub: `${inquiries.length} Total Leads`, icon: Inbox, color: "text-amber-400", action: () => setActiveTab("inquiries") },
-                  { label: "Main Flagships", value: projects.filter((p) => p.isMainProject).length, sub: `${projects.length} Total Builds`, icon: Sparkles, color: "text-emerald-400", action: () => setActiveTab("projects") },
-                  { label: "Feed Updates", value: posts.length, sub: "Community Streams", icon: Share2, color: "text-blue-400", action: () => setActiveTab("feed") },
+                  { label: "Main Flagships", value: projects.filter((p) => p.isMainProject).length, sub: `${projects.length} Total Builds`, icon: Sparkles, color: "text-emerald-400", action: () => setActiveTab("main-projects") },
+                  { label: "Feed Updates", value: posts.length, sub: "Community Stream", icon: Share2, color: "text-blue-400", action: () => setActiveTab("feed") },
                 ].map((card, idx) => {
                   const Icon = card.icon;
                   return (
@@ -895,7 +1024,7 @@ function OwnerDashboardContent() {
                 })}
               </div>
 
-              {/* Quick Actions Grid */}
+              {/* Founder Quick Actions */}
               <div className="p-6 rounded-3xl bg-[#0A0A0A] border border-crimson/20 space-y-4">
                 <h3 className="font-orbitron font-bold text-xs text-bright-red uppercase tracking-wider">
                   Founder Quick Action Center
@@ -903,11 +1032,11 @@ function OwnerDashboardContent() {
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                   {[
                     { label: "My Profile", icon: User, action: () => setActiveTab("my-profile") },
-                    { label: "New Member", icon: Plus, action: () => setCreateAccountModalOpen(true) },
-                    { label: "New Project", icon: FolderGit2, action: () => setCreateProjectModalOpen(true) },
-                    { label: "Homepage On/Off", icon: ToggleRight, action: () => setActiveTab("homepage") },
-                    { label: "Open Inquiries", icon: Inbox, action: () => setActiveTab("inquiries") },
-                    { label: "Security Logs", icon: Shield, action: () => setActiveTab("audit") },
+                    { label: "Create Member", icon: Plus, action: () => setCreateAccountModalOpen(true) },
+                    { label: "Add Project", icon: FolderGit2, action: () => setCreateProjectModalOpen(true) },
+                    { label: "Homepage Control", icon: ToggleRight, action: () => setActiveTab("homepage") },
+                    { label: "Client Inquiries", icon: Inbox, action: () => setActiveTab("inquiries") },
+                    { label: "Audit Logs", icon: Shield, action: () => setActiveTab("audit") },
                   ].map((btn, i) => {
                     const Icon = btn.icon;
                     return (
@@ -924,10 +1053,9 @@ function OwnerDashboardContent() {
                 </div>
               </div>
 
-              {/* Recent Activity & Recent Inquiries Side by Side */}
+              {/* Activity Pulse & Inquiries */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 
-                {/* Live Activity Pulse */}
                 <div className="p-6 rounded-3xl bg-[#0A0A0A] border border-crimson/20 space-y-4">
                   <div className="flex items-center justify-between pb-2 border-b border-white/5">
                     <h3 className="font-orbitron font-bold text-xs text-white uppercase tracking-wider">
@@ -949,7 +1077,7 @@ function OwnerDashboardContent() {
                             <p className="text-white font-orbitron font-semibold">{ev.title}</p>
                             <p className="text-[#888] text-[11px] mt-0.5">{ev.details}</p>
                             <span className="text-[9px] font-mono text-[#555] block mt-1">
-                              {new Date(ev.createdAt).toLocaleTimeString()} &bull; {new Date(ev.createdAt).toLocaleDateString()}
+                              {new Date(ev.createdAt).toLocaleString()}
                             </span>
                           </div>
                         </div>
@@ -958,7 +1086,6 @@ function OwnerDashboardContent() {
                   </div>
                 </div>
 
-                {/* Recent Inquiries */}
                 <div className="p-6 rounded-3xl bg-[#0A0A0A] border border-crimson/20 space-y-4">
                   <div className="flex items-center justify-between pb-2 border-b border-white/5">
                     <h3 className="font-orbitron font-bold text-xs text-white uppercase tracking-wider">
@@ -992,13 +1119,13 @@ function OwnerDashboardContent() {
             </div>
           )}
 
-          {/* ═══ TAB 2: MY PROFILE (FOUNDER PROFILE HUB) ═══════════════════ */}
+          {/* ═══ TAB 2: MY PROFILE ══════════════════════════════════════════ */}
           {activeTab === "my-profile" && (
             <div className="space-y-6 max-w-4xl">
               <div className="flex items-center justify-between pb-4 border-b border-crimson/20">
                 <div>
                   <span className="text-[10px] font-orbitron text-bright-red tracking-[0.3em] uppercase font-bold">
-                    DIGITAL IDENTITY
+                    DIGITAL IDENTITY STUDIO
                   </span>
                   <h1 className="font-orbitron font-black text-2xl sm:text-3xl text-white uppercase mt-1">
                     Owner Digital Profile
@@ -1066,7 +1193,7 @@ function OwnerDashboardContent() {
                   </div>
                 </div>
 
-                {/* External Links */}
+                {/* Links */}
                 <div className="pt-4 border-t border-white/5 flex flex-wrap gap-3">
                   {currentUser?.githubUrl && (
                     <a href={currentUser.githubUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#121212] border border-white/5 text-xs text-[#CCC] hover:text-white">
@@ -1088,8 +1215,8 @@ function OwnerDashboardContent() {
             </div>
           )}
 
-          {/* ═══ TAB 3: TEAM MEMBERS ═══════════════════════════════════════ */}
-          {activeTab === "team" && (
+          {/* ═══ TAB 3: TEAM PROFILES (ROSTER) ══════════════════════════════ */}
+          {activeTab === "team-profiles" && (
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-crimson/20">
                 <div>
@@ -1287,8 +1414,8 @@ function OwnerDashboardContent() {
             </div>
           )}
 
-          {/* ═══ TAB 5: PROJECTS PIPELINE ═══════════════════════════════════ */}
-          {activeTab === "projects" && (
+          {/* ═══ TAB 5: PROJECTS (ALL / MAIN / TEAM / HIDDEN / ARCHIVED) ═════ */}
+          {(activeTab === "all-projects" || activeTab === "main-projects" || activeTab === "team-projects" || activeTab === "hidden-projects" || activeTab === "archived-projects") && (
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-crimson/20">
                 <div>
@@ -1296,7 +1423,7 @@ function OwnerDashboardContent() {
                     BUILD GOVERNANCE
                   </span>
                   <h1 className="font-orbitron font-black text-2xl sm:text-3xl text-white uppercase mt-1">
-                    Projects & Systems Pipeline
+                    {activeTab === "main-projects" ? "Main Flagship Projects" : activeTab === "team-projects" ? "Community Team Projects" : activeTab === "hidden-projects" ? "Hidden Builds" : activeTab === "archived-projects" ? "Archived Projects" : "All Projects Pipeline"}
                   </h1>
                 </div>
                 <button
@@ -1307,22 +1434,23 @@ function OwnerDashboardContent() {
                 </button>
               </div>
 
-              {/* Filter Pills */}
-              <div className="flex gap-2">
+              {/* Category Filter Tabs */}
+              <div className="flex flex-wrap gap-2">
                 {[
-                  { id: "ALL", label: "All Builds" },
-                  { id: "MAIN", label: "Main Flagships" },
-                  { id: "HIDDEN", label: "Hidden" },
-                  { id: "ARCHIVED", label: "Archived" },
-                ].map((f) => (
+                  { id: "all-projects" as OwnerTab, label: "All Builds" },
+                  { id: "main-projects" as OwnerTab, label: "Main Flagships" },
+                  { id: "team-projects" as OwnerTab, label: "Team Projects" },
+                  { id: "hidden-projects" as OwnerTab, label: "Hidden from Homepage" },
+                  { id: "archived-projects" as OwnerTab, label: "Archived" },
+                ].map((tab) => (
                   <button
-                    key={f.id}
-                    onClick={() => setProjectCategoryFilter(f.id)}
-                    className={`px-3 py-1 rounded-xl text-[10px] font-orbitron font-bold uppercase transition-all ${
-                      projectCategoryFilter === f.id ? "bg-crimson text-white" : "bg-[#111] text-[#888] hover:text-white"
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`px-3 py-1.5 rounded-xl text-[10px] font-orbitron font-bold uppercase transition-all ${
+                      activeTab === tab.id ? "bg-crimson text-white shadow-md" : "bg-[#111] text-[#888] hover:text-white"
                     }`}
                   >
-                    {f.label}
+                    {tab.label}
                   </button>
                 ))}
               </div>
@@ -1341,7 +1469,7 @@ function OwnerDashboardContent() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {filteredProjects.map((proj) => (
+                    {getFilteredProjects().map((proj) => (
                       <tr key={proj.id} className="hover:bg-[#111] transition-colors">
                         <td className="py-3.5">
                           <Link href={`/projects/${proj.slug}`} className="font-orbitron font-bold text-white hover:text-bright-red transition-colors flex items-center gap-1">
@@ -1452,15 +1580,15 @@ function OwnerDashboardContent() {
             </div>
           )}
 
-          {/* ═══ TAB 7: SOCIAL FEED ═════════════════════════════════════════ */}
-          {activeTab === "feed" && (
+          {/* ═══ TAB 7: SOCIAL FEED & MODERATION ════════════════════════════ */}
+          {(activeTab === "feed" || activeTab === "feed-moderation") && (
             <div className="space-y-6 max-w-3xl">
               <div className="pb-4 border-b border-crimson/20">
                 <span className="text-[10px] font-orbitron text-bright-red tracking-[0.3em] uppercase font-bold">
-                  TEAM STREAM
+                  {activeTab === "feed-moderation" ? "CONTENT MODERATION" : "TEAM STREAM"}
                 </span>
                 <h1 className="font-orbitron font-black text-2xl sm:text-3xl text-white uppercase mt-1">
-                  Team Core Social Feed
+                  {activeTab === "feed-moderation" ? "Feed Moderation Console" : "Team Core Social Feed"}
                 </h1>
               </div>
 
@@ -1519,7 +1647,7 @@ function OwnerDashboardContent() {
           )}
 
           {/* ═══ TAB 8: INTERNAL MESSAGES ═══════════════════════════════════ */}
-          {activeTab === "chat" && (
+          {activeTab === "messages" && (
             <div className="space-y-6">
               <div className="pb-4 border-b border-crimson/20">
                 <span className="text-[10px] font-orbitron text-bright-red tracking-[0.3em] uppercase font-bold">
@@ -1555,7 +1683,7 @@ function OwnerDashboardContent() {
                 <div className="md:col-span-2 p-5 flex flex-col justify-between h-full bg-[#070707]">
                   <div className="flex-1 overflow-y-auto space-y-3 pr-2">
                     {chatMessages.length === 0 ? (
-                      <p className="text-xs text-[#666] text-center py-20">Select a conversation or start a chat.</p>
+                      <p className="text-xs text-[#666] text-center py-20">Select a conversation or start a chat from Team Directory.</p>
                     ) : (
                       chatMessages.map((m) => (
                         <div key={m.id} className={`flex gap-3 ${m.senderId === currentUser?.id ? "justify-end" : "justify-start"}`}>
@@ -1788,7 +1916,7 @@ function OwnerDashboardContent() {
             </div>
           )}
 
-        </main>
+        </motion.main>
       </div>
 
       {/* ─── MODAL: EDIT SELF PROFILE ───────────────────────────────────── */}
@@ -2170,15 +2298,16 @@ function OwnerDashboardContent() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Build Status</label>
+                    <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Assigned Creator</label>
                     <select
-                      value={newProjectData.status}
-                      onChange={(e) => setNewProjectData({ ...newProjectData, status: e.target.value })}
+                      value={newProjectData.creatorId}
+                      onChange={(e) => setNewProjectData({ ...newProjectData, creatorId: e.target.value })}
                       className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
                     >
-                      <option value="PRODUCTION">PRODUCTION</option>
-                      <option value="BETA">BETA</option>
-                      <option value="DEVELOPMENT">DEVELOPMENT</option>
+                      <option value="">Owner (Self)</option>
+                      {accounts.filter((a) => a.id !== currentUser?.id).map((m) => (
+                        <option key={m.id} value={m.id}>{m.displayName} (@{m.username})</option>
+                      ))}
                     </select>
                   </div>
                 </div>

@@ -252,30 +252,82 @@ export default function MemberProfilePage() {
         
         {/* ─── MANAGEMENT BANNER FOR OWNER / CEO ──────────────────────── */}
         {!isSelf && (isOwnerViewer || isCeoViewer) && (
-          <div className="p-3.5 rounded-2xl bg-[#0F0A0A] border border-crimson/40 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
-            <div className="flex items-center gap-2.5">
-              <Shield className="w-4 h-4 text-bright-red" />
-              <span className="text-xs font-orbitron font-bold text-white uppercase">
-                {isOwnerViewer ? "Owner View" : "CEO / Admin View"} &bull; Managing @{profile.username}
-              </span>
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-deep-red/30 via-[#0F0A0A] to-black border border-crimson/40 flex flex-col md:flex-row items-center justify-between gap-4 shadow-xl">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-crimson text-white">
+                <Shield className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-xs font-orbitron font-black text-white uppercase tracking-wider block">
+                  {isOwnerViewer ? "OWNER MANAGEMENT MODE" : "ADMIN MANAGEMENT MODE"} &bull; Managing @{profile.username}
+                </span>
+                <p className="text-[10px] text-[#AAA] mt-0.5">
+                  You have authorized executive permissions to modify this profile, roles, and connected resources.
+                </p>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-end">
               {canEdit && (
                 <button
                   onClick={() => setEditModalOpen(true)}
-                  className="px-3 py-1.5 rounded-lg bg-crimson hover:bg-bright-red text-white font-orbitron text-[10px] font-bold uppercase"
+                  className="px-3.5 py-1.5 rounded-xl bg-crimson hover:bg-bright-red text-white font-orbitron text-xs font-bold uppercase tracking-wider transition-all shadow-[0_0_12px_rgba(217,4,41,0.3)] flex items-center gap-1"
                 >
-                  Edit Profile
+                  <Edit3 className="w-3.5 h-3.5" /> Edit Profile
                 </button>
               )}
               {isOwnerViewer && (
                 <Link
-                  href="/owner"
-                  className="px-3 py-1.5 rounded-lg bg-[#181818] hover:bg-[#222] text-[#AAA] font-orbitron text-[10px] font-bold uppercase"
+                  href="/owner?tab=accounts"
+                  className="px-3.5 py-1.5 rounded-xl bg-[#181818] hover:bg-deep-red/20 border border-crimson/30 text-white font-orbitron text-xs font-bold uppercase tracking-wider transition-colors flex items-center gap-1"
                 >
-                  Open Command Center
+                  <Key className="w-3.5 h-3.5 text-amber-400" /> Manage Account
                 </Link>
               )}
+              <button
+                onClick={handleDirectMessage}
+                className="px-3.5 py-1.5 rounded-xl bg-[#141414] hover:bg-[#202020] text-[#CCC] hover:text-white font-orbitron text-xs font-bold uppercase tracking-wider transition-colors flex items-center gap-1"
+              >
+                <MessageSquare className="w-3.5 h-3.5" /> Message
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ─── OWNER SELF PROFILE BANNER ───────────────────────────────── */}
+        {isSelf && isOwnerViewer && (
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-deep-red/30 via-[#0F0A0A] to-black border border-crimson/40 flex flex-col md:flex-row items-center justify-between gap-4 shadow-xl">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-crimson text-white">
+                <Shield className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-xs font-orbitron font-black text-white uppercase tracking-wider block">
+                  OWNER DIGITAL PROFILE &bull; @{profile.username}
+                </span>
+                <p className="text-[10px] text-[#AAA] mt-0.5">
+                  Founder & Principal Authority at CodeXa Agency.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-end">
+              <button
+                onClick={() => setEditModalOpen(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-crimson hover:bg-bright-red text-white font-orbitron text-xs font-bold uppercase tracking-wider transition-all shadow-[0_0_12px_rgba(217,4,41,0.3)] flex items-center gap-1"
+              >
+                <Edit3 className="w-3.5 h-3.5" /> Edit Profile
+              </button>
+              <button
+                onClick={() => setMediaSelectorOpen(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-[#181818] hover:bg-deep-red/20 border border-crimson/30 text-white font-orbitron text-xs font-bold uppercase tracking-wider transition-colors flex items-center gap-1"
+              >
+                <Camera className="w-3.5 h-3.5 text-bright-red" /> Change PFP
+              </button>
+              <Link
+                href="/owner"
+                className="px-3.5 py-1.5 rounded-xl bg-[#141414] hover:bg-[#202020] text-[#CCC] hover:text-white font-orbitron text-xs font-bold uppercase tracking-wider transition-colors flex items-center gap-1"
+              >
+                Command Center &rarr;
+              </Link>
             </div>
           </div>
         )}

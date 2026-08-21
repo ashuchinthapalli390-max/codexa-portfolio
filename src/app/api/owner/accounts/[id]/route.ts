@@ -20,12 +20,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const { id } = params;
 
   try {
-    const body = await req.json();
-    const { role, isActive, newPassword, isPublic } = body;
+    const { role, leadershipPosition, displayName, isActive, newPassword, isPublic } = body;
 
     const updates: any = {};
     if (role && ["OWNER", "ADMIN", "TEAM_MEMBER"].includes(role)) {
       updates.role = role;
+    }
+    if (leadershipPosition !== undefined) {
+      updates.leadershipPosition = leadershipPosition || null;
+    }
+    if (displayName) {
+      updates.displayName = displayName.trim();
     }
     if (isActive !== undefined) {
       updates.isActive = Boolean(isActive);
