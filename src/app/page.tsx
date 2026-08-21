@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import "./globals.css";
 import { AnimatePresence, motion } from "framer-motion";
 import { LoadingScreen } from "@/components/sections/LoadingScreen";
@@ -9,6 +9,8 @@ import { HeroSection } from "@/components/sections/HeroSection";
 import { AboutSection } from "@/components/sections/AboutSection";
 import { ServicesSection } from "@/components/sections/ServicesSection";
 import { TechDivider } from "@/components/sections/TechDivider";
+import { MainProjectsSection } from "@/components/sections/MainProjectsSection";
+import { TeamProjectsSection } from "@/components/sections/TeamProjectsSection";
 import { TeamSection } from "@/components/sections/TeamSection";
 import { InternshipSection } from "@/components/sections/InternshipSection";
 import { CapabilitiesSection } from "@/components/sections/CapabilitiesSection";
@@ -19,11 +21,23 @@ import { Footer } from "@/components/sections/Footer";
 import { CyberWebOverlay } from "@/components/ui/CyberWebOverlay";
 
 export default function Home() {
-  const [mounted, setMounted] = React.useState(false);
+  const [mounted, setMounted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [siteSettings, setSiteSettings] = useState({
+    mainProjectsHomeVisible: true,
+    teamProjectsHomeVisible: true,
+  });
 
-  React.useEffect(() => {
+  useEffect(() => {
     setMounted(true);
+    fetch("/api/site-settings")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && data.settings) {
+          setSiteSettings(data.settings);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   if (!mounted) {
@@ -55,6 +69,13 @@ export default function Home() {
               <AboutSection />
               <ServicesSection />
               <TechDivider />
+              
+              {/* Conditional Main Projects Section */}
+              {siteSettings.mainProjectsHomeVisible && <MainProjectsSection />}
+              
+              {/* Conditional Team Projects Section */}
+              {siteSettings.teamProjectsHomeVisible && <TeamProjectsSection />}
+              
               <TeamSection />
               <InternshipSection />
               <CapabilitiesSection />

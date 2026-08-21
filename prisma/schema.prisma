@@ -1,29 +1,28 @@
-// Prisma schema for CodeXa Agency — Full Auth System
-// Database: MySQL (Aiven production)
-// Local dev: use schema.sqlite.prisma with SQLite
+// Prisma schema for CodeXa Agency — Full Enterprise Platform
+// Database: Supabase PostgreSQL
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "mysql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ─── USER ACCOUNTS ───────────────────────────────────────────────────────────
 model User {
-  id                   String    @id @default(cuid()) @db.VarChar(30)
-  username             String?   @unique @db.VarChar(191)
-  email                String?   @unique @db.VarChar(191)
-  fullName             String?   @db.VarChar(255)
-  passwordHash         String    @db.VarChar(255)
-  // role values: "OWNER" | "ADMIN" | "TEAM_MEMBER"
-  role                 String    @db.VarChar(20)
+  id                   String    @id @default(cuid())
+  username             String    @unique
+  email                String    @unique
+  fullName             String?
+  passwordHash         String
+  role                 String    @default("TEAM_MEMBER") // "OWNER" | "ADMIN" | "TEAM_MEMBER"
   isActive             Boolean   @default(true)
   lastLoginAt          DateTime?
-  profileMediaUrl      String?   @db.VarChar(512)
-  profileMediaMimeType String?   @db.VarChar(100)
+  profileMediaUrl      String?
+  profileMediaMimeType String?
   cropX                Float?    @default(0)
   cropY                Float?    @default(0)
   zoom                 Float?    @default(1)
@@ -31,25 +30,37 @@ model User {
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  profile      TeamProfile?
-  sessions     Session[]
-  accessKeys   AccessKey[]
+  profile              TeamProfile?
+  sessions             Session[]
+  skills               UserSkill[]
+  links                ProfileLink[]
+  projectsCreated      Project[]             @relation("ProjectCreator")
+  projectCollabs       ProjectCollaborator[]
+  posts                Post[]
+  postLikes            PostLike[]
+  comments             Comment[]
+  conversationMembers  ConversationMember[]
+  messages             Message[]
+  notifications        Notification[]
+  mediaAssets          MediaAsset[]
+  activityEvents       ActivityEvent[]
+  auditLogs            AuditLog[]
 }
 
 // ─── TEAM PROFILES ────────────────────────────────────────────────────────────
 model TeamProfile {
-  id                   String    @id @default(cuid()) @db.VarChar(30)
-  userId               String?   @unique @db.VarChar(30)
-  // memberType values: "LEADERSHIP" | "CORE_TEAM"
-  memberType           String    @db.VarChar(20)
-  // leadershipPosition values: "FOUNDER" | "CO_FOUNDER" | "CEO" | null
-  leadershipPosition   String?   @db.VarChar(30)
-  displayName          String    @db.VarChar(255)
-  publicBio            String?   @db.Text
-  mediaUrl             String?   @db.VarChar(512)
-  mediaMimeType        String?   @db.VarChar(100)
-  profileMediaUrl      String?   @db.VarChar(512)
-  profileMediaMimeType String?   @db.VarChar(100)
+  id                   String    @id @default(cuid())
+  userId               String    @unique
+  memberType           String    @default("CORE_TEAM") // "LEADERSHIP" | "CORE_TEAM"
+  leadershipPosition   String?   // "FOUNDER" | "CO_FOUNDER" | "CEO" | null
+  displayName          String
+  headline             String?
+  bio                  String?
+  publicBio            String?
+  mediaUrl             String?
+  mediaMimeType        String?
+  profileMediaUrl      String?
+  profileMediaMimeType String?
   cropX                Float?    @default(0)
   cropY                Float?    @default(0)
   cropW                Float?
@@ -58,19 +69,49 @@ model TeamProfile {
   cropRotation         Float?
   zoom                 Float?    @default(1)
   objectPosition       String?   @default("center")
+  githubUrl            String?
+  linkedinUrl          String?
+  portfolioUrl         String?
   isPublic             Boolean   @default(true)
   displayOrder         Int       @default(0)
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  user               User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── USER SKILLS ──────────────────────────────────────────────────────────────
+model UserSkill {
+  id           String   @id @default(cuid())
+  userId       String
+  skillName    String
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, skillName])
+}
+
+// ─── PROFILE LINKS ────────────────────────────────────────────────────────────
+model ProfileLink {
+  id           String   @id @default(cuid())
+  userId       String
+  label        String
+  url          String
+  icon         String?
+  displayOrder Int      @default(0)
+  isVisible    Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // ─── SESSION STORE ────────────────────────────────────────────────────────────
 model Session {
-  id               String   @id @default(cuid()) @db.VarChar(30)
-  userId           String   @db.VarChar(30)
-  sessionTokenHash String   @unique @db.VarChar(64)
+  id               String   @id @default(cuid())
+  userId           String
+  sessionTokenHash String   @unique
   expiresAt        DateTime
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -78,59 +119,281 @@ model Session {
   user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-// ─── ACCESS KEYS ─────────────────────────────────────────────────────────────
-// Stored as SHA-256 hashes — raw key is NEVER stored; shown only once on creation.
-model AccessKey {
-  id          String    @id @default(cuid()) @db.VarChar(30)
-  userId      String    @db.VarChar(30)
-  label       String    @db.VarChar(255)
-  keyHash     String    @unique @db.VarChar(64)
-  // role this key grants access for: "OWNER" | "ADMIN" | "TEAM_MEMBER"
-  role        String    @db.VarChar(20)
-  isActive    Boolean   @default(true)
-  maxUses     Int?
-  useCount    Int       @default(0)
-  expiresAt   DateTime?
-  lastUsedAt  DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  auditLogs   AccessKeyAuditLog[]
+// ─── AUTH OTP RECORDS ─────────────────────────────────────────────────────────
+model AuthOtp {
+  id        String   @id @default(cuid())
+  userId    String
+  email     String
+  otpHash   String
+  purpose   String   @default("LOGIN") // "LOGIN" | "PASSWORD_RESET"
+  attempts  Int      @default(0)
+  isUsed    Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 }
 
-// ─── ACCESS KEY AUDIT LOG ────────────────────────────────────────────────────
-model AccessKeyAuditLog {
-  id          String    @id @default(cuid()) @db.VarChar(30)
-  accessKeyId String?   @db.VarChar(30)
-  userId      String?   @db.VarChar(30)
-  // action: "VERIFY_SUCCESS" | "VERIFY_FAIL" | "KEY_CREATED" | "KEY_REVOKED" | "KEY_REGENERATED" | "KEY_UPDATED"
-  action      String    @db.VarChar(30)
-  success     Boolean
-  ipAddress   String?   @db.VarChar(45)
-  userAgent   String?   @db.VarChar(512)
-  createdAt   DateTime  @default(now())
+// ─── PROJECTS ─────────────────────────────────────────────────────────────────
+model Project {
+  id                 String                @id @default(cuid())
+  title              String
+  slug               String                @unique
+  shortDesc          String?
+  overview           String?
+  problem            String?
+  solution           String?
+  category           String                @default("Web")
+  status             String                @default("Live")
+  thumbnailUrl       String?
+  repoUrl            String?
+  liveUrl            String?
+  demoUrl            String?
+  isDraft            Boolean               @default(false)
+  isMainProject      Boolean               @default(false)
+  isHomepageVisible  Boolean               @default(true)
+  isArchived         Boolean               @default(false)
+  homepageOrder      Int                   @default(0)
+  createdBy          String
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
 
-  accessKey   AccessKey? @relation(fields: [accessKeyId], references: [id], onDelete: SetNull)
+  creator            User                  @relation("ProjectCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  collaborators      ProjectCollaborator[]
+  media              ProjectMedia[]
+  links              ProjectLink[]
+  posts              Post[]
 }
 
-// ─── PRE-AUTH SESSIONS (short-lived, Access Key step only) ───────────────────
-// Created after Access Key is verified; replaced by full Session after credential login.
-model PreAuthSession {
-  id               String   @id @default(cuid()) @db.VarChar(30)
-  tokenHash        String   @unique @db.VarChar(64)
-  userId           String   @db.VarChar(30)
-  role             String   @db.VarChar(20)
-  expiresAt        DateTime
-  createdAt        DateTime @default(now())
+model ProjectCollaborator {
+  id        String   @id @default(cuid())
+  projectId String
+  userId    String
+  roleTitle String?  @default("Collaborator")
+  createdAt DateTime @default(now())
+
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
 }
 
-// ─── PROFILE AUDIT LOG ───────────────────────────────────────────────────────
-model ProfileAuditLog {
-  id           String   @id @default(cuid()) @db.VarChar(30)
-  actorUserId  String?  @db.VarChar(30)
-  targetUserId String?  @db.VarChar(30)
-  action       String   @db.VarChar(50)
-  details      String   @db.Text
+model ProjectMedia {
+  id           String   @id @default(cuid())
+  projectId    String
+  mediaUrl     String
+  mediaType    String   @default("IMAGE") // "IMAGE" | "VIDEO" | "GIF"
+  caption      String?
+  displayOrder Int      @default(0)
   createdAt    DateTime @default(now())
+
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model ProjectLink {
+  id        String   @id @default(cuid())
+  projectId String
+  label     String
+  url       String
+  createdAt DateTime @default(now())
+
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// ─── SOCIAL FEED & POSTS ──────────────────────────────────────────────────────
+model Post {
+  id             String      @id @default(cuid())
+  authorId       String
+  content        String
+  projectId      String?
+  isAnnouncement Boolean     @default(false)
+  isDeleted      Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  author         User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  project        Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  media          PostMedia[]
+  links          PostLink[]
+  likes          PostLike[]
+  comments       Comment[]
+}
+
+model PostMedia {
+  id           String   @id @default(cuid())
+  postId       String
+  mediaUrl     String
+  mediaType    String   @default("image/jpeg")
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  post         Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+}
+
+model PostLink {
+  id          String   @id @default(cuid())
+  postId      String
+  url         String
+  domain      String?
+  title       String?
+  description String?
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+
+  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+}
+
+model PostLike {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+}
+
+model Comment {
+  id              String    @id @default(cuid())
+  postId          String
+  userId          String
+  parentCommentId String?
+  content         String
+  isDeleted       Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  post            Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentComment   Comment?  @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  replies         Comment[] @relation("CommentReplies")
+}
+
+// ─── CHAT & MESSAGING ─────────────────────────────────────────────────────────
+model Conversation {
+  id          String               @id @default(cuid())
+  type        String               @default("DIRECT") // "DIRECT" | "GROUP" | "PROJECT"
+  title       String?
+  projectId   String?
+  createdBy   String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  members     ConversationMember[]
+  messages    Message[]
+}
+
+model ConversationMember {
+  id             String       @id @default(cuid())
+  conversationId String
+  userId         String
+  joinedAt       DateTime     @default(now())
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  senderId       String
+  message        String
+  fileUrl        String?
+  fileName       String?
+  isDeleted      Boolean      @default(false)
+  replyToId      String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+}
+
+// ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String   // "POST_LIKE" | "POST_COMMENT" | "PROJECT_FEATURED" | "CHAT" | "SECURITY"
+  title     String
+  message   String
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── ACTIVITY EVENTS ──────────────────────────────────────────────────────────
+model ActivityEvent {
+  id            String   @id @default(cuid())
+  actorId       String
+  actorName     String
+  actorUsername String
+  actorMediaUrl String?
+  actionType    String   // "PROFILE_UPDATED" | "POST_CREATED" | "PROJECT_PUBLISHED" | "MAIN_PROJECT_APPROVED"
+  targetType    String   // "PROFILE" | "PROJECT" | "POST" | "MEMBER"
+  targetId      String?
+  title         String
+  details       String?
+  link          String?
+  createdAt     DateTime @default(now())
+
+  actor         User     @relation(fields: [actorId], references: [id], onDelete: Cascade)
+}
+
+// ─── INQUIRIES & LEADS ────────────────────────────────────────────────────────
+model Inquiry {
+  id                 String   @id @default(cuid())
+  referenceId        String   @unique
+  fullName           String
+  email              String
+  phone              String?
+  company            String?
+  projectType        String
+  budget             String
+  timeline           String?
+  message            String
+  attachmentUrl      String?
+  status             String   @default("NEW")
+  priority           String   @default("MEDIUM")
+  assignedTo         String?
+  replyNotes         String?
+  convertedProjectId String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+// ─── MEDIA ASSETS ─────────────────────────────────────────────────────────────
+model MediaAsset {
+  id          String   @id @default(cuid())
+  userId      String
+  mediaType   String   @default("AVATAR") // "AVATAR" | "PROJECT" | "POST"
+  storagePath String?
+  publicUrl   String
+  fileName    String?
+  mimeType    String?
+  fileSize    Int?
+  cropX       Float?   @default(0)
+  cropY       Float?   @default(0)
+  zoom        Float?   @default(1)
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── AUDIT LOGS ───────────────────────────────────────────────────────────────
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actorName String?
+  targetId  String?
+  action    String
+  details   String?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
 }

@@ -1,538 +1,360 @@
-/* eslint-disable @next/next/no-img-element, jsx-a11y/alt-text */
 "use client";
 
 import React, { useState, useEffect } from "react";
-import "../../globals.css";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ProfilePositionAdjuster } from "@/components/ui/ProfilePositionAdjuster";
-import { PfpGalleryModal } from "@/components/ui/PfpGalleryModal";
-import { PfpCropModal } from "@/components/ui/PfpCropModal";
+import {
+  User,
+  Camera,
+  Globe,
+  Github,
+  Linkedin,
+  Youtube,
+  Plus,
+  Trash2,
+  Check,
+  AlertCircle,
+  ArrowUpRight,
+  Sparkles,
+  Shield
+} from "lucide-react";
+import { TeamCoreShell } from "@/components/layout/TeamCoreShell";
+import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
+import { CodeXaMediaSelectorModal } from "@/components/ui/CodeXaMediaSelectorModal";
+import { Profile } from "@/lib/data-store";
 
-interface ProfileData {
-  id: string;
-  displayName: string;
-  publicBio: string;
-  mediaUrl: string | null;
-  mediaMimeType: string | null;
-  cropX?: number | null;
-  cropY?: number | null;
-  cropW?: number | null;
-  cropH?: number | null;
-  cropZoom?: number | null;
-  cropRotation?: number | null;
-}
+export default function MyProfileEditorPage() {
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(true);
 
-export default function TeamMemberProfilePage() {
-  const router = useRouter();
-
-  const [sessionUser, setSessionUser] = useState<{ id: string; username: string; role: string } | null>(null);
-  const [profile, setProfile] = useState<ProfileData | null>(null);
-
-  // Text fields
+  // Form State
   const [displayName, setDisplayName] = useState("");
-  const [publicBio, setPublicBio] = useState("");
+  const [headline, setHeadline] = useState("");
+  const [bio, setBio] = useState("");
+  const [skills, setSkills] = useState<string[]>([]);
+  const [newSkillInput, setNewSkillInput] = useState("");
+  const [githubUrl, setGithubUrl] = useState("");
+  const [linkedinUrl, setLinkedinUrl] = useState("");
+  const [portfolioUrl, setPortfolioUrl] = useState("");
 
-  // Committed media (what's actually saved in DB)
-  const [committedMediaUrl, setCommittedMediaUrl] = useState<string | null>(null);
-  const [committedMimeType, setCommittedMimeType] = useState<string | null>(null);
-  const [committedCropX, setCommittedCropX] = useState<number | null>(null);
-  const [committedCropY, setCommittedCropY] = useState<number | null>(null);
-  const [committedCropW, setCommittedCropW] = useState<number | null>(null);
-  const [committedCropH, setCommittedCropH] = useState<number | null>(null);
-  const [committedCropZoom, setCommittedCropZoom] = useState<number | null>(null);
+  // Media selector modal
+  const [mediaModalOpen, setMediaModalOpen] = useState(false);
 
-  // Remove media
-  const [removeMedia, setRemoveMedia] = useState(false);
+  // Feedback state
+  const [saveState, setSaveState] = useState<"idle" | "loading" | "saved" | "error">("idle");
+  const [feedbackMsg, setFeedbackMsg] = useState("");
 
-  // Position adjuster
-  const [showAdjuster, setShowAdjuster] = useState(false);
-
-  // PFP Gallery + CSS Crop flow (the ONLY profile media change method)
-  const [showPfpGallery, setShowPfpGallery] = useState(false);
-  const [pendingPfpPath, setPendingPfpPath] = useState<string | null>(null);
-
-  // Feedback state (replaces uploadPhase)
-  const [mediaFeedback, setMediaFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
-
-  // Text-save state
-  const [textSaveState, setTextSaveState] = useState<"idle" | "loading" | "saved" | "error">("idle");
-  const [textSaveMsg, setTextSaveMsg] = useState("");
-
-  const [logoError, setLogoError] = useState(false);
-
-  // ── Load session + profile ─────────────────────────────────────────────────
   useEffect(() => {
     fetch("/api/session")
       .then((r) => r.json())
       .then((data) => {
-        if (!data.authenticated) { router.replace("/login"); return; }
-        setSessionUser(data.user);
-
-        fetch("/api/admin/team")
-          .then((r) => r.json())
-          .then((teamData) => {
-            if (teamData.success) {
-              const myProfile = teamData.profiles.find((p: any) => p.userId === data.user.id);
-              if (myProfile) {
-                setProfile(myProfile);
-                setDisplayName(myProfile.displayName ?? "");
-                setPublicBio(myProfile.publicBio ?? "");
-                setCommittedMediaUrl(myProfile.mediaUrl);
-                setCommittedMimeType(myProfile.mediaMimeType);
-                setCommittedCropX(myProfile.cropX ?? null);
-                setCommittedCropY(myProfile.cropY ?? null);
-                setCommittedCropW(myProfile.cropW ?? null);
-                setCommittedCropH(myProfile.cropH ?? null);
-                setCommittedCropZoom(myProfile.cropZoom ?? null);
-              }
-            }
-          })
-          .catch(() => {});
-      })
-      .catch(() => router.replace("/login"));
-  }, [router]);
-
-  // ── Remove media ───────────────────────────────────────────────────────────
-  const handleRemoveMedia = () => {
-    setRemoveMedia(true);
-    setShowAdjuster(false);
-    setMediaFeedback(null);
-  };
-
-  // ── Save position metadata ─────────────────────────────────────────────────
-  const handleSavePosition = async (meta: { cropX: number; cropY: number; cropW: number; cropH: number; cropZoom: number }) => {
-    if (!profile?.id) throw new Error("Profile not found.");
-
-    const res = await fetch("/api/profile-media/position", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        targetProfileId: profile.id,
-        cropX: meta.cropX,
-        cropY: meta.cropY,
-        cropW: meta.cropW,
-        cropH: meta.cropH,
-        cropZoom: meta.cropZoom,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok || !data.success) throw new Error("Could not save position.");
-
-    setCommittedCropX(meta.cropX);
-    setCommittedCropY(meta.cropY);
-    setCommittedCropW(meta.cropW);
-    setCommittedCropH(meta.cropH);
-    setCommittedCropZoom(meta.cropZoom);
-    setShowAdjuster(false);
-  };
-
-  // ── Save text fields ───────────────────────────────────────────────────────
-  const handleSaveText = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!displayName.trim() || textSaveState === "loading") return;
-
-    setTextSaveState("loading");
-    setTextSaveMsg("");
-
-    try {
-      const formData = new FormData();
-      formData.append("displayName", displayName.trim());
-      formData.append("publicBio", publicBio.trim());
-      if (removeMedia) formData.append("removeMedia", "true");
-
-      const res = await fetch("/api/profile", { method: "PATCH", body: formData });
-      const data = await res.json();
-
-      if (res.ok && data.success) {
-        setTextSaveState("saved");
-        setTextSaveMsg("Profile details updated.");
-        if (removeMedia) {
-          setCommittedMediaUrl(null);
-          setCommittedMimeType(null);
-          setRemoveMedia(false);
+        if (data.authenticated && data.user) {
+          setCurrentUser(data.user);
+          loadProfileData(data.user.username);
         }
-        setTimeout(() => setTextSaveState("idle"), 3000);
-      } else {
-        setTextSaveState("error");
-        setTextSaveMsg(data.error ?? "Failed to save profile details.");
-      }
-    } catch {
-      setTextSaveState("error");
-      setTextSaveMsg("Network error. Please try again.");
+      })
+      .catch(() => {});
+  }, []);
+
+  const loadProfileData = (username: string) => {
+    setLoading(true);
+    fetch(`/api/profile/${username}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && data.profile) {
+          const p = data.profile;
+          setProfile(p);
+          setDisplayName(p.displayName || "");
+          setHeadline(p.headline || "");
+          setBio(p.bio || "");
+          setSkills(p.skills || []);
+          setGithubUrl(p.githubUrl || "");
+          setLinkedinUrl(p.linkedinUrl || "");
+          setPortfolioUrl(p.portfolioUrl || "");
+        }
+      })
+      .finally(() => setLoading(false));
+  };
+
+  const handleAddSkill = (e: React.KeyboardEvent | React.MouseEvent) => {
+    if ("key" in e && e.key !== "Enter") return;
+    e.preventDefault();
+    const clean = newSkillInput.trim();
+    if (clean && !skills.includes(clean)) {
+      setSkills([...skills, clean]);
+      setNewSkillInput("");
     }
   };
 
-  const handleLogout = async () => {
-    try { await fetch("/api/logout", { method: "POST" }); }
-    finally { router.push("/login"); }
+  const handleRemoveSkill = (skillToRemove: string) => {
+    setSkills(skills.filter((s) => s !== skillToRemove));
   };
 
-  if (!sessionUser) {
-    return (
-      <div className="min-h-screen bg-[#070707] flex items-center justify-center">
-        <div className="flex items-center gap-3 text-[#A5A5A5]">
-          <svg className="w-5 h-5 animate-spin text-[#D90429]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Z" />
-          </svg>
-          <span className="font-orbitron text-sm tracking-wider">Loading workspace...</span>
-        </div>
-      </div>
-    );
-  }
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile) return;
 
-  const activePreviewUrl = removeMedia ? null : committedMediaUrl;
-  const hasCommittedMedia = !!committedMediaUrl && !removeMedia;
-  const isAdmin = sessionUser.role === "ADMIN";
+    setSaveState("loading");
+    setFeedbackMsg("");
+
+    try {
+      const res = await fetch(`/api/profile/${profile.username}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          displayName,
+          headline,
+          bio,
+          skills,
+          githubUrl,
+          linkedinUrl,
+          portfolioUrl,
+        }),
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setProfile(data.profile);
+        setSaveState("saved");
+        setFeedbackMsg("Profile updated successfully!");
+        setTimeout(() => setSaveState("idle"), 3000);
+      } else {
+        setSaveState("error");
+        setFeedbackMsg(data.error || "Failed to update profile.");
+      }
+    } catch {
+      setSaveState("error");
+      setFeedbackMsg("Network error saving changes.");
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-[#070707] text-[#F7F7F7] flex flex-col relative overflow-hidden">
-      {/* Background glow */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-0 right-0 w-[400px] h-[400px] rounded-full bg-[#D90429] opacity-[0.03] blur-[120px]" />
-        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full bg-[#D90429] opacity-[0.02] blur-[120px]" />
-      </div>
-
-      {/* Grid overlay */}
-      <div
-        className="absolute inset-0 pointer-events-none opacity-[0.02]"
-        style={{
-          backgroundImage:
-            "linear-gradient(to right, rgba(217,4,41,0.5) 1px, transparent 1px), linear-gradient(to bottom, rgba(217,4,41,0.5) 1px, transparent 1px)",
-          backgroundSize: "60px 60px",
-        }}
-      />
-
-      {/* Nav */}
-      <header className="border-b border-[rgba(217,4,41,0.15)] bg-[rgba(7,7,7,0.8)] backdrop-blur-md relative z-10">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
-          <Link href="/" className="flex items-center gap-2 hover:opacity-85 transition-opacity">
-            {!logoError ? (
-              <img
-                src="/assets/images/logo.jpeg"
-                alt="CodeXa Agency"
-                className="h-8 w-auto object-contain rounded border border-crimson/20"
-                onError={() => setLogoError(true)}
-              />
-            ) : (
-              <span className="font-orbitron text-sm font-black tracking-[0.25em] text-[#F7F7F7] flex items-center gap-2">
-                <span className="text-[#D90429]">⚡</span> CODEXA
-              </span>
-            )}
+    <TeamCoreShell
+      title="Edit My Profile"
+      subtitle="Identity & Professional Portfolio"
+      actions={
+        profile?.username && (
+          <Link
+            href={`/team/${profile.username}`}
+            target="_blank"
+            className="px-4 py-2 rounded-xl bg-[#141414] hover:bg-deep-red/20 border border-crimson/30 text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-colors inline-flex items-center gap-1.5"
+          >
+            <span>View Public Profile</span>
+            <ArrowUpRight className="w-3.5 h-3.5 text-bright-red" />
           </Link>
-          <div className="flex items-center gap-4">
-            <span className="text-[10px] font-orbitron tracking-wider text-[#A5A5A5] border border-[rgba(217,4,41,0.25)] bg-[rgba(217,4,41,0.05)] px-3 py-1.5 rounded-full uppercase">
-              👤 {sessionUser.role}
-            </span>
+        )
+      }
+    >
+      <div className="max-w-4xl space-y-8">
+        
+        {/* ─── AVATAR / PFP STUDIO CARD ──────────────────────────────────── */}
+        <div className="p-6 sm:p-8 rounded-3xl bg-[#0A0A0A] border border-crimson/25 flex flex-col sm:flex-row items-center gap-6 shadow-xl">
+          <div className="relative group">
+            <CodeXaAvatar
+              src={profile?.mediaUrl}
+              alt={displayName || "Avatar"}
+              size="2xl"
+              showGlow
+            />
             <button
-              onClick={handleLogout}
-              className="text-xs font-orbitron tracking-widest text-[#A5A5A5] hover:text-[#D90429] transition-colors uppercase"
+              type="button"
+              onClick={() => setMediaModalOpen(true)}
+              className="absolute inset-0 rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-orbitron font-bold uppercase"
+              title="Change Profile Picture"
             >
-              Logout
+              <Camera className="w-5 h-5 mb-1 text-bright-red" />
+              Change
+            </button>
+          </div>
+
+          <div className="flex-1 text-center sm:text-left space-y-2">
+            <div className="flex items-center justify-center sm:justify-start gap-2.5 flex-wrap">
+              <h2 className="font-orbitron font-black text-xl text-white uppercase">{displayName || "Member"}</h2>
+              <span className="px-2.5 py-0.5 rounded-full bg-crimson/20 border border-crimson/40 text-bright-red font-orbitron text-[10px] font-bold uppercase">
+                {profile?.role?.replace("_", " ") || "DEVELOPER"}
+              </span>
+            </div>
+            <p className="text-xs font-mono text-crimson">@{profile?.username}</p>
+            <p className="text-xs text-[#888]">
+              Select existing CodeXa media, previous uploads from your Supabase gallery, or upload a new photo.
+            </p>
+            <button
+              type="button"
+              onClick={() => setMediaModalOpen(true)}
+              className="px-4 py-2 rounded-xl bg-[#141414] hover:bg-crimson border border-crimson/30 text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-colors inline-flex items-center gap-1.5 mt-2"
+            >
+              <Camera className="w-3.5 h-3.5 text-bright-red" /> Change Photo
             </button>
           </div>
         </div>
-      </header>
 
-      <main className="flex-1 max-w-5xl w-full mx-auto px-6 py-12 relative z-10 grid grid-cols-1 md:grid-cols-3 gap-8">
-
-        {/* Left — Preview Card */}
-        <div className="md:col-span-1">
-          <div className="sticky top-28 space-y-4">
-            <div className="text-xs font-orbitron tracking-widest text-[#A5A5A5] uppercase">Public Preview</div>
-
-            <div
-              className="rounded-2xl p-[1px]"
-              style={{
-                background: "linear-gradient(135deg, rgba(217,4,41,0.35), rgba(7,7,7,0.8), rgba(217,4,41,0.1))",
-                boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
-              }}
-            >
-              <div className="rounded-2xl p-6 bg-[#0B0B0B] flex flex-col items-center text-center relative overflow-hidden">
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(217,4,41,0.08)_0%,transparent_70%)] pointer-events-none" />
-
-                {/* Avatar */}
-                <div
-                  className="w-24 h-24 rounded-full border border-crimson/30 relative mb-4 bg-[#111111] flex items-center justify-center"
-                  style={{ overflow: "hidden", aspectRatio: "1/1" }}
-                >
-                  {activePreviewUrl ? (
-                    <img
-                      src={activePreviewUrl}
-                      alt={displayName || "Profile"}
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                        objectPosition: committedCropX != null && committedCropY != null
-                          ? `${committedCropX}% ${committedCropY}%`
-                          : "center",
-                      }}
-                    />
-                  ) : (
-                    <span className="font-orbitron text-2xl text-[#333333]">CX</span>
-                  )}
-                </div>
-
-                <h3 className="font-orbitron text-lg font-bold tracking-wide text-[#F7F7F7]">
-                  {displayName || "Your Name"}
-                </h3>
-                <div className="text-[10px] font-orbitron text-[#D90429] tracking-wider uppercase mt-1">
-                  Core Team Member
-                </div>
-                <p className="text-xs text-[#A5A5A5] mt-4 line-clamp-4 leading-relaxed font-light italic">
-                  {publicBio || "Enter a bio on the right to display your details here."}
-                </p>
-              </div>
+        {/* ─── FORM DETAILS CARD ─────────────────────────────────────────── */}
+        <form onSubmit={handleSaveProfile} className="p-6 sm:p-8 rounded-3xl bg-[#0A0A0A] border border-crimson/25 space-y-6 shadow-xl">
+          
+          {feedbackMsg && (
+            <div className={`p-4 rounded-2xl flex items-center gap-3 text-xs ${
+              saveState === "saved" ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40" : "bg-deep-red/20 text-bright-red border border-bright-red/40"
+            }`}>
+              {saveState === "saved" ? <Check className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+              <span>{feedbackMsg}</span>
             </div>
-          </div>
-        </div>
+          )}
 
-        {/* Right — Editor */}
-        <div className="md:col-span-2 space-y-6">
-          <div>
-            <h1 className="font-orbitron text-2xl font-bold tracking-wide text-[#F7F7F7]">My Profile</h1>
-            <p className="text-xs text-[#A5A5A5] mt-1 font-light">Manage your public listing card details.</p>
-          </div>
-
-          {/* ── Media Section ─────────────────────────────────────── */}
-          <div
-            className="rounded-2xl p-[1px]"
-            style={{ background: "linear-gradient(135deg, rgba(217,4,41,0.2), rgba(25,25,25,0.4))" }}
-          >
-            <div className="rounded-2xl p-6 bg-[#090909] space-y-4">
-              <div className="text-[10px] font-orbitron tracking-widest text-[#A5A5A5] uppercase">
-                Profile Media
-              </div>
-
-              {/* Media area */}
-              <div className="flex flex-col sm:flex-row gap-5 items-start">
-                {/* Square preview */}
-                <div
-                  className="w-20 h-20 rounded-xl border border-[rgba(217,4,41,0.2)] bg-[#111] flex items-center justify-center flex-shrink-0"
-                  style={{ overflow: "hidden", aspectRatio: "1/1" }}
-                >
-                  {activePreviewUrl ? (
-                    <img
-                      src={activePreviewUrl}
-                      alt="Preview"
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                        objectPosition: committedCropX != null && committedCropY != null
-                          ? `${committedCropX}% ${committedCropY}%`
-                          : "center",
-                      }}
-                    />
-                  ) : (
-                    <svg className="w-8 h-8 text-[#222]" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
-                    </svg>
-                  )}
-                </div>
-
-                <div className="flex-1 space-y-3">
-                  {/* Helper text */}
-                  {!activePreviewUrl && (
-                    <div className="text-xs text-[#A5A5A5] font-light">
-                      Select a profile image from the <span className="text-[#D90429] font-normal">PFP Library</span>.
-                    </div>
-                  )}
-
-                  {/* Feedback */}
-                  {mediaFeedback && (
-                    <div className={`text-[10px] font-orbitron tracking-wide ${mediaFeedback.type === "success" ? "text-[#4ECDC4]" : "text-[#D90429]"}`}>
-                      {mediaFeedback.type === "success" ? "✅" : "⚠"} {mediaFeedback.msg}
-                    </div>
-                  )}
-
-                  {/* Buttons */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    {!isAdmin && (
-                      <>
-                        {/* PRIMARY — PFP Library (the only media change method) */}
-                        <button
-                          type="button"
-                          id="select-profile-image-btn"
-                          onClick={() => setShowPfpGallery(true)}
-                          className="flex items-center gap-1.5 bg-[rgba(217,4,41,0.15)] hover:bg-[rgba(217,4,41,0.28)] text-[#D90429] font-orbitron text-[10px] tracking-wider uppercase px-4 py-2 rounded-lg transition-all border border-[rgba(217,4,41,0.2)] hover:border-[rgba(217,4,41,0.5)]"
-                          style={{ boxShadow: "0 0 10px rgba(217,4,41,0.08)" }}
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                          {hasCommittedMedia ? "Change Profile Image" : "Select Profile Image"}
-                        </button>
-
-                        {hasCommittedMedia && (
-                          <button
-                            type="button"
-                            onClick={() => setShowAdjuster(!showAdjuster)}
-                            className="bg-[#111] hover:bg-[#1A1A1A] text-[#A5A5A5] hover:text-white font-orbitron text-[10px] tracking-wider uppercase px-4 py-2 rounded-lg transition-colors"
-                          >
-                            {showAdjuster ? "Hide Adjuster" : "Adjust Position"}
-                          </button>
-                        )}
-
-                        {activePreviewUrl && (
-                          <button
-                            type="button"
-                            onClick={handleRemoveMedia}
-                            className="text-[#555] hover:text-[#D90429] font-orbitron text-[10px] tracking-wider uppercase px-3 py-2 transition-colors"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </>
-                    )}
-
-                    {isAdmin && (
-                      <div className="text-[10px] font-orbitron text-[#444] tracking-wider uppercase px-3 py-2 border border-[#1A1A1A] rounded-lg cursor-not-allowed select-none">
-                        🔒 Admins cannot change profile images
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Optional Position Adjuster (inline collapsible) */}
-              {showAdjuster && committedMediaUrl && !removeMedia && (
-                <ProfilePositionAdjuster
-                  mediaUrl={committedMediaUrl}
-                  initialMeta={{
-                    cropX: committedCropX ?? 0,
-                    cropY: committedCropY ?? 0,
-                    cropW: committedCropW ?? 100,
-                    cropH: committedCropH ?? 100,
-                    cropZoom: committedCropZoom ?? 1,
-                  }}
-                  onSave={handleSavePosition}
-                  onCancel={() => setShowAdjuster(false)}
-                />
-              )}
+          <div className="space-y-4">
+            
+            {/* Display Name */}
+            <div>
+              <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1.5">
+                Display Name
+              </label>
+              <input
+                type="text"
+                required
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                className="w-full bg-[#111] border border-crimson/20 focus:border-bright-red rounded-xl p-3 text-xs text-white outline-none transition-colors"
+                placeholder="e.g. Ashu"
+              />
             </div>
-          </div>
 
-          {/* ── Text / Bio Form ───────────────────────────────────── */}
-          <div
-            className="rounded-2xl p-[1px]"
-            style={{ background: "linear-gradient(135deg, rgba(217,4,41,0.2), rgba(25,25,25,0.4))" }}
-          >
-            <form onSubmit={handleSaveText} className="rounded-2xl p-8 bg-[#090909] space-y-6">
+            {/* Professional Headline */}
+            <div>
+              <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1.5">
+                Professional Headline
+              </label>
+              <input
+                type="text"
+                value={headline}
+                onChange={(e) => setHeadline(e.target.value)}
+                className="w-full bg-[#111] border border-crimson/20 focus:border-bright-red rounded-xl p-3 text-xs text-white outline-none transition-colors"
+                placeholder="e.g. AI Developer • Full Stack • Cybersecurity"
+              />
+            </div>
 
-              {/* Text save status */}
-              {textSaveState !== "idle" && textSaveState !== "loading" && (
-                <div
-                  className="p-4 rounded-xl text-xs font-orbitron border flex items-center gap-3 animate-fade-in"
-                  style={{
-                    borderColor: textSaveState === "saved" ? "rgba(78,205,196,0.3)" : "rgba(217,4,41,0.3)",
-                    background: textSaveState === "saved" ? "rgba(78,205,196,0.05)" : "rgba(217,4,41,0.05)",
-                    color: textSaveState === "saved" ? "#4ECDC4" : "#D90429",
-                  }}
-                >
-                  <span className="text-lg">{textSaveState === "saved" ? "✅" : "⚠️"}</span>
-                  <span>{textSaveMsg}</span>
-                </div>
-              )}
+            {/* Bio */}
+            <div>
+              <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1.5">
+                Professional Bio (Line breaks preserved)
+              </label>
+              <textarea
+                rows={4}
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+                className="w-full bg-[#111] border border-crimson/20 focus:border-bright-red rounded-xl p-3.5 text-xs text-white outline-none resize-none leading-relaxed transition-colors"
+                placeholder="Building intelligent, secure, and scalable digital products for CodeXa Agency..."
+              />
+            </div>
 
-              <div>
-                <label htmlFor="prof-name" className="block text-[10px] font-orbitron tracking-widest text-[#A5A5A5] uppercase mb-2">
-                  Display Name
-                </label>
+            {/* Dynamic Skills */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block">
+                Technical Competencies & Skills
+              </label>
+
+              <div className="flex gap-2">
                 <input
-                  id="prof-name"
                   type="text"
-                  value={displayName}
-                  onChange={(e) => { setDisplayName(e.target.value); setTextSaveState("idle"); }}
-                  placeholder="E.g. Rohan Sharma"
-                  disabled={textSaveState === "loading"}
-                  className="w-full bg-[#111111] border border-[rgba(217,4,41,0.15)] rounded-lg px-4 py-3 text-[#F7F7F7] text-sm outline-none transition-all duration-200 focus:border-[rgba(217,4,41,0.5)] disabled:opacity-50"
+                  value={newSkillInput}
+                  onChange={(e) => setNewSkillInput(e.target.value)}
+                  onKeyDown={handleAddSkill}
+                  placeholder="Type skill & press Enter (e.g. Next.js, Python, Supabase)..."
+                  className="flex-1 bg-[#111] border border-crimson/20 rounded-xl px-3 py-2.5 text-xs text-white outline-none"
                 />
-              </div>
-
-              <div>
-                <label htmlFor="prof-bio" className="block text-[10px] font-orbitron tracking-widest text-[#A5A5A5] uppercase mb-2">
-                  Public Bio
-                </label>
-                <textarea
-                  id="prof-bio"
-                  rows={4}
-                  value={publicBio}
-                  onChange={(e) => { setPublicBio(e.target.value); setTextSaveState("idle"); }}
-                  placeholder="Write a public description of your experience, skills, or quote..."
-                  disabled={textSaveState === "loading"}
-                  className="w-full bg-[#111111] border border-[rgba(217,4,41,0.15)] rounded-lg px-4 py-3 text-[#F7F7F7] text-sm outline-none transition-all duration-200 focus:border-[rgba(217,4,41,0.5)] resize-none disabled:opacity-50"
-                />
-              </div>
-
-              <div className="border-t border-[#191919] pt-6 flex justify-end gap-4">
-                <Link
-                  href="/"
-                  className="bg-transparent text-[#A5A5A5] hover:text-[#F7F7F7] font-orbitron text-[10px] tracking-widest uppercase px-5 py-3 transition-colors flex items-center justify-center"
-                >
-                  Cancel
-                </Link>
                 <button
-                  type="submit"
-                  disabled={textSaveState === "loading" || !displayName.trim()}
-                  className="relative group overflow-hidden rounded-lg p-[1px] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-                  style={{
-                    background: displayName.trim() ? "linear-gradient(90deg, #D90429, #FF6B35)" : "rgba(217,4,41,0.15)",
-                    boxShadow: displayName.trim() ? "0 4px 15px rgba(217,4,41,0.2)" : "none",
-                  }}
+                  type="button"
+                  onClick={handleAddSkill}
+                  className="px-4 py-2 rounded-xl bg-[#141414] hover:bg-crimson text-white text-xs font-orbitron font-bold uppercase transition-colors"
                 >
-                  <div
-                    className="rounded-lg py-2.5 px-6 flex items-center justify-center font-orbitron text-[10px] tracking-widest uppercase transition-all duration-200"
-                    style={{
-                      background: displayName.trim() ? "transparent" : "#111111",
-                      color: displayName.trim() ? "#FFFFFF" : "#A5A5A5",
-                    }}
-                  >
-                    {textSaveState === "loading" ? "Saving…" : "Save Profile"}
-                  </div>
+                  Add
                 </button>
               </div>
-            </form>
+
+              <div className="flex flex-wrap gap-2 pt-1">
+                {skills.map((skill) => (
+                  <span
+                    key={skill}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#141414] border border-crimson/25 text-xs font-orbitron text-white"
+                  >
+                    <span>{skill}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveSkill(skill)}
+                      className="text-[#888] hover:text-red-400"
+                    >
+                      &times;
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Social & Portfolio Links */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+              <div>
+                <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1.5">
+                  GitHub URL
+                </label>
+                <input
+                  type="url"
+                  value={githubUrl}
+                  onChange={(e) => setGithubUrl(e.target.value)}
+                  className="w-full bg-[#111] border border-crimson/20 focus:border-bright-red rounded-xl p-3 text-xs text-white outline-none transition-colors"
+                  placeholder="https://github.com/username"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1.5">
+                  LinkedIn URL
+                </label>
+                <input
+                  type="url"
+                  value={linkedinUrl}
+                  onChange={(e) => setLinkedinUrl(e.target.value)}
+                  className="w-full bg-[#111] border border-crimson/20 focus:border-bright-red rounded-xl p-3 text-xs text-white outline-none transition-colors"
+                  placeholder="https://linkedin.com/in/username"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1.5">
+                  Portfolio / Website
+                </label>
+                <input
+                  type="url"
+                  value={portfolioUrl}
+                  onChange={(e) => setPortfolioUrl(e.target.value)}
+                  className="w-full bg-[#111] border border-crimson/20 focus:border-bright-red rounded-xl p-3 text-xs text-white outline-none transition-colors"
+                  placeholder="https://yourportfolio.dev"
+                />
+              </div>
+            </div>
+
           </div>
-        </div>
-      </main>
 
-      {/* PFP Gallery Modal — the ONLY way to change profile media */}
-      {showPfpGallery && profile?.id && (
-        <PfpGalleryModal
-          isAdmin={isAdmin}
-          onClose={() => setShowPfpGallery(false)}
-          onSelect={(pfpPath) => {
-            setPendingPfpPath(pfpPath);
-            setShowPfpGallery(false);
-          }}
-        />
-      )}
+          <div className="pt-4 border-t border-white/5 flex justify-end">
+            <button
+              type="submit"
+              disabled={saveState === "loading"}
+              className="px-8 py-3 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(217,4,41,0.3)] disabled:opacity-50"
+            >
+              {saveState === "loading" ? "Saving Changes..." : "Save Profile Details"}
+            </button>
+          </div>
 
-      {/* PFP Position/Crop Modal */}
-      {pendingPfpPath && profile?.id && (
-        <PfpCropModal
-          pfpPath={pendingPfpPath}
-          targetProfileId={profile.id}
-          targetType="TEAM_PROFILE"
-          onClose={() => setPendingPfpPath(null)}
-          onSuccess={(updatedProfile) => {
-            setCommittedMediaUrl(updatedProfile.mediaUrl);
-            setCommittedMimeType(updatedProfile.mediaMimeType);
-            setCommittedCropX(updatedProfile.cropX ?? null);
-            setCommittedCropY(updatedProfile.cropY ?? null);
-            setCommittedCropW(updatedProfile.cropW ?? null);
-            setCommittedCropH(updatedProfile.cropH ?? null);
-            setCommittedCropZoom(updatedProfile.cropZoom ?? null);
-            setPendingPfpPath(null);
-            setRemoveMedia(false);
-            setMediaFeedback({ type: "success", msg: "Profile image updated." });
-            setTimeout(() => setMediaFeedback(null), 4000);
-          }}
-        />
-      )}
-    </div>
+        </form>
+
+      </div>
+
+      {/* ─── MEDIA SELECTOR MODAL ─────────────────────────────────────── */}
+      <CodeXaMediaSelectorModal
+        isOpen={mediaModalOpen}
+        onClose={() => setMediaModalOpen(false)}
+        currentAvatarUrl={profile?.mediaUrl}
+        onSuccess={(newAvatarUrl) => {
+          setProfile((prev) => (prev ? { ...prev, mediaUrl: newAvatarUrl } : null));
+        }}
+      />
+    </TeamCoreShell>
   );
 }

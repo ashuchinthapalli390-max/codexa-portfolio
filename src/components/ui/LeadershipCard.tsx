@@ -289,9 +289,14 @@ export function LeadershipCard({
               </div>
 
               {/* Bottom bar */}
-              <div className="px-7 py-3 border-t border-[#111] bg-[#050505] flex justify-between items-center flex-shrink-0">
-                <span className="text-[9px] font-orbitron text-[#333] uppercase tracking-widest">CODEXA BOARD</span>
-                <span className="text-[9px] font-orbitron text-[#D90429]/40 uppercase tracking-widest">🔒 LOCKED</span>
+              <div className="px-7 py-3.5 border-t border-[#111] bg-[#050505] flex justify-between items-center flex-shrink-0">
+                <span className="text-[9px] font-orbitron text-[#444] uppercase tracking-widest">CODEXA BOARD</span>
+                <a
+                  href={`/team/${member.name.toLowerCase()}`}
+                  className="text-[10px] font-orbitron text-bright-red hover:text-white uppercase tracking-wider font-bold flex items-center gap-1 transition-colors"
+                >
+                  View Full Profile Page <ArrowUpRight className="w-3 h-3" />
+                </a>
               </div>
             </motion.div>
           </div>

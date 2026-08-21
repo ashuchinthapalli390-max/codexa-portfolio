@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Menu, X, ArrowRight, Cpu } from "lucide-react";
+import { Menu, X, ArrowRight, Cpu, UserCheck } from "lucide-react";
+import Link from "next/link";
 import { siteConfig } from "@/config/site";
 import { useScrollSpy } from "@/hooks/useScrollSpy";
 import { NeonButton } from "../ui/NeonButton";
@@ -12,12 +13,15 @@ export function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [logoError, setLogoError] = useState(false);
+  const [sessionUser, setSessionUser] = useState<{ role: string; username: string } | null>(null);
   const isReduced = useReducedMotion();
 
   const navItems = [
     { name: "Home", id: "home" },
     { name: "About", id: "about" },
     { name: "Services", id: "services" },
+    { name: "Main Projects", id: "main-projects" },
+    { name: "Team Projects", id: "team-projects" },
     { name: "Team", id: "team" },
     { name: "Internship", id: "internship" },
     { name: "Process", id: "process" },
@@ -40,6 +44,17 @@ export function Navbar() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  useEffect(() => {
+    fetch("/api/session")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.authenticated && data.user) {
+          setSessionUser(data.user);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const handleNavClick = (id: string) => {
     setMobileMenuOpen(false);
     const element = document.getElementById(id);
@@ -48,13 +63,20 @@ export function Navbar() {
     }
   };
 
+  const getPortalLink = () => {
+    if (!sessionUser) return "/login";
+    if (sessionUser.role === "OWNER") return "/owner";
+    if (sessionUser.role === "ADMIN") return "/admin";
+    return "/dashboard";
+  };
+
   return (
     <>
       <header
         className={`fixed top-0 left-0 right-0 z-40 transition-all duration-300 ${
           isScrolled
-            ? "glass-panel-heavy py-3 border-b border-crimson/20 shadow-neon"
-            : "bg-transparent py-5"
+            ? "glass-panel-heavy py-2.5 border-b border-crimson/20 shadow-neon"
+            : "bg-transparent py-4"
         }`}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center">
@@ -87,7 +109,7 @@ export function Navbar() {
           </a>
 
           {/* Desktop Navigation center */}
-          <nav className="hidden lg:flex items-center gap-8">
+          <nav className="hidden xl:flex items-center gap-6">
             {navItems.map((item) => {
               const isActive = activeId === item.id;
               return (
@@ -98,7 +120,7 @@ export function Navbar() {
                     e.preventDefault();
                     handleNavClick(item.id);
                   }}
-                  className={`relative font-orbitron text-xs font-semibold tracking-widest uppercase transition-colors py-1 ${
+                  className={`relative font-orbitron text-[11px] font-semibold tracking-widest uppercase transition-colors py-1 ${
                     isActive ? "text-bright-red" : "text-secondary-text hover:text-white"
                   }`}
                 >
@@ -115,24 +137,40 @@ export function Navbar() {
             })}
           </nav>
 
-          {/* Hire Us Button & Mobile Trigger right */}
-          <div className="flex items-center gap-4">
+          {/* Right Action buttons */}
+          <div className="flex items-center gap-3">
+            <Link
+              href={getPortalLink()}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#111111] hover:bg-[#1A1A1A] border border-crimson/30 hover:border-bright-red text-[10px] font-orbitron font-bold uppercase tracking-wider text-white transition-all shadow-sm"
+            >
+              {sessionUser ? (
+                <>
+                  <UserCheck className="w-3 h-3 text-emerald-400" />
+                  Portal
+                </>
+              ) : (
+                <>
+                  Login
+                </>
+              )}
+            </Link>
+
             <NeonButton
               variant="outline"
               size="sm"
-              className="hidden sm:inline-flex"
+              className="hidden sm:inline-flex text-xs py-1.5"
               onClick={() => handleNavClick("contact")}
             >
               Hire Us
-              <ArrowRight className="w-3.5 h-3.5" />
+              <ArrowRight className="w-3 h-3" />
             </NeonButton>
 
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 text-secondary-text hover:text-white rounded border border-transparent hover:border-crimson/20 hover:bg-card/50 transition-all lg:hidden"
+              className="p-2 text-secondary-text hover:text-white rounded border border-transparent hover:border-crimson/20 hover:bg-card/50 transition-all xl:hidden"
               aria-label="Toggle menu"
             >
-              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
           </div>
         </div>
@@ -146,13 +184,13 @@ export function Navbar() {
             animate={{ opacity: 1, y: 0 }}
             exit={isReduced ? { opacity: 0 } : { opacity: 0, y: "-100%" }}
             transition={{ duration: 0.4, ease: "easeInOut" }}
-            className="fixed inset-0 z-30 bg-[#070707]/95 backdrop-blur-2xl flex flex-col justify-between p-8 border-b border-crimson/20"
+            className="fixed inset-0 z-30 bg-[#070707]/98 backdrop-blur-2xl flex flex-col justify-between p-8 border-b border-crimson/20 overflow-y-auto"
           >
-            {/* Header placeholder spacer */}
-            <div className="h-16" />
+            {/* Header spacer */}
+            <div className="h-12" />
 
-            {/* Menu Links list */}
-            <nav className="flex flex-col gap-6 items-center justify-center flex-grow">
+            {/* Menu Links */}
+            <nav className="flex flex-col gap-4 items-center justify-center flex-grow py-6">
               {navItems.map((item, idx) => {
                 const isActive = activeId === item.id;
                 return (
@@ -165,8 +203,8 @@ export function Navbar() {
                     }}
                     initial={isReduced ? { opacity: 1 } : { opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: idx * 0.05, duration: 0.3 }}
-                    className={`font-orbitron text-lg font-bold tracking-[0.2em] uppercase transition-colors py-2 border-b-2 ${
+                    transition={{ delay: idx * 0.04, duration: 0.25 }}
+                    className={`font-orbitron text-sm font-bold tracking-[0.2em] uppercase transition-colors py-1.5 border-b-2 ${
                       isActive ? "text-bright-red border-crimson" : "text-secondary-text border-transparent hover:text-white"
                     }`}
                   >
@@ -177,7 +215,13 @@ export function Navbar() {
             </nav>
 
             {/* Bottom Actions footer */}
-            <div className="flex flex-col gap-4 max-w-sm mx-auto w-full mb-8">
+            <div className="flex flex-col gap-3 max-w-sm mx-auto w-full mb-4">
+              <Link href={getPortalLink()} onClick={() => setMobileMenuOpen(false)} className="w-full">
+                <button className="w-full py-3 rounded bg-[#151515] border border-crimson/40 text-xs font-orbitron font-bold uppercase tracking-widest text-white hover:bg-deep-red/20 transition-all">
+                  {sessionUser ? "Open Team Portal" : "Team Member Login"}
+                </button>
+              </Link>
+
               <NeonButton
                 variant="primary"
                 onClick={() => handleNavClick("contact")}
@@ -185,14 +229,6 @@ export function Navbar() {
               >
                 Hire Us
               </NeonButton>
-              <a
-                href={siteConfig.internshipUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full text-center py-3 border border-crimson/30 hover:border-bright-red text-xs uppercase tracking-wider text-secondary-text hover:text-white rounded font-orbitron font-semibold bg-secondary-dark/50 transition-all duration-300"
-              >
-                Join Internship
-              </a>
             </div>
           </motion.div>
         )}

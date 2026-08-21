@@ -186,6 +186,19 @@ export function TeamSection() {
           </motion.div>
         </div>
 
+        {/* Directory Quick Link */}
+        <div className="mt-8 text-center">
+          <a
+            href="/team"
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#111111] hover:bg-crimson border border-crimson/30 text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-all duration-300 shadow-[0_0_15px_rgba(217,4,41,0.2)] hover:shadow-[0_0_25px_rgba(217,4,41,0.4)]"
+          >
+            <span>Explore Full Team Directory</span>
+            <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-bright-red group-hover:text-white" aria-hidden="true">
+              <path fillRule="evenodd" d="M5.22 14.78a.75.75 0 0 0 1.06 0l7.22-7.22v5.69a.75.75 0 0 0 1.5 0v-7.5a.75.75 0 0 0-.75-.75h-7.5a.75.75 0 0 0 0 1.5h5.69l-7.22 7.22a.75.75 0 0 0 0 1.06Z" clipRule="evenodd" />
+            </svg>
+          </a>
+        </div>
+
       </div>
 
       {/* ─── CORE TEAM MEMBER DETAIL MODAL ───────────────────────── */}
@@ -247,8 +260,14 @@ export function TeamSection() {
                 )}
               </div>
 
-              <div className="px-6 py-3 border-t border-[#111] bg-[#050505] text-center">
-                <span className="text-[9px] font-orbitron text-[#333] uppercase tracking-widest">CODEXA FORCE</span>
+              <div className="px-6 py-3 border-t border-[#111] bg-[#050505] flex justify-between items-center">
+                <span className="text-[9px] font-orbitron text-[#444] uppercase tracking-widest">CODEXA FORCE</span>
+                <a
+                  href={`/team/${selectedCoreTeamMember.displayName.toLowerCase().replace(/\s+/g, "")}`}
+                  className="text-[10px] font-orbitron text-bright-red hover:text-white uppercase tracking-wider font-bold transition-colors"
+                >
+                  View Profile &rarr;
+                </a>
               </div>
             </motion.div>
           </div>

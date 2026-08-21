@@ -10,7 +10,10 @@ import {
   AlertCircle, 
   MessageSquare,
   Github,
-  ArrowUpRight
+  ArrowUpRight,
+  Sparkles,
+  Copy,
+  Check
 } from "lucide-react";
 import { siteConfig } from "@/config/site";
 import { SectionHeading } from "../ui/SectionHeading";
@@ -22,18 +25,21 @@ export function ContactSection() {
     fullName: "",
     email: "",
     phone: "",
+    company: "",
     projectType: "web-dev",
     budget: "$1,000 - $5,000",
+    timeline: "1 - 2 Months",
     message: ""
   });
 
   const [uiState, setUiState] = useState<"idle" | "loading" | "success" | "failed">("idle");
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [referenceId, setReferenceId] = useState<string>("");
+  const [copied, setCopied] = useState(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
-    // Clear validation on edit
     if (validationErrors.length > 0) setValidationErrors([]);
   };
 
@@ -41,7 +47,7 @@ export function ContactSection() {
     e.preventDefault();
     setValidationErrors([]);
 
-    // Basic Validation checks
+    // Validation checks
     const errors = [];
     if (!formData.fullName.trim()) errors.push("Full Name is required.");
     if (!formData.email.trim()) {
@@ -49,35 +55,51 @@ export function ContactSection() {
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
       errors.push("Please provide a valid email address.");
     }
-    if (!formData.message.trim()) errors.push("Message body is required.");
+    if (!formData.message.trim()) errors.push("Project Message / Description is required.");
 
     if (errors.length > 0) {
       setValidationErrors(errors);
       return;
     }
 
-    // Set form state to loading
     setUiState("loading");
 
-    // Simulate Server Request delay
-    setTimeout(() => {
-      // 90% chance success, 10% chance failure simulation
-      const isSuccess = Math.random() > 0.1;
-      if (isSuccess) {
+    try {
+      const res = await fetch("/api/inquiries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setReferenceId(data.referenceId || "CXA-2026-LIVE");
         setUiState("success");
-        // reset form on success
         setFormData({
           fullName: "",
           email: "",
           phone: "",
+          company: "",
           projectType: "web-dev",
           budget: "$1,000 - $5,000",
+          timeline: "1 - 2 Months",
           message: ""
         });
       } else {
         setUiState("failed");
       }
-    }, 2000);
+    } catch {
+      setUiState("failed");
+    }
+  };
+
+  const handleCopyRef = () => {
+    if (referenceId && typeof window !== "undefined") {
+      navigator.clipboard.writeText(referenceId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   return (
@@ -89,13 +111,13 @@ export function ContactSection() {
         <SectionHeading
           badge="Start A Project"
           title="Let’s Build Something Powerful"
-          subtitle="Ready to scale? Connect with our executives or send an immediate project inquiry request below."
+          subtitle="Ready to scale? Connect with our executives or transmit your project specifications directly into our engineering queue."
           align="center"
         />
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start mt-12">
           
-          {/* Left Column: Rooftop wide background and direct contact details */}
+          {/* Left Column: Headquarters graphic frame and direct contacts */}
           <div className="lg:col-span-5 flex flex-col gap-6">
             
             {/* Cinematic rooftop graphic frame */}
@@ -209,7 +231,7 @@ export function ContactSection() {
 
           </div>
 
-          {/* Right Column: Contact Inquiry Request Form (Grid: 7 cols) */}
+          {/* Right Column: Contact Inquiry Request Form */}
           <div className="lg:col-span-7 bg-card/40 border border-crimson/15 rounded-xl p-6 md:p-8 backdrop-blur shadow-2xl relative">
             
             {/* Edge Indicators */}
@@ -217,7 +239,7 @@ export function ContactSection() {
             <div className="absolute bottom-0 right-0 w-6 h-6 border-b border-r border-crimson" />
 
             <h4 className="font-orbitron font-bold text-base uppercase text-white tracking-widest border-b border-crimson/15 pb-3 mb-6">
-              Project Inquiry Console
+              Project Application Console
             </h4>
 
             {/* Validation alerts */}
@@ -235,18 +257,39 @@ export function ContactSection() {
               </div>
             )}
 
-            {/* Success state */}
+            {/* Success state with generated Reference ID */}
             {uiState === "success" && (
-              <div className="p-6 rounded border border-emerald-500 bg-emerald-500/10 text-center mb-6 flex flex-col items-center gap-3">
-                <CheckCircle className="w-12 h-12 text-emerald-400" />
-                <h5 className="font-orbitron font-bold text-white uppercase text-sm tracking-wider">
-                  Request Transmitted
-                </h5>
-                <p className="text-xs text-secondary-text max-w-sm">
-                  Your inquiry message was delivered successfully. A CodeXa engineer will review details and connect back inside 24 hours.
+              <div className="p-8 rounded-xl border border-emerald-500/40 bg-emerald-500/10 text-center mb-6 flex flex-col items-center gap-4">
+                <CheckCircle className="w-14 h-14 text-emerald-400" />
+                <div>
+                  <h5 className="font-orbitron font-black text-white uppercase text-base tracking-wider">
+                    Application Transmitted Successfully
+                  </h5>
+                  <p className="text-xs text-secondary-text max-w-md mt-1 leading-relaxed">
+                    Your inquiry has been stored securely in our database and notification dispatched to CodeXa Leadership.
+                  </p>
+                </div>
+
+                <div className="bg-[#0A0A0A] border border-emerald-500/30 rounded-xl p-4 w-full max-w-sm flex items-center justify-between gap-2 my-2">
+                  <div className="text-left">
+                    <span className="text-[9px] font-orbitron text-[#888] uppercase tracking-wider block">Application Reference ID</span>
+                    <span className="font-mono text-sm sm:text-base font-bold text-emerald-400">{referenceId}</span>
+                  </div>
+                  <button
+                    onClick={handleCopyRef}
+                    className="p-2 rounded bg-[#151515] hover:bg-[#222] text-xs font-orbitron text-[#A5A5A5] hover:text-white transition-colors flex items-center gap-1 border border-white/5"
+                  >
+                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copied ? "COPIED" : "COPY"}
+                  </button>
+                </div>
+
+                <p className="text-[11px] text-[#777] max-w-sm font-light">
+                  A confirmation receipt has also been dispatched to your email address. An engineer will reach out within 24 hours.
                 </p>
-                <NeonButton size="sm" variant="outline" onClick={() => setUiState("idle")}>
-                  Send New Request
+
+                <NeonButton size="sm" variant="outline" onClick={() => setUiState("idle")} className="mt-2">
+                  Submit Another Inquiry
                 </NeonButton>
               </div>
             )}
@@ -256,10 +299,10 @@ export function ContactSection() {
               <div className="p-6 rounded border border-bright-red bg-deep-red/20 text-center mb-6 flex flex-col items-center gap-3">
                 <AlertCircle className="w-12 h-12 text-bright-red animate-bounce" />
                 <h5 className="font-orbitron font-bold text-bright-red uppercase text-sm tracking-wider">
-                  Transmission Failed
+                  Transmission Error
                 </h5>
                 <p className="text-xs text-secondary-text max-w-sm">
-                  We encountered an error transmitting your project data. Please verify your internet connection or ping via WhatsApp.
+                  We encountered an issue transmitting your project application. Please check your internet connection or reach out on WhatsApp.
                 </p>
                 <NeonButton size="sm" variant="primary" onClick={() => setUiState("idle")}>
                   Retry Submission
@@ -267,11 +310,11 @@ export function ContactSection() {
               </div>
             )}
 
-            {/* Core Form fields (Active/Idle UI states) */}
+            {/* Core Form fields */}
             {uiState !== "success" && uiState !== "failed" && (
               <form onSubmit={handleFormSubmit} className="flex flex-col gap-4">
                 
-                {/* Full name & Email Grid */}
+                {/* Full name & Email */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1.5">
                     <label className="font-orbitron text-[10px] uppercase font-bold tracking-widest text-secondary-text">
@@ -280,6 +323,7 @@ export function ContactSection() {
                     <input
                       type="text"
                       name="fullName"
+                      required
                       value={formData.fullName}
                       onChange={handleInputChange}
                       disabled={uiState === "loading"}
@@ -295,6 +339,7 @@ export function ContactSection() {
                     <input
                       type="email"
                       name="email"
+                      required
                       value={formData.email}
                       onChange={handleInputChange}
                       disabled={uiState === "loading"}
@@ -304,7 +349,7 @@ export function ContactSection() {
                   </div>
                 </div>
 
-                {/* Phone & Project Type Grid */}
+                {/* Phone & Company */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1.5">
                     <label className="font-orbitron text-[10px] uppercase font-bold tracking-widest text-secondary-text">
@@ -317,10 +362,28 @@ export function ContactSection() {
                       onChange={handleInputChange}
                       disabled={uiState === "loading"}
                       className="bg-[#070707] border border-crimson/20 focus:border-bright-red rounded p-3 text-xs text-white outline-none focus:shadow-neon transition-all"
-                      placeholder="e.g. 6303762110"
+                      placeholder="e.g. +91 9876543210"
                     />
                   </div>
 
+                  <div className="flex flex-col gap-1.5">
+                    <label className="font-orbitron text-[10px] uppercase font-bold tracking-widest text-secondary-text">
+                      Company / Organization
+                    </label>
+                    <input
+                      type="text"
+                      name="company"
+                      value={formData.company}
+                      onChange={handleInputChange}
+                      disabled={uiState === "loading"}
+                      className="bg-[#070707] border border-crimson/20 focus:border-bright-red rounded p-3 text-xs text-white outline-none focus:shadow-neon transition-all"
+                      placeholder="e.g. Stark Industries"
+                    />
+                  </div>
+                </div>
+
+                {/* Project Type & Budget Range */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1.5">
                     <label className="font-orbitron text-[10px] uppercase font-bold tracking-widest text-secondary-text">
                       Project Type
@@ -336,43 +399,64 @@ export function ContactSection() {
                       <option value="ai-dev">AI & Automation</option>
                       <option value="cybersecurity">Security Audits</option>
                       <option value="mobile-apps">Mobile Applications</option>
+                      <option value="fullstack">Full Stack Custom App</option>
+                      <option value="discord-bot">Discord Bot / Automation</option>
                       <option value="other">Custom Stack</option>
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="font-orbitron text-[10px] uppercase font-bold tracking-widest text-secondary-text">
+                      Estimated Budget Range
+                    </label>
+                    <select
+                      name="budget"
+                      value={formData.budget}
+                      onChange={handleInputChange}
+                      disabled={uiState === "loading"}
+                      className="bg-[#070707] border border-crimson/20 focus:border-bright-red rounded p-3 text-xs text-white outline-none focus:shadow-neon transition-all"
+                    >
+                      <option value="<$1,000">Less than $1,000</option>
+                      <option value="$1,000 - $5,000">$1,000 - $5,000</option>
+                      <option value="$5,000 - $15,000">$5,000 - $15,000</option>
+                      <option value=">$15,000">Enterprise ($15,000+)</option>
                     </select>
                   </div>
                 </div>
 
-                {/* Budget selector */}
+                {/* Timeline */}
                 <div className="flex flex-col gap-1.5">
                   <label className="font-orbitron text-[10px] uppercase font-bold tracking-widest text-secondary-text">
-                    Estimated Budget Range
+                    Target Timeline
                   </label>
                   <select
-                    name="budget"
-                    value={formData.budget}
+                    name="timeline"
+                    value={formData.timeline}
                     onChange={handleInputChange}
                     disabled={uiState === "loading"}
                     className="bg-[#070707] border border-crimson/20 focus:border-bright-red rounded p-3 text-xs text-white outline-none focus:shadow-neon transition-all"
                   >
-                    <option value="<$1,000">Less than $1,000</option>
-                    <option value="$1,000 - $5,000">$1,000 - $5,000</option>
-                    <option value="$5,000 - $15,000">$5,000 - $15,000</option>
-                    <option value=">$15,000">Enterprise ($15,000+)</option>
+                    <option value="Urgent (< 2 weeks)">Urgent (&lt; 2 weeks)</option>
+                    <option value="1 - 2 Months">1 - 2 Months</option>
+                    <option value="2 - 3 Months">2 - 3 Months</option>
+                    <option value="Flexible">Flexible Timeline</option>
                   </select>
                 </div>
 
                 {/* Message body text */}
                 <div className="flex flex-col gap-1.5">
                   <label className="font-orbitron text-[10px] uppercase font-bold tracking-widest text-secondary-text">
-                    Project Message / Description *
+                    Project Message / Specifications *
                   </label>
                   <textarea
                     name="message"
+                    required
                     value={formData.message}
                     onChange={handleInputChange}
                     disabled={uiState === "loading"}
                     rows={4}
                     className="bg-[#070707] border border-crimson/20 focus:border-bright-red rounded p-3 text-xs text-white outline-none focus:shadow-neon transition-all resize-none"
-                    placeholder="Describe details of your app or project specifications..."
+                    placeholder="Describe details, core features, and goals of your digital build..."
                   />
                 </div>
 
@@ -380,17 +464,17 @@ export function ContactSection() {
                 <button
                   type="submit"
                   disabled={uiState === "loading"}
-                  className="w-full mt-4 flex items-center justify-center gap-2 font-orbitron font-bold uppercase tracking-widest transition-all duration-300 rounded px-6 py-4 text-xs bg-crimson text-white border border-bright-red hover:bg-bright-red disabled:bg-deep-red/60 disabled:cursor-not-allowed hover:shadow-neon"
+                  className="w-full mt-3 flex items-center justify-center gap-2 font-orbitron font-bold uppercase tracking-widest transition-all duration-300 rounded px-6 py-4 text-xs bg-crimson text-white border border-bright-red hover:bg-bright-red disabled:bg-deep-red/60 disabled:cursor-not-allowed hover:shadow-neon"
                 >
                   {uiState === "loading" ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin text-white" />
-                      SUBMITTING REQUEST...
+                      TRANSMITTING APPLICATION...
                     </>
                   ) : (
                     <>
                       <Send className="w-4 h-4" />
-                      SUBMIT PROJECT REQUEST
+                      TRANSMIT PROJECT APPLICATION
                     </>
                   )}
                 </button>

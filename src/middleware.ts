@@ -28,7 +28,9 @@ export async function middleware(req: NextRequest) {
   const isDashboardPage = pathname.startsWith("/dashboard");
   const isOwnerApi = pathname.startsWith("/api/owner");
   const isAdminApi = pathname.startsWith("/api/admin");
-  const isProfileApi = pathname.startsWith("/api/profile") || pathname.startsWith("/api/profile-media");
+  const isProfileApi =
+    (pathname.startsWith("/api/profile-media") && pathname !== "/api/profile-media/existing-assets") ||
+    (pathname.startsWith("/api/profile") && req.method !== "GET");
 
   const isProtectedPage = isOwnerPage || isAdminPage || isDashboardPage;
   const isProtectedApi = isOwnerApi || isAdminApi || isProfileApi;
