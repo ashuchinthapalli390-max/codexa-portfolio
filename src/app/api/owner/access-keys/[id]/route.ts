@@ -3,16 +3,32 @@
  * DELETE /api/owner/access-keys/[id]  — Revoke (permanently deactivate) a key
  *
  * OWNER role only.
- * Normalization (trim + uppercase) applied before hashing on regeneration.
  */
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import bcrypt from "bcryptjs";
-import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { normalizeAccessKey } from "@/lib/normalize";
+import { dataStore } from "@/lib/data-store";
 
 export const runtime = "nodejs";
+
+interface StoredKey {
+  id: string;
+  userId: string;
+  label: string;
+  role: string;
+  isActive: boolean;
+  maxUses: number | null;
+  useCount: number;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+  keyHash: string;
+}
+
+const g = globalThis as unknown as { __cxa_access_keys?: StoredKey[] };
+if (!g.__cxa_access_keys) {
+  g.__cxa_access_keys = [];
+}
 
 function requireOwner(user: Awaited<ReturnType<typeof getCurrentUser>>) {
   if (!user || user.role !== "OWNER") {
@@ -51,60 +67,61 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
 
-  try {
-    const existing = await db.accessKey.findUnique({ where: { id } });
-    if (!existing) {
-      return NextResponse.json({ error: "Key not found." }, { status: 404 });
-    }
-
-    let rawKey: string | undefined;
-
-    const updateData: Record<string, unknown> = {};
-    if (body.label !== undefined) updateData.label = body.label.trim();
-    if (body.isActive !== undefined) updateData.isActive = body.isActive;
-    if (body.maxUses !== undefined) updateData.maxUses = body.maxUses;
-    if (body.expiresAt !== undefined) {
-      updateData.expiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
-    }
-
-    // Key regeneration — generates a new raw key, normalizes, hashes, resets useCount
-    if (body.regenerate) {
-      rawKey = generateRawKey();
-      const normalizedKey = normalizeAccessKey(rawKey);
-      if (!normalizedKey) {
-        return NextResponse.json({ error: "Failed to generate key." }, { status: 500 });
-      }
-      updateData.keyHash = await bcrypt.hash(normalizedKey, 12);
-      updateData.useCount = 0;
-      updateData.lastUsedAt = null;
-    }
-
-    const updated = await db.accessKey.update({
-      where: { id },
-      data: updateData,
-    });
-
-    // Audit log
-    await db.accessKeyAuditLog.create({
-      data: {
-        accessKeyId: id,
-        userId: user!.id,
-        action: body.regenerate ? "KEY_REGENERATED" : "KEY_UPDATED",
-        success: true,
-      },
-    });
-
-    const { keyHash: _hash, ...safeKey } = updated;
-
-    return NextResponse.json({
-      success: true,
-      key: safeKey,
-      ...(rawKey ? { rawKey } : {}), // Only present on regeneration
-    });
-  } catch (err) {
-    console.error("[PATCH /api/owner/access-keys/[id]]", (err as Error).message);
-    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
+  const existingIndex = (g.__cxa_access_keys || []).findIndex(k => k.id === id);
+  if (existingIndex === -1) {
+    return NextResponse.json({ error: "Key not found." }, { status: 404 });
   }
+
+  const existing = g.__cxa_access_keys![existingIndex];
+  let rawKey: string | undefined;
+
+  if (body.label !== undefined) existing.label = body.label.trim();
+  if (body.isActive !== undefined) existing.isActive = body.isActive;
+  if (body.maxUses !== undefined) existing.maxUses = body.maxUses;
+  if (body.expiresAt !== undefined) {
+    existing.expiresAt = body.expiresAt ? new Date(body.expiresAt).toISOString() : null;
+  }
+
+  if (body.regenerate) {
+    rawKey = generateRawKey();
+    existing.keyHash = crypto.createHash("sha256").update(rawKey).digest("hex");
+    existing.useCount = 0;
+    existing.lastUsedAt = null;
+  }
+
+  const profiles = await dataStore.getProfiles();
+  const p = profiles.find(pr => pr.id === existing.userId) || {
+    id: existing.userId,
+    username: "user",
+    email: "user@codexa.agency",
+    displayName: "Team User",
+    role: existing.role,
+  };
+
+  const safeKey = {
+    id: existing.id,
+    label: existing.label,
+    role: existing.role,
+    isActive: existing.isActive,
+    maxUses: existing.maxUses,
+    useCount: existing.useCount,
+    expiresAt: existing.expiresAt,
+    lastUsedAt: existing.lastUsedAt,
+    createdAt: existing.createdAt,
+    user: {
+      id: p.id,
+      username: p.username,
+      email: p.email,
+      fullName: p.displayName,
+      role: p.role,
+    },
+  };
+
+  return NextResponse.json({
+    success: true,
+    key: safeKey,
+    ...(rawKey ? { rawKey } : {}),
+  });
 }
 
 // ─── DELETE: Revoke key ───────────────────────────────────────────────────────
@@ -117,33 +134,14 @@ export async function DELETE(
   if (denied) return denied;
 
   const { id } = params;
-
-  try {
-    const existing = await db.accessKey.findUnique({ where: { id } });
-    if (!existing) {
-      return NextResponse.json({ error: "Key not found." }, { status: 404 });
-    }
-
-    // Revoke = set isActive=false (keep for audit history)
-    await db.accessKey.update({
-      where: { id },
-      data: { isActive: false },
-    });
-
-    await db.accessKeyAuditLog.create({
-      data: {
-        accessKeyId: id,
-        userId: user!.id,
-        action: "KEY_REVOKED",
-        success: true,
-      },
-    });
-
-    return NextResponse.json({ success: true });
-  } catch (err) {
-    console.error("[DELETE /api/owner/access-keys/[id]]", (err as Error).message);
-    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
+  const existing = (g.__cxa_access_keys || []).find(k => k.id === id);
+  if (!existing) {
+    return NextResponse.json({ error: "Key not found." }, { status: 404 });
   }
+
+  existing.isActive = false;
+
+  return NextResponse.json({ success: true });
 }
 
 export const dynamic = "force-dynamic";

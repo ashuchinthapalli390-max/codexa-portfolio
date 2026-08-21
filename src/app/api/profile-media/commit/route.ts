@@ -115,7 +115,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // 5. Ensure single-use: check if nonce signature has been used/logged
   const signature = uploadNonce.split(":")[3] || "invalid_sig";
   try {
-    const existingUse = await db.profileAuditLog.findFirst({
+    const existingUse = await db.auditLog.findFirst({
       where: {
         details: {
           contains: signature,

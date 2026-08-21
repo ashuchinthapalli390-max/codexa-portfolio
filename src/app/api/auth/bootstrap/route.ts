@@ -82,86 +82,48 @@ export async function POST(req: NextRequest) {
   try {
     const existingOwner = await db.user.findFirst({
       where: { role: "OWNER", isActive: true },
-      include: {
-        accessKeys: {
-          where: {
-            isActive: true,
-            OR: [
-              { expiresAt: null },
-              { expiresAt: { gt: new Date() } },
-            ],
+    });
+
+    if (existingOwner) {
+      console.log("[bootstrap] Already bootstrapped — owner exists");
+      return NextResponse.json(
+        { error: "Bootstrap already completed. Owner user already exists." },
+        { status: 409 }
+      );
+    }
+
+    const ownerUsername = (process.env.INITIAL_OWNER_USERNAME || process.env.OWNER_USERNAME || "ashu").toLowerCase().trim();
+
+    const owner = await db.user.create({
+      data: {
+        username: ownerUsername,
+        email: ownerEmail,
+        passwordHash: ownerPasswordHash,
+        role: "OWNER",
+        isActive: true,
+        fullName: ownerName,
+        profile: {
+          create: {
+            displayName: ownerName,
+            memberType: "LEADERSHIP",
+            leadershipPosition: "FOUNDER",
+            publicBio: "I engineer digital futures.",
+            isPublic: true,
           },
         },
       },
     });
 
-    if (existingOwner && existingOwner.accessKeys.length > 0) {
-      console.log("[bootstrap] Already bootstrapped — owner and active key exist");
-      return NextResponse.json(
-        { error: "Bootstrap already completed. Owner and active access key exist." },
-        { status: 409 }
-      );
-    }
-
-    let owner = existingOwner;
-    if (!owner) {
-      const emailConflict = await db.user.findFirst({ where: { email: ownerEmail } });
-      if (emailConflict) {
-        console.error(`[bootstrap] Email conflict — ${ownerEmail} already exists as role=${emailConflict.role}`);
-        return NextResponse.json(
-          { error: "Owner email is already in use by another account." },
-          { status: 409 }
-        );
-      }
-
-      owner = await db.user.create({
-        data: {
-          email: ownerEmail,
-          passwordHash: ownerPasswordHash,
-          role: "OWNER",
-          isActive: true,
-          fullName: ownerName,
-        },
-        include: { accessKeys: true },
-      });
-      console.log("[bootstrap] Created OWNER user — id=" + owner.id);
-    } else {
-      console.log("[bootstrap] OWNER user already exists — id=" + owner.id + " — creating new key only");
-    }
-
-    const rawKey = generateRawKey();
-
-    // Use HMAC-SHA256 — must match the same function used in verify-key route
-    let keyHash: string;
-    try {
-      keyHash = hashAccessKey(rawKey);
-    } catch (hashErr) {
-      console.error("[bootstrap] HASH_FAILED — AUTH_SECRET likely missing:", (hashErr as Error).message);
-      return NextResponse.json({ error: "Internal server error: AUTH_SECRET not configured." }, { status: 500 });
-    }
-
-    const accessKey = await db.accessKey.create({
-      data: {
-        userId: owner.id,
-        label: "Owner Bootstrap Key",
-        keyHash,
-        role: "OWNER",
-        isActive: true,
-        maxUses: null,
-        expiresAt: null,
-      },
-    });
-
-    console.log("[bootstrap] SUCCESS — new OWNER AccessKey created id=" + accessKey.id);
+    console.log("[bootstrap] Created OWNER user — id=" + owner.id);
 
     return NextResponse.json({
       success: true,
-      message: "Bootstrap complete. Save your access key — it will NOT be shown again.",
+      message: "Bootstrap complete. Owner account ready.",
       ownerEmail,
-      rawKey,
+      ownerUsername,
     });
-  } catch (err) {
-    console.error("[bootstrap] DB error:", (err as Error).message);
+  } catch (err: any) {
+    console.error("[bootstrap] DB error:", err.message ?? err);
     return NextResponse.json({ error: "Internal server error." }, { status: 500 });
   }
 }

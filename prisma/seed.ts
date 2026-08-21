@@ -1,15 +1,14 @@
 /**
- * CodeXa Agency — Seed Script (Prisma 5 + MySQL/Aiven)
+ * CodeXa Agency — Seed Script (Prisma 5 + PostgreSQL)
  * Run with: npx tsx prisma/seed.ts
  *
- * Idempotent seeder that uses deterministic HMAC-SHA256 access keys.
+ * Idempotent seeder that syncs owner, admin, and core team accounts.
  * Validates all required env variables before touching the database.
  * Updates passwords for existing users if env credentials changed.
  */
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { config } from "dotenv";
-import { hashAccessKey } from "../src/lib/accessKeyHash";
 
 const BCRYPT_ROUNDS = 12;
 
@@ -19,7 +18,7 @@ async function main() {
   const db = new PrismaClient();
 
   console.log("\n╔══════════════════════════════════════════════════════════╗");
-  console.log("║       CODEXA CORE TEAM SYSTEM — SECURE HMAC SEED         ║");
+  console.log("║       CODEXA CORE TEAM SYSTEM — SECURE SEED               ║");
   console.log("╚══════════════════════════════════════════════════════════╝\n");
 
   // ─── 1. VALIDATE REQUIRED ENV VARIABLES ─────────────────────────────────────
@@ -29,13 +28,10 @@ async function main() {
   if (!process.env.DATABASE_URL)      missing.push("DATABASE_URL");
   if (!process.env.OWNER_EMAIL)       missing.push("OWNER_EMAIL");
   if (!process.env.OWNER_PASSWORD)    missing.push("OWNER_PASSWORD");
-  if (!process.env.OWNER_ACCESS_KEY)  missing.push("OWNER_ACCESS_KEY");
   if (!process.env.ADMIN_EMAIL)       missing.push("ADMIN_EMAIL");
   if (!process.env.ADMIN_PASSWORD)    missing.push("ADMIN_PASSWORD");
-  if (!process.env.ADMIN_ACCESS_KEY)  missing.push("ADMIN_ACCESS_KEY");
   if (!process.env.TEAM_USERNAME)     missing.push("TEAM_USERNAME");
   if (!process.env.TEAM_PASSWORD)     missing.push("TEAM_PASSWORD");
-  if (!process.env.TEAM_ACCESS_KEY)   missing.push("TEAM_ACCESS_KEY");
 
   if (missing.length > 0) {
     console.error("  ❌ SEED ABORTED — Missing required environment variables:");
@@ -47,20 +43,20 @@ async function main() {
   }
 
   // ─── 2. RESOLVE ENV VARIABLES ───────────────────────────────────────────────
+  const ownerUsername    = (process.env.INITIAL_OWNER_USERNAME || process.env.OWNER_USERNAME || "ashu").toLowerCase().trim();
   const ownerEmail       = process.env.OWNER_EMAIL!.toLowerCase().trim();
   const ownerPassword    = process.env.OWNER_PASSWORD!;
   const ownerName        = process.env.OWNER_NAME || "Ashu";
-  const ownerRawKey      = process.env.OWNER_ACCESS_KEY!;
 
+  const adminUsername    = (process.env.ADMIN_USERNAME || "admin").toLowerCase().trim();
   const adminEmail       = process.env.ADMIN_EMAIL!.toLowerCase().trim();
   const adminPassword    = process.env.ADMIN_PASSWORD!;
   const adminName        = process.env.ADMIN_NAME || "Read Only Admin";
-  const adminRawKey      = process.env.ADMIN_ACCESS_KEY!;
 
   const teamUsername     = process.env.TEAM_USERNAME!.toLowerCase().trim();
+  const teamEmail        = (process.env.TEAM_EMAIL || "team@codexa.agency").toLowerCase().trim();
   const teamPassword     = process.env.TEAM_PASSWORD!;
   const teamDisplayName  = process.env.TEAM_DISPLAY_NAME || "Team Member";
-  const teamRawKey       = process.env.TEAM_ACCESS_KEY!;
 
   // ─── 3. CONNECT ─────────────────────────────────────────────────────────────
   try {
@@ -77,6 +73,7 @@ async function main() {
     const passwordHash = await bcrypt.hash(ownerPassword, BCRYPT_ROUNDS);
     owner = await db.user.create({
       data: {
+        username: ownerUsername,
         email: ownerEmail,
         passwordHash,
         role: "OWNER",
@@ -86,35 +83,13 @@ async function main() {
     });
     console.log("  ✓ OWNER user created.");
   } else {
-    // Always sync email, name, AND password from env
     const passwordHash = await bcrypt.hash(ownerPassword, BCRYPT_ROUNDS);
     owner = await db.user.update({
       where: { id: owner.id },
-      data: { email: ownerEmail, fullName: ownerName, passwordHash },
+      data: { username: ownerUsername, email: ownerEmail, fullName: ownerName, passwordHash },
     });
-    console.log("  ✓ OWNER user updated (email, name, password synced from env).");
+    console.log("  ✓ OWNER user updated (username, email, name, password synced from env).");
   }
-
-  // Deactivate any old non-HMAC Owner keys
-  await db.accessKey.updateMany({
-    where: { userId: owner.id, role: "OWNER", label: { startsWith: "Owner Primary" } },
-    data: { isActive: false }
-  });
-
-  // Upsert HMAC Owner Access Key
-  const ownerHash = hashAccessKey(ownerRawKey);
-  const ownerAccessKey = await db.accessKey.upsert({
-    where: { keyHash: ownerHash },
-    update: { role: "OWNER", isActive: true, expiresAt: null },
-    create: {
-      userId: owner.id,
-      label: "Owner Primary Key (HMAC)",
-      keyHash: ownerHash,
-      role: "OWNER",
-      isActive: true,
-      expiresAt: null
-    }
-  });
 
   // Seed Founder profile
   const existingOwnerProfile = await db.teamProfile.findFirst({ where: { userId: owner.id } });
@@ -140,6 +115,7 @@ async function main() {
     const passwordHash = await bcrypt.hash(adminPassword, BCRYPT_ROUNDS);
     admin = await db.user.create({
       data: {
+        username: adminUsername,
         email: adminEmail,
         passwordHash,
         role: "ADMIN",
@@ -149,35 +125,13 @@ async function main() {
     });
     console.log("  ✓ ADMIN user created.");
   } else {
-    // Always sync email, name, AND password from env
     const passwordHash = await bcrypt.hash(adminPassword, BCRYPT_ROUNDS);
     admin = await db.user.update({
       where: { id: admin.id },
-      data: { email: adminEmail, fullName: adminName, passwordHash },
+      data: { username: adminUsername, email: adminEmail, fullName: adminName, passwordHash },
     });
-    console.log("  ✓ ADMIN user updated (email, name, password synced from env).");
+    console.log("  ✓ ADMIN user updated (username, email, name, password synced from env).");
   }
-
-  // Deactivate old non-HMAC Admin keys
-  await db.accessKey.updateMany({
-    where: { userId: admin.id, role: "ADMIN", label: { startsWith: "Admin Test" } },
-    data: { isActive: false }
-  });
-
-  // Upsert HMAC Admin Access Key
-  const adminHash = hashAccessKey(adminRawKey);
-  const adminAccessKey = await db.accessKey.upsert({
-    where: { keyHash: adminHash },
-    update: { role: "ADMIN", isActive: true, expiresAt: null },
-    create: {
-      userId: admin.id,
-      label: "Admin Primary Key (HMAC)",
-      keyHash: adminHash,
-      role: "ADMIN",
-      isActive: true,
-      expiresAt: null
-    }
-  });
 
   // ─── 6. SEED TEAM_MEMBER ACCOUNT ────────────────────────────────────────────
   let teamUser = await db.user.findFirst({ where: { role: "TEAM_MEMBER" } });
@@ -186,6 +140,7 @@ async function main() {
     teamUser = await db.user.create({
       data: {
         username: teamUsername,
+        email: teamEmail,
         passwordHash,
         role: "TEAM_MEMBER",
         isActive: true,
@@ -194,35 +149,13 @@ async function main() {
     });
     console.log("  ✓ TEAM_MEMBER user created.");
   } else {
-    // Always sync username, name, AND password from env
     const passwordHash = await bcrypt.hash(teamPassword, BCRYPT_ROUNDS);
     teamUser = await db.user.update({
       where: { id: teamUser.id },
-      data: { username: teamUsername, fullName: teamDisplayName, passwordHash },
+      data: { username: teamUsername, email: teamEmail, fullName: teamDisplayName, passwordHash },
     });
-    console.log("  ✓ TEAM_MEMBER user updated (username, name, password synced from env).");
+    console.log("  ✓ TEAM_MEMBER user updated (username, email, name, password synced from env).");
   }
-
-  // Deactivate old non-HMAC Team keys
-  await db.accessKey.updateMany({
-    where: { userId: teamUser.id, role: "TEAM_MEMBER", label: { startsWith: "Team Member Test" } },
-    data: { isActive: false }
-  });
-
-  // Upsert HMAC Team Member Access Key
-  const teamHash = hashAccessKey(teamRawKey);
-  const teamAccessKey = await db.accessKey.upsert({
-    where: { keyHash: teamHash },
-    update: { role: "TEAM_MEMBER", isActive: true, expiresAt: null },
-    create: {
-      userId: teamUser.id,
-      label: "Team Member Primary Key (HMAC)",
-      keyHash: teamHash,
-      role: "TEAM_MEMBER",
-      isActive: true,
-      expiresAt: null
-    }
-  });
 
   // Seed Team Profile row
   const existingTeamProfile = await db.teamProfile.findFirst({ where: { userId: teamUser.id } });
@@ -240,11 +173,26 @@ async function main() {
   }
 
   // ─── 7. SEED FIXED SITE CONFIG (LEADERSHIP PROFILES) ───────────────────────
-  const existingCoFounder = await db.teamProfile.findFirst({ where: { leadershipPosition: "CO_FOUNDER" } });
+  let deepakUser = await db.user.findFirst({ where: { username: "deepak" } });
+  if (!deepakUser) {
+    const defaultPw = await bcrypt.hash("CxA!Deepak2026", BCRYPT_ROUNDS);
+    deepakUser = await db.user.create({
+      data: {
+        username: "deepak",
+        email: "deepak@codexa.agency",
+        passwordHash: defaultPw,
+        role: "TEAM_MEMBER",
+        isActive: true,
+        fullName: "Deepak",
+      },
+    });
+  }
+
+  const existingCoFounder = await db.teamProfile.findFirst({ where: { userId: deepakUser.id } });
   if (!existingCoFounder) {
     await db.teamProfile.create({
       data: {
-        userId: null,
+        userId: deepakUser.id,
         memberType: "LEADERSHIP",
         leadershipPosition: "CO_FOUNDER",
         displayName: "Deepak",
@@ -257,11 +205,26 @@ async function main() {
     });
   }
 
-  const existingCEO = await db.teamProfile.findFirst({ where: { leadershipPosition: "CEO" } });
+  let venuUser = await db.user.findFirst({ where: { username: "venu" } });
+  if (!venuUser) {
+    const defaultPw = await bcrypt.hash("CxA!Venu2026", BCRYPT_ROUNDS);
+    venuUser = await db.user.create({
+      data: {
+        username: "venu",
+        email: "venu@codexa.agency",
+        passwordHash: defaultPw,
+        role: "TEAM_MEMBER",
+        isActive: true,
+        fullName: "Venu",
+      },
+    });
+  }
+
+  const existingCEO = await db.teamProfile.findFirst({ where: { userId: venuUser.id } });
   if (!existingCEO) {
     await db.teamProfile.create({
       data: {
-        userId: null,
+        userId: venuUser.id,
         memberType: "LEADERSHIP",
         leadershipPosition: "CEO",
         displayName: "Venu",
@@ -278,11 +241,8 @@ async function main() {
   console.log("");
   console.log(`  DATABASE connected: yes`);
   console.log(`  OWNER user exists: ${owner ? "yes" : "no"}`);
-  console.log(`  OWNER key active: ${ownerAccessKey ? "yes" : "no"}`);
   console.log(`  ADMIN user exists: ${admin ? "yes" : "no"}`);
-  console.log(`  ADMIN key active: ${adminAccessKey ? "yes" : "no"}`);
   console.log(`  TEAM user exists: ${teamUser ? "yes" : "no"}`);
-  console.log(`  TEAM key active: ${teamAccessKey ? "yes" : "no"}`);
 
   await db.$disconnect();
   console.log("\n  ✓ Seed completed successfully.\n");

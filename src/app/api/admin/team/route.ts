@@ -126,6 +126,8 @@ export async function POST(req: NextRequest) {
       const user = await tx.user.create({
         data: {
           username,
+          email: `${username}@codexa.agency`,
+          fullName: displayName.trim(),
           passwordHash,
           role: "TEAM_MEMBER",
           isActive: true,

@@ -203,10 +203,10 @@ export async function logProfileAction(
   details: string
 ): Promise<void> {
   try {
-    await db.profileAuditLog.create({
+    await db.auditLog.create({
       data: {
-        actorUserId,
-        targetUserId,
+        actorId: actorUserId,
+        targetId: targetUserId,
         action,
         details,
       },

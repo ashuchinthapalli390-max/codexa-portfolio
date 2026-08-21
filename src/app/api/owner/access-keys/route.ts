@@ -2,18 +2,60 @@
  * GET  /api/owner/access-keys  — List all access keys
  * POST /api/owner/access-keys  — Create a new access key
  *
- * OWNER role only. Raw keys are never stored — only bcrypt hashes.
- * Raw key is returned ONCE on creation; never retrievable again.
- * Normalization (trim + uppercase) applied before hashing — same function used at verification.
+ * OWNER role only.
  */
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import bcrypt from "bcryptjs";
-import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { normalizeAccessKey } from "@/lib/normalize";
+import { dataStore } from "@/lib/data-store";
 
 export const runtime = "nodejs";
+
+interface StoredKey {
+  id: string;
+  userId: string;
+  label: string;
+  role: string;
+  isActive: boolean;
+  maxUses: number | null;
+  useCount: number;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+  keyHash: string;
+}
+
+const g = globalThis as unknown as { __cxa_access_keys?: StoredKey[] };
+if (!g.__cxa_access_keys) {
+  g.__cxa_access_keys = [
+    {
+      id: "key-owner-primary",
+      userId: "profile-ashu-001",
+      label: "Owner Primary API Key",
+      role: "OWNER",
+      isActive: true,
+      maxUses: null,
+      useCount: 42,
+      expiresAt: null,
+      lastUsedAt: new Date().toISOString(),
+      createdAt: new Date(Date.now() - 86400000 * 30).toISOString(),
+      keyHash: "cxa_sha_mock_owner_001",
+    },
+    {
+      id: "key-team-webhook",
+      userId: "profile-deepak-002",
+      label: "Dev Webhook Key",
+      role: "TEAM_MEMBER",
+      isActive: true,
+      maxUses: 1000,
+      useCount: 128,
+      expiresAt: null,
+      lastUsedAt: new Date().toISOString(),
+      createdAt: new Date(Date.now() - 86400000 * 7).toISOString(),
+      keyHash: "cxa_sha_mock_team_002",
+    },
+  ];
+}
 
 function requireOwner(user: Awaited<ReturnType<typeof getCurrentUser>>) {
   if (!user || user.role !== "OWNER") {
@@ -23,7 +65,6 @@ function requireOwner(user: Awaited<ReturnType<typeof getCurrentUser>>) {
 }
 
 function generateRawKey(): string {
-  // Format: CXA-XXXX-XXXX-XXXX-XXXX (hex segments, uppercase)
   const seg = () => crypto.randomBytes(2).toString("hex").toUpperCase();
   return `CXA-${seg()}${seg()}-${seg()}${seg()}-${seg()}${seg()}-${seg()}${seg()}`;
 }
@@ -34,30 +75,38 @@ export async function GET(_req: NextRequest) {
   const denied = requireOwner(user);
   if (denied) return denied;
 
-  try {
-    const keys = await db.accessKey.findMany({
-      orderBy: { createdAt: "desc" },
-      include: {
-        user: {
-          select: {
-            id: true,
-            username: true,
-            email: true,
-            fullName: true,
-            role: true,
-          },
-        },
+  const profiles = await dataStore.getProfiles();
+  const profileMap = new Map(profiles.map(p => [p.id, p]));
+
+  const keys = (g.__cxa_access_keys || []).map(k => {
+    const p = profileMap.get(k.userId) || {
+      id: k.userId,
+      username: "user",
+      email: "user@codexa.agency",
+      displayName: "Team User",
+      role: k.role,
+    };
+    return {
+      id: k.id,
+      label: k.label,
+      role: k.role,
+      isActive: k.isActive,
+      maxUses: k.maxUses,
+      useCount: k.useCount,
+      expiresAt: k.expiresAt,
+      lastUsedAt: k.lastUsedAt,
+      createdAt: k.createdAt,
+      user: {
+        id: p.id,
+        username: p.username,
+        email: p.email,
+        fullName: p.displayName,
+        role: p.role,
       },
-    });
+    };
+  });
 
-    // Never return keyHash
-    const safeKeys = keys.map(({ keyHash: _hash, ...k }) => k);
-
-    return NextResponse.json({ success: true, keys: safeKeys });
-  } catch (err) {
-    console.error("[GET /api/owner/access-keys]", (err as Error).message);
-    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
-  }
+  return NextResponse.json({ success: true, keys });
 }
 
 // ─── POST: Create new access key ──────────────────────────────────────────────
@@ -89,60 +138,56 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const validRoles = ["OWNER", "ADMIN", "TEAM_MEMBER"];
-  if (!validRoles.includes(role)) {
-    return NextResponse.json({ error: "Invalid role." }, { status: 400 });
-  }
+  const rawKey = generateRawKey();
+  const newKey: StoredKey = {
+    id: `key-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,
+    userId,
+    label: label.trim(),
+    role,
+    isActive: true,
+    maxUses: maxUses ?? null,
+    useCount: 0,
+    expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+    lastUsedAt: null,
+    createdAt: new Date().toISOString(),
+    keyHash: crypto.createHash("sha256").update(rawKey).digest("hex"),
+  };
 
-  try {
-    const targetUser = await db.user.findUnique({ where: { id: userId } });
-    if (!targetUser) {
-      return NextResponse.json({ error: "User not found." }, { status: 404 });
-    }
+  g.__cxa_access_keys = [newKey, ...(g.__cxa_access_keys || [])];
 
-    const rawKey = generateRawKey();
-    const normalizedKey = normalizeAccessKey(rawKey);
-    if (!normalizedKey) {
-      return NextResponse.json({ error: "Failed to generate key." }, { status: 500 });
-    }
+  const profiles = await dataStore.getProfiles();
+  const p = profiles.find(pr => pr.id === userId) || {
+    id: userId,
+    username: "user",
+    email: "user@codexa.agency",
+    displayName: "Team User",
+    role,
+  };
 
-    // Hash the normalized key using bcrypt (12 rounds)
-    const keyHash = await bcrypt.hash(normalizedKey, 12);
+  const safeKey = {
+    id: newKey.id,
+    label: newKey.label,
+    role: newKey.role,
+    isActive: newKey.isActive,
+    maxUses: newKey.maxUses,
+    useCount: newKey.useCount,
+    expiresAt: newKey.expiresAt,
+    lastUsedAt: newKey.lastUsedAt,
+    createdAt: newKey.createdAt,
+    user: {
+      id: p.id,
+      username: p.username,
+      email: p.email,
+      fullName: p.displayName,
+      role: p.role,
+    },
+  };
 
-    const created = await db.accessKey.create({
-      data: {
-        userId,
-        label: label.trim(),
-        keyHash,
-        role,
-        isActive: true,
-        maxUses: maxUses ?? null,
-        expiresAt: expiresAt ? new Date(expiresAt) : null,
-      },
-    });
-
-    // Audit log
-    await db.accessKeyAuditLog.create({
-      data: {
-        accessKeyId: created.id,
-        userId: user!.id,
-        action: "KEY_CREATED",
-        success: true,
-      },
-    });
-
-    // Return raw key ONCE — never stored, never retrievable again
-    const { keyHash: _hash, ...safeKey } = created;
-
-    return NextResponse.json({
-      success: true,
-      key: safeKey,
-      rawKey, // ← shown ONCE only
-    });
-  } catch (err) {
-    console.error("[POST /api/owner/access-keys]", (err as Error).message);
-    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
-  }
+  return NextResponse.json({
+    success: true,
+    key: safeKey,
+    rawKey,
+  });
 }
 
 export const dynamic = "force-dynamic";
