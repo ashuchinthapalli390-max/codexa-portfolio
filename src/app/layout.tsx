@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { ToastProvider } from "@/components/ui/Toast";
 
 export const metadata: Metadata = {
   title: "CODEXA AGENCY | Where Ideas Become Digital Reality",
@@ -35,7 +36,7 @@ export default function RootLayout({
         <link rel="icon" type="image/jpeg" href="/assets/images/logo.jpeg" />
       </head>
       <body className="antialiased selection:bg-crimson selection:text-white bg-[#070707] text-[#F7F7F7]">
-        {children}
+        <ToastProvider>{children}</ToastProvider>
       </body>
     </html>
   );

@@ -21,6 +21,7 @@ import {
   Check
 } from "lucide-react";
 import { CyberWebOverlay } from "@/components/ui/CyberWebOverlay";
+import { errorShakeVariants, digitPopVariants } from "@/lib/motion";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -466,28 +467,38 @@ export default function LoginPage() {
                 )}
 
                 {/* 6-Digit OTP Boxes */}
-                <div className="flex justify-between gap-2 sm:gap-3 my-6">
+                <motion.div
+                  variants={errorShakeVariants}
+                  animate={otpState === "error" ? "shake" : "initial"}
+                  className="flex justify-between gap-2 sm:gap-3 my-6"
+                >
                   {otpDigits.map((digit, idx) => (
-                    <input
+                    <motion.div
                       key={idx}
-                      ref={(el) => {
-                        otpInputRefs.current[idx] = el;
-                      }}
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={6} // Allows paste
-                      value={digit}
-                      onChange={(e) => handleOtpChange(idx, e.target.value)}
-                      onKeyDown={(e) => handleOtpKeyDown(idx, e)}
-                      disabled={otpState === "verifying" || otpState === "success"}
-                      className={`w-11 h-14 sm:w-12 sm:h-16 text-center font-mono text-xl sm:text-2xl font-black rounded-xl bg-[#111] border text-white outline-none transition-all duration-200 ${
-                        digit
-                          ? "border-bright-red bg-deep-red/10 shadow-[0_0_15px_rgba(217,4,41,0.3)] text-bright-red"
-                          : "border-crimson/25 focus:border-bright-red"
-                      }`}
-                    />
+                      variants={digitPopVariants}
+                      animate={digit ? "pop" : "initial"}
+                      className="flex-1"
+                    >
+                      <input
+                        ref={(el) => {
+                          otpInputRefs.current[idx] = el;
+                        }}
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6} // Allows paste
+                        value={digit}
+                        onChange={(e) => handleOtpChange(idx, e.target.value)}
+                        onKeyDown={(e) => handleOtpKeyDown(idx, e)}
+                        disabled={otpState === "verifying" || otpState === "success"}
+                        className={`w-full h-14 sm:h-16 text-center font-mono text-xl sm:text-2xl font-black rounded-xl bg-[#111] border text-white outline-none transition-all duration-200 ${
+                          digit
+                            ? "border-bright-red bg-deep-red/10 shadow-[0_0_15px_rgba(217,4,41,0.3)] text-bright-red"
+                            : "border-crimson/25 focus:border-bright-red"
+                        }`}
+                      />
+                    </motion.div>
                   ))}
-                </div>
+                </motion.div>
 
                 {/* Timer & Resend */}
                 <div className="flex items-center justify-between text-xs text-[#777] mb-6">

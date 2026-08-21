@@ -66,6 +66,7 @@ import {
 } from "@/lib/data-store";
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
 import { CodeXaMediaSelectorModal } from "@/components/ui/CodeXaMediaSelectorModal";
+import { MotionNumber } from "@/components/motion/MotionNumber";
 
 type OwnerTab = 
   | "overview" 
@@ -1002,7 +1003,7 @@ function OwnerDashboardContent() {
                         <Icon className={`w-4 h-4 ${card.color}`} />
                       </div>
                       <div className="text-3xl font-orbitron font-black text-white">
-                        {card.value}
+                        <MotionNumber value={card.value} duration={1} />
                       </div>
                       <p className="text-[10px] font-mono text-[#777] mt-1">{card.sub}</p>
                     </div>

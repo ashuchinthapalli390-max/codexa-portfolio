@@ -5,6 +5,8 @@
  */
 
 import crypto from "crypto";
+import { db } from "./db";
+import { DEV_PROFILES, DEV_PROJECTS, DEV_POSTS, DEV_CONVERSATIONS } from "@/dev/fixtures";
 import { supabaseQuery, supabaseInsert, supabaseUpdate, supabaseDelete, isSupabaseConfigured } from "./supabase";
 
 // ─── ENTITY INTERFACES ────────────────────────────────────────────────────────
@@ -339,350 +341,30 @@ export interface ActivityEvent {
   createdAt: string;
 }
 
-// ─── SEED DATA ───────────────────────────────────────────────────────────────
+// ─── RUNTIME IN-MEMORY FALLBACK STORE ─────────────────────────────────────────
 
 const g = globalThis as any;
 
-let memoryProfiles: Profile[] = (g.__cxa_profiles = g.__cxa_profiles || [
-  {
-    id: "profile-ashu-001",
-    username: process.env.INITIAL_OWNER_USERNAME || "ashu",
-    email: process.env.INITIAL_OWNER_EMAIL || "ashuchinthapalli3900@gmail.com",
-    displayName: process.env.INITIAL_OWNER_NAME || "Ashu",
-    role: "OWNER",
-    memberType: "LEADERSHIP",
-    leadershipPosition: "FOUNDER",
-    headline: "Founder & Lead Architect",
-    bio: "Founding CodeXa Agency to engineer cinematic digital ecosystems, AI pipelines, and enterprise automation infrastructure.",
-    skills: ["AI Pipelines", "Full Stack", "System Architecture", "Security", "Next.js", "Python"],
-    githubUrl: "https://github.com/codexa-agency",
-    linkedinUrl: "https://linkedin.com/company/codexa",
-    portfolioUrl: "https://codexa.agency",
-    mediaUrl: "/assets/images/128acbeb739b3eb8bc4d1d9ae15fcfb2.jpg",
-    isActive: true,
-    isPublic: true,
-    displayOrder: 1,
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
-    projectsCount: 2,
-  },
-  {
-    id: "profile-deepak-002",
-    username: "deepak",
-    email: "deepak@codexa.agency",
-    displayName: "Deepak",
-    role: "ADMIN",
-    memberType: "LEADERSHIP",
-    leadershipPosition: "CO_FOUNDER",
-    headline: "Co-Founder & UI/UX Director",
-    bio: "Architecting interactive cyber interfaces, design systems, and modern full-stack web platforms.",
-    skills: ["UI/UX Architecture", "React", "Framer Motion", "WebGL", "TypeScript", "TailwindCSS"],
-    githubUrl: "https://github.com/codexa-agency",
-    linkedinUrl: "https://linkedin.com/company/codexa",
-    portfolioUrl: "https://codexa.agency",
-    mediaUrl: "/assets/images/415b3c58f0cb648d08ca672322301c18.jpg",
-    isActive: true,
-    isPublic: true,
-    displayOrder: 2,
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
-    projectsCount: 2,
-  },
-  {
-    id: "profile-venu-003",
-    username: "venu",
-    email: "venu@codexa.agency",
-    displayName: "Venu",
-    role: "ADMIN",
-    memberType: "LEADERSHIP",
-    leadershipPosition: "CEO",
-    headline: "Chief Executive Officer",
-    bio: "Driving CodeXa's strategic expansion, engineering alliances, and client delivery operations.",
-    skills: ["Executive Strategy", "Operations", "Product Management", "Client Relations"],
-    githubUrl: "https://github.com/codexa-agency",
-    linkedinUrl: "https://linkedin.com/company/codexa",
-    mediaUrl: "/assets/images/2306fc1d8f6ea04d1ddd4ebfafd003f2.jpg",
-    isActive: true,
-    isPublic: true,
-    displayOrder: 3,
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
-    projectsCount: 1,
-  },
-  {
-    id: "profile-aakash-004",
-    username: "aakash",
-    email: "aakash@codexa.agency",
-    displayName: "Aakash Varma",
-    role: "TEAM_MEMBER",
-    memberType: "CORE_TEAM",
-    headline: "Senior AI Systems Engineer",
-    bio: "Specializing in Large Language Model fine-tuning, automated agents, and intelligent recruitment workflows.",
-    skills: ["OpenAI", "FastAPI", "Python", "Vector Databases", "LangChain", "Next.js"],
-    githubUrl: "https://github.com/aakashvarma",
-    linkedinUrl: "https://linkedin.com/in/aakashvarma",
-    mediaUrl: "/assets/images/128acbeb739b3eb8bc4d1d9ae15fcfb2.jpg",
-    isActive: true,
-    isPublic: true,
-    displayOrder: 4,
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
-    projectsCount: 2,
-  }
-]);
-
-let memoryProjects: Project[] = (g.__cxa_projects = g.__cxa_projects || [
-  {
-    id: "proj-hirelens-001",
-    title: "HireLens AI",
-    slug: "hirelens-ai",
-    shortDesc: "Next-gen intelligent resume scoring, candidate evaluation and automated interview pipeline.",
-    overview: "HireLens AI is an end-to-end recruitment intelligence platform designed to eliminate hiring bias and parse thousands of applicant resumes within milliseconds using fine-tuned LLM agents.",
-    problem: "Traditional ATS systems rely on naive keyword matching, discarding top talent and creating significant screening bottlenecks.",
-    solution: "Engineered a semantic parsing pipeline with multi-vector similarity scoring and automatic technical questionnaire generation.",
-    features: [
-      "Semantic resume parsing across 20+ file formats",
-      "Automated coding challenge benchmark generation",
-      "Real-time applicant ranking matrix",
-      "Encrypted recruitment team collaboration rooms"
-    ],
-    techStack: ["Next.js", "FastAPI", "Python", "OpenAI", "PostgreSQL", "TailwindCSS"],
-    category: "AI",
-    status: "Live",
-    thumbnailUrl: "/assets/images/4e56a053e3ee0019b13c19c5b3f614fe.jpg",
-    screenshots: [
-      "/assets/images/4e56a053e3ee0019b13c19c5b3f614fe.jpg",
-      "/assets/images/87e148db2c7ea1bfa1bf27976e107df4.jpg"
-    ],
-    repoUrl: "https://github.com/codexa-agency/hirelens-ai",
-    liveUrl: "https://hirelens.codexa.agency",
-    isDraft: false,
-    isPublic: true,
-    isFeatured: true,
-    isMainProject: true,
-    displayOrder: 1,
-    createdBy: "profile-aakash-004",
-    createdAt: "2026-02-01T00:00:00Z",
-    updatedAt: "2026-02-01T00:00:00Z",
-  },
-  {
-    id: "proj-nexus-cyber-002",
-    title: "Nexus Cyber Sentinel",
-    slug: "nexus-cyber-sentinel",
-    shortDesc: "Autonomous cybersecurity vulnerability detection, real-time log ingestion, and penetration analysis.",
-    overview: "Nexus Cyber Sentinel delivers 24/7 autonomous monitoring across cloud infrastructure, detecting unauthorized lateral movement and zero-day vulnerabilities.",
-    problem: "Modern microservices produce millions of log events per second, overwhelming traditional security teams.",
-    solution: "Implemented eBPF kernel event probes combined with anomaly detection models to isolate compromised containers automatically.",
-    features: [
-      "eBPF real-time kernel monitoring",
-      "Automated IP isolation and firewall rule updates",
-      "Interactive threat vector map",
-      "Compliance audit report generator"
-    ],
-    techStack: ["Go", "eBPF", "React", "Rust", "TimescaleDB", "Docker"],
-    category: "Cybersecurity",
-    status: "Live",
-    thumbnailUrl: "/assets/images/87e148db2c7ea1bfa1bf27976e107df4.jpg",
-    screenshots: [
-      "/assets/images/87e148db2c7ea1bfa1bf27976e107df4.jpg"
-    ],
-    repoUrl: "https://github.com/codexa-agency/nexus-cyber-sentinel",
-    liveUrl: "https://nexus.codexa.agency",
-    isDraft: false,
-    isPublic: true,
-    isFeatured: true,
-    isMainProject: true,
-    displayOrder: 2,
-    createdBy: "profile-ashu-001",
-    createdAt: "2026-02-05T00:00:00Z",
-    updatedAt: "2026-02-05T00:00:00Z",
-  }
-]);
-
-let memoryPosts: Post[] = (g.__cxa_posts = g.__cxa_posts || [
-  {
-    id: "post-001",
-    authorId: "profile-ashu-001",
-    content: "🚀 CodeXa Agency 2.0 is officially live! We've overhauled our entire client pipeline, deployed custom 2-stage verification, and upgraded our internal workspace. Let's build the future.",
-    isAnnouncement: true,
-    createdAt: new Date(Date.now() - 3600000 * 4).toISOString(),
-    updatedAt: new Date(Date.now() - 3600000 * 4).toISOString(),
-    likesCount: 5,
-    commentsCount: 2,
-  },
-  {
-    id: "post-002",
-    authorId: "profile-aakash-004",
-    content: "Just finalized the new model evaluation metrics for HireLens AI. Reduced inference latency by 42% on complex multi-page PDF resumes! 🤖⚡",
-    projectId: "proj-hirelens-001",
-    isAnnouncement: false,
-    createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-    updatedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-    likesCount: 3,
-    commentsCount: 1,
-  }
-]);
-
-let memoryLikes: Array<{ id: string; postId: string; profileId: string; createdAt: string }> = (g.__cxa_likes = g.__cxa_likes || [
-  { id: "like-1", postId: "post-001", profileId: "profile-deepak-002", createdAt: "2026-02-21T10:00:00Z" },
-  { id: "like-2", postId: "post-001", profileId: "profile-aakash-004", createdAt: "2026-02-21T10:05:00Z" },
-]);
-
-let memoryComments: PostComment[] = (g.__cxa_comments = g.__cxa_comments || [
-  {
-    id: "comm-001",
-    postId: "post-001",
-    profileId: "profile-deepak-002",
-    content: "The cyber animations and lighting look incredible. Great job team!",
-    createdAt: new Date(Date.now() - 3600000 * 3).toISOString(),
-    updatedAt: new Date(Date.now() - 3600000 * 3).toISOString(),
-  },
-  {
-    id: "comm-002",
-    postId: "post-002",
-    profileId: "profile-ashu-001",
-    content: "Impressive latency improvements. Approved for production cluster deployment.",
-    createdAt: new Date(Date.now() - 3600000).toISOString(),
-    updatedAt: new Date(Date.now() - 3600000).toISOString(),
-  }
-]);
-
-let memoryInquiries: Inquiry[] = (g.__cxa_inquiries = g.__cxa_inquiries || [
-  {
-    id: "inq-001",
-    referenceId: "CXA-2026-000101",
-    fullName: "Elena Rostova",
-    email: "elena@vortexfintech.io",
-    phone: "+1 415 890 1234",
-    company: "Vortex Financial",
-    projectType: "fullstack",
-    budget: "$15,000 - $30,000",
-    timeline: "2 - 3 Months",
-    message: "We need an algorithmic trading analytics console with sub-millisecond WebSocket data visualization, biometric authentication, and custom risk management models.",
-    status: "NEW",
-    priority: "HIGH",
-    createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-    updatedAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-  }
-]);
-
-let memoryConversations: Conversation[] = (g.__cxa_conversations = g.__cxa_conversations || [
-  {
-    id: "conv-general-001",
-    type: "GROUP",
-    title: "CodeXa General",
-    participantIds: ["profile-ashu-001", "profile-deepak-002", "profile-venu-003", "profile-aakash-004", "profile-karan-005", "profile-sathwik-006"],
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
-  }
-]);
-
-let memoryMessages: ChatMessage[] = (g.__cxa_messages = g.__cxa_messages || [
-  {
-    id: "msg-001",
-    conversationId: "conv-general-001",
-    senderId: "profile-ashu-001",
-    message: "Welcome to CodeXa Agency internal comms! All client inquiries, project reviews, and team discussions happen here.",
-    isDeleted: false,
-    createdAt: new Date(Date.now() - 3600000 * 8).toISOString(),
-  }
-]);
-
+let memoryProfiles: Profile[] = (g.__cxa_profiles = g.__cxa_profiles || [...DEV_PROFILES]);
+let memoryProjects: Project[] = (g.__cxa_projects = g.__cxa_projects || [...DEV_PROJECTS]);
+let memoryPosts: Post[] = (g.__cxa_posts = g.__cxa_posts || [...DEV_POSTS]);
+let memoryLikes: Array<{ id: string; postId: string; profileId: string; createdAt: string }> = (g.__cxa_likes = g.__cxa_likes || []);
+let memoryComments: PostComment[] = (g.__cxa_comments = g.__cxa_comments || []);
+let memoryInquiries: Inquiry[] = (g.__cxa_inquiries = g.__cxa_inquiries || []);
+let memoryConversations: Conversation[] = (g.__cxa_conversations = g.__cxa_conversations || [...DEV_CONVERSATIONS]);
+let memoryMessages: ChatMessage[] = (g.__cxa_messages = g.__cxa_messages || []);
 let memoryReactions: ChatMessageReaction[] = (g.__cxa_reactions = g.__cxa_reactions || []);
 let memoryConversationMembers: ConversationMember[] = (g.__cxa_conversationMembers = g.__cxa_conversationMembers || []);
-
-let memoryNotifications: NotificationItem[] = (g.__cxa_notifications = g.__cxa_notifications || [
-  {
-    id: "notif-001",
-    userId: "profile-ashu-001",
-    type: "INQUIRY",
-    title: "New Client Application",
-    message: "Elena Rostova submitted a $15k+ project inquiry [CXA-2026-000101].",
-    link: "/owner",
-    isRead: false,
-    createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-  }
-]);
-
+let memoryNotifications: NotificationItem[] = (g.__cxa_notifications = g.__cxa_notifications || []);
 let memoryAuthOtps: AuthOtpRecord[] = (g.__cxa_authOtps = g.__cxa_authOtps || []);
 let memoryMediaAssets: MediaAsset[] = (g.__cxa_mediaAssets = g.__cxa_mediaAssets || []);
-
 let memorySiteSettings: SiteSettings = (g.__cxa_siteSettings = g.__cxa_siteSettings || {
   mainProjectsHomeVisible: true,
   teamProjectsHomeVisible: true,
   updatedAt: new Date().toISOString(),
 });
-
-let memoryAuditLogs: AuditLogItem[] = (g.__cxa_auditLogs = g.__cxa_auditLogs || [
-  {
-    id: "log-001",
-    actorId: "profile-ashu-001",
-    actorName: "Ashu",
-    action: "SYSTEM_INITIALIZED",
-    details: "CodeXa multi-tier agency platform initialized with zero-dummy architecture.",
-    ipAddress: "127.0.0.1",
-    createdAt: "2026-01-01T00:00:00Z",
-  }
-]);
-
-let memoryActivityEvents: ActivityEvent[] = (g.__cxa_activityEvents = g.__cxa_activityEvents || [
-  {
-    id: "act-001",
-    actorId: "profile-ashu-001",
-    actorName: "Ashu",
-    actorUsername: "ashu",
-    actorMediaUrl: "/assets/images/128acbeb739b3eb8bc4d1d9ae15fcfb2.jpg",
-    actionType: "PROJECT_PUBLISHED",
-    targetType: "PROJECT",
-    targetId: "proj-hirelens-001",
-    title: "Ashu published HireLens AI",
-    details: "Autonomous AI Interview & Technical Assessment Agent",
-    link: "/projects/hirelens-ai",
-    createdAt: new Date(Date.now() - 3600000 * 3).toISOString(),
-  },
-  {
-    id: "act-002",
-    actorId: "profile-deepak-002",
-    actorName: "Deepak",
-    actorUsername: "deepak",
-    actorMediaUrl: "/assets/images/415b3c58f0cb648d08ca672322301c18.jpg",
-    actionType: "POST_CREATED",
-    targetType: "POST",
-    targetId: "post-001",
-    title: "Deepak shared a development update",
-    details: "Shipped the ultra-low latency WebSocket chat infrastructure.",
-    link: "/dashboard",
-    createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-  },
-  {
-    id: "act-003",
-    actorId: "profile-ashu-001",
-    actorName: "Ashu",
-    actorUsername: "ashu",
-    actorMediaUrl: "/assets/images/128acbeb739b3eb8bc4d1d9ae15fcfb2.jpg",
-    actionType: "PROFILE_UPDATED",
-    targetType: "PROFILE",
-    targetId: "profile-ashu-001",
-    title: "Ashu updated his profile",
-    details: "Added AI Pipelines & System Architecture competencies.",
-    link: "/team/ashu",
-    createdAt: new Date(Date.now() - 3600000 * 12).toISOString(),
-  },
-  {
-    id: "act-004",
-    actorId: "profile-venu-003",
-    actorName: "Venu",
-    actorUsername: "venu",
-    actorMediaUrl: "/assets/images/2306fc1d8f6ea04d1ddd4ebfafd003f2.jpg",
-    actionType: "MAIN_PROJECT_APPROVED",
-    targetType: "PROJECT",
-    targetId: "proj-hirelens-001",
-    title: "CEO added HireLens AI to Main Projects",
-    details: "Approved for public portfolio spotlight.",
-    link: "/projects/hirelens-ai",
-    createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
-  }
-]);
+let memoryAuditLogs: AuditLogItem[] = (g.__cxa_auditLogs = g.__cxa_auditLogs || []);
+let memoryActivityEvents: ActivityEvent[] = (g.__cxa_activityEvents = g.__cxa_activityEvents || []);
 
 // ─── DATA STORE METHODS ──────────────────────────────────────────────────────
 
