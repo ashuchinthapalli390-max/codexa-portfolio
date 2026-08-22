@@ -1,9 +1,10 @@
 /**
- * Prisma Client singleton for CodeXa Admin System (Prisma 5 + MySQL/Aiven)
+ * Prisma Client singleton for CodeXa Enterprise Platform (Supabase PostgreSQL + PgBouncer)
  *
- * - Prevents multiple instances during Next.js hot-reload in development
- * - In production each serverless function invocation reuses the global instance
- * - Never initialize PrismaClient in browser/client components
+ * - Single shared global singleton across all serverless invocations
+ * - Always preserves globalThis.prisma in all environments (development & production)
+ * - Prevents connection exhaustion & prepared statement collisions (42P05)
+ * - Never initialize PrismaClient in browser/client components or individual route files
  * - DATABASE_URL must never be exposed via NEXT_PUBLIC_ variables
  */
 import { PrismaClient } from "@prisma/client";
@@ -18,6 +19,6 @@ export const db =
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   });
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = db;
-}
+// Always store db in globalThis so serverless function module re-evaluations reuse the exact same client instance
+globalForPrisma.prisma = db;
+
