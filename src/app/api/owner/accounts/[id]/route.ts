@@ -4,7 +4,7 @@
  * DELETE: Owner deletes account.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, revokeAllUserSessions } from "@/lib/auth";
 import { dataStore } from "@/lib/data-store";
 import bcrypt from "bcryptjs";
 import { sendPasswordChangedEmail, sendAccountStatusChangedEmail } from "@/lib/email";
@@ -49,6 +49,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (newPassword && newPassword.length >= 8) {
       updates.passwordHash = await bcrypt.hash(newPassword, 12);
       updates.mustChangePassword = true;
+      // Revoke existing sessions on password reset
+      await revokeAllUserSessions(id);
+    }
+
+    if (isActive === false) {
+      // Revoke all active sessions immediately when account is deactivated
+      await revokeAllUserSessions(id);
     }
 
     const updatedProfile = await dataStore.updateProfile(id, updates);

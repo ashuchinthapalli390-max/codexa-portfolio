@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, revokeAllUserSessions, createSession } from "@/lib/auth";
 import { dataStore } from "@/lib/data-store";
 import { sendPasswordChangedEmail } from "@/lib/email";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
@@ -37,10 +40,16 @@ export async function POST(req: Request) {
       mustChangePassword: false,
     });
 
+    // Revoke all previous sessions
+    await revokeAllUserSessions(user.id);
+
+    // Issue a fresh new session for this current authenticated browser
+    await createSession(user.id);
+
     await dataStore.logAudit({
       action: "PASSWORD_CHANGED",
       actorId: user.id,
-      details: "User updated their account password.",
+      details: "User updated their account password. All previous sessions revoked; current session refreshed.",
     });
 
     if (profile.email) {
@@ -52,7 +61,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      message: "Password updated successfully.",
+      message: "Password updated successfully. Other sessions have been signed out.",
     });
 
   } catch (error: any) {

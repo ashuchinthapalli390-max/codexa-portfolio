@@ -22,7 +22,8 @@ import {
   X,
   Sparkles,
   CheckCircle2,
-  ArrowRight
+  ArrowRight,
+  LogOut
 } from "lucide-react";
 import { TeamCoreShell } from "@/components/layout/TeamCoreShell";
 import { modalDialogVariants, buttonHoverVariants, errorShakeVariants } from "@/lib/motion";
@@ -41,6 +42,10 @@ export default function SecuritySettingsPage() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordFeedback, setPasswordFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+
+  // Active sessions state
+  const [revokeAllLoading, setRevokeAllLoading] = useState(false);
+  const [revokeFeedback, setRevokeFeedback] = useState<string | null>(null);
 
   // 2FA Setup Modal state
   const [setupModalOpen, setSetupModalOpen] = useState(false);
@@ -123,6 +128,28 @@ export default function SecuritySettingsPage() {
       setPasswordFeedback({ type: "error", msg: "Network error updating password." });
     } finally {
       setPasswordLoading(false);
+    }
+  };
+
+  const handleLogoutAllDevices = async () => {
+    if (!confirm("Are you sure you want to log out of all devices? You will be signed out immediately.")) return;
+    setRevokeAllLoading(true);
+    setRevokeFeedback(null);
+    try {
+      const res = await fetch("/api/auth/logout-all", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setRevokeFeedback("All sessions revoked. Redirecting to login...");
+        setTimeout(() => {
+          window.location.href = "/login";
+        }, 800);
+      } else {
+        setRevokeFeedback(data.error || "Failed to revoke sessions.");
+      }
+    } catch {
+      setRevokeFeedback("Network error connecting to security server.");
+    } finally {
+      setRevokeAllLoading(false);
     }
   };
 
@@ -475,6 +502,52 @@ export default function SecuritySettingsPage() {
               {passwordLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save New Password"}
             </button>
           </form>
+        </div>
+
+        {/* ─── 4. ACTIVE SESSIONS & DEVICE SECURITY ─────────────────────────── */}
+        <div className="p-6 sm:p-8 rounded-3xl bg-[#090909] border border-crimson/20 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2.5 mb-1">
+                <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                <h3 className="font-orbitron font-bold text-lg text-white uppercase">Active Sessions & Device Security</h3>
+              </div>
+              <p className="text-xs text-[#888] font-light">
+                Manage your persistent authenticated devices. Sessions remain securely active for 30 days unless explicitly revoked.
+              </p>
+            </div>
+
+            <button
+              onClick={handleLogoutAllDevices}
+              disabled={revokeAllLoading}
+              className="px-5 py-2.5 rounded-xl bg-[#141414] hover:bg-deep-red/30 border border-crimson/40 text-bright-red hover:text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-all flex items-center gap-2"
+            >
+              {revokeAllLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
+              <span>Log Out All Devices</span>
+            </button>
+          </div>
+
+          {revokeFeedback && (
+            <div className="p-3.5 rounded-xl text-xs flex items-center gap-2 bg-deep-red/25 border border-bright-red/60 text-bright-red">
+              <AlertCircle className="w-4 h-4" />
+              <span>{revokeFeedback}</span>
+            </div>
+          )}
+
+          <div className="p-4 rounded-2xl bg-[#0E0E0E] border border-white/5 flex items-center justify-between">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="font-orbitron text-xs font-bold text-white uppercase">Current Browser / Trusted Device</span>
+                <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.2 rounded border border-emerald-500/30">
+                  PERSISTENT SESSION
+                </span>
+              </div>
+              <p className="text-[11px] text-[#666] font-mono">
+                Lifetime: 30 Days (Rolling Renewal Active) &bull; Verified via HttpOnly Cookie
+              </p>
+            </div>
+          </div>
         </div>
 
       </div>

@@ -91,7 +91,7 @@ export async function POST(req: Request) {
     }
 
     // 2FA IS OFF -> INSTANT ACCESS (No email OTP required!)
-    await createSession(profile.id, true);
+    await createSession(profile.id);
 
     await dataStore.updateProfile(profile.id, {
       lastLoginAt: new Date().toISOString(),

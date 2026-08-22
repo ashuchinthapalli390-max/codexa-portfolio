@@ -8,6 +8,7 @@ import { getProfileImageStyle } from "@/lib/profile-media";
 import { LEADERSHIP_DATA } from "@/config/leadershipData";
 import { PfpGalleryModal } from "@/components/ui/PfpGalleryModal";
 import { PfpCropModal } from "@/components/ui/PfpCropModal";
+import { useAuth } from "@/context/AuthContext";
 import "../../globals.css";
 
 interface ProfileItem {
@@ -58,7 +59,7 @@ function TeamProfilesContent() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL"); // ALL, ACTIVE, INACTIVE
   const [visibilityFilter, setVisibilityFilter] = useState("ALL"); // ALL, PUBLIC, HIDDEN
-  const [sessionOwner, setSessionOwner] = useState<any>(null);
+  const { user: sessionOwner, status } = useAuth();
   const [uiState, setUiState] = useState<UIState>("loading");
 
   // Create Modal State
@@ -92,33 +93,32 @@ function TeamProfilesContent() {
   const [resetConfirmProfile, setResetConfirmProfile] = useState<ProfileItem | null>(null);
 
   const loadData = () => {
-    fetch("/api/session")
+    fetch("/api/admin/team")
       .then((r) => r.json())
-      .then((data) => {
-        if (!data.authenticated || data.user.role !== "OWNER") {
-          router.replace("/login");
-          return;
+      .then((teamData) => {
+        if (teamData.success) {
+          setProfiles(teamData.profiles);
+          setUiState("idle");
+        } else {
+          setUiState("error");
         }
-        setSessionOwner(data.user);
-
-        fetch("/api/admin/team")
-          .then((r) => r.json())
-          .then((teamData) => {
-            if (teamData.success) {
-              setProfiles(teamData.profiles);
-              setUiState("idle");
-            } else {
-              setUiState("error");
-            }
-          })
-          .catch(() => setUiState("error"));
       })
-      .catch(() => router.replace("/login"));
+      .catch(() => setUiState("error"));
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (status === "unauthenticated") {
+      router.replace("/login?redirect=/admin/team-profiles");
+      return;
+    }
+    if (status === "authenticated" && sessionOwner) {
+      if (sessionOwner.role !== "OWNER") {
+        router.replace("/dashboard");
+        return;
+      }
+      loadData();
+    }
+  }, [status, sessionOwner, router]);
 
   // Filter only Core Team profiles client-side
   useEffect(() => {

@@ -23,9 +23,10 @@ import {
 import { TeamCoreShell } from "@/components/layout/TeamCoreShell";
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
 import { Post, PostComment, Project, ActivityEvent } from "@/lib/data-store";
+import { useAuth } from "@/context/AuthContext";
 
 export default function SocialFeedPage() {
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const { user: currentUser } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
   const [myProjects, setMyProjects] = useState<Project[]>([]);
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
@@ -49,16 +50,10 @@ export default function SocialFeedPage() {
   const [commentInputs, setCommentInputs] = useState<{ [postId: string]: string }>({});
 
   useEffect(() => {
-    fetch("/api/session")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.authenticated && data.user) {
-          setCurrentUser(data.user);
-          loadFeedData(data.user);
-        }
-      })
-      .catch(() => {});
-  }, []);
+    if (currentUser) {
+      loadFeedData(currentUser);
+    }
+  }, [currentUser]);
 
   const loadFeedData = (user: any) => {
     setLoading(true);

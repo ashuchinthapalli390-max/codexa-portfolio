@@ -18,8 +18,10 @@ import {
 import { TeamCoreShell } from "@/components/layout/TeamCoreShell";
 import { Project, Profile } from "@/lib/data-store";
 
+import { useAuth } from "@/context/AuthContext";
+
 export default function MyProjectsPage() {
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const { user: currentUser } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [teamMembers, setTeamMembers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,16 +45,10 @@ export default function MyProjectsPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetch("/api/session")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.authenticated && data.user) {
-          setCurrentUser(data.user);
-          loadProjects(data.user.id);
-        }
-      })
-      .catch(() => {});
-  }, []);
+    if (currentUser?.id) {
+      loadProjects(currentUser.id);
+    }
+  }, [currentUser]);
 
   const loadProjects = (userId: string) => {
     setLoading(true);

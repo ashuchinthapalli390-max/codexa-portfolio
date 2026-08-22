@@ -116,12 +116,16 @@ model ProfileLink {
 
 // ─── SESSION STORE ────────────────────────────────────────────────────────────
 model Session {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   userId           String
-  sessionTokenHash String   @unique
+  sessionTokenHash String    @unique
   expiresAt        DateTime
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  lastSeenAt       DateTime? @default(now())
+  revokedAt        DateTime?
+  userAgent        String?
+  ipHash           String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

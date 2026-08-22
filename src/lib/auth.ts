@@ -1,119 +1,119 @@
 /**
- * Database-backed Session Authentication Utilities for CodeXa
- * Uses crypto-secure tokens, SHA-256 hashes, and HTTP-only cookies.
+ * Database-backed Persistent Session Authentication for CodeXa Agency
+ *
+ * Security Architecture:
+ * - 30-day persistent session backed by PostgreSQL
+ * - Cryptographically random 32-byte session tokens
+ * - Database stores ONLY SHA-256 token hashes (never raw tokens)
+ * - Raw token sent ONLY via HttpOnly, Secure, SameSite=Lax cookie (`cxa_session`)
+ * - Rolling renewal (extends when <15 days remain)
+ * - Throttled activity tracking (lastSeenAt updated at most once every 5 minutes)
+ * - Explicit session revocation on logout, password change, account disable, or remote logout
  */
 import crypto from "crypto";
 import { cookies } from "next/headers";
 import { db } from "@/lib/db";
 import { dataStore } from "@/lib/data-store";
 
-const COOKIE_NAME = "cxa_session";
-const SESSION_MAX_AGE_DEFAULT = 60 * 60 * 8; // 8 hours
-const SESSION_MAX_AGE_REMEMBER = 60 * 60 * 24 * 7; // 7 days
+export const COOKIE_NAME = "cxa_session";
+export const SESSION_DURATION_DAYS = 30;
+export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * SESSION_DURATION_DAYS; // 30 days = 2,592,000s
+export const ROLLING_RENEWAL_THRESHOLD_SECONDS = 60 * 60 * 24 * 15; // 15 days = 1,296,000s
+export const LAST_SEEN_THROTTLE_MS = 1000 * 60 * 5; // 5 minutes
 
 export interface AuthenticatedUser {
   id: string;
   username: string | null;
   email: string | null;
-  role: string;
+  role: "OWNER" | "ADMIN" | "TEAM_MEMBER" | string;
   isActive: boolean;
   displayName: string;
   mediaUrl: string | null;
+  leadershipPosition?: string | null;
+  primaryRole?: string | null;
 }
 
+export interface SessionInfo {
+  id: string;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  userAgent?: string | null;
+  isCurrent: boolean;
+}
+
+/**
+ * Generates a cryptographically secure random session token (32 bytes = 64 hex chars).
+ */
 export function generateSessionToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
+/**
+ * Computes SHA-256 hash of a session token for safe storage and lookup.
+ */
 export function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-export async function createSession(userId: string, rememberDevice: boolean = true): Promise<string> {
+/**
+ * Creates a persistent 30-day database session and writes the HttpOnly cookie.
+ */
+export async function createSession(
+  userId: string,
+  metadata?: { userAgent?: string; ip?: string }
+): Promise<string> {
   const token = generateSessionToken();
   const hash = hashToken(token);
-  
-  const maxAge = rememberDevice ? SESSION_MAX_AGE_REMEMBER : SESSION_MAX_AGE_DEFAULT;
-  const expiresAt = new Date(Date.now() + maxAge * 1000);
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + SESSION_MAX_AGE_SECONDS * 1000);
 
-  // Store in PostgreSQL database
+  // Store hashed session in PostgreSQL
   await db.session.create({
     data: {
       userId,
       sessionTokenHash: hash,
       expiresAt,
+      lastSeenAt: now,
+      revokedAt: null,
+      userAgent: metadata?.userAgent?.slice(0, 255) || null,
+      ipHash: metadata?.ip ? hashToken(metadata.ip) : null,
     },
   });
 
   // Write secure HTTP-only cookie
-  const cookieStore = cookies();
-  cookieStore.set(COOKIE_NAME, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge,
-  });
+  try {
+    const cookieStore = cookies();
+    cookieStore.set(COOKIE_NAME, token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: SESSION_MAX_AGE_SECONDS,
+    });
+  } catch (err) {
+    // In edge cases where cookies() is called outside request scope
+    console.error("[createSession cookieStore.set]", err);
+  }
 
   return token;
 }
 
-export async function destroySession(token: string): Promise<void> {
-  const hash = hashToken(token);
-
-  try {
-    await db.session.deleteMany({
-      where: { sessionTokenHash: hash },
-    });
-  } catch {
-    // Ignore if already deleted
-  }
-
-  // Clear cookie
-  const cookieStore = cookies();
-  cookieStore.set(COOKIE_NAME, "", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 0,
-  });
-}
-
+/**
+ * Validates a session token from the database, applies rolling renewal if needed,
+ * and returns the authenticated user payload.
+ */
 export async function validateSession(rawToken: string): Promise<AuthenticatedUser | null> {
-  if (!rawToken) return null;
+  if (!rawToken || typeof rawToken !== "string") return null;
 
-  let token = rawToken;
+  let token = rawToken.trim();
   try {
-    token = decodeURIComponent(rawToken);
+    token = decodeURIComponent(token);
   } catch {}
 
-  // Support JSON-encoded session cookie from 2-Stage OTP verification
-  if (token.startsWith("{") && token.endsWith("}")) {
-    try {
-      const parsed = JSON.parse(token);
-      if (parsed.id) {
-        const profile = await dataStore.getProfileById(parsed.id);
-        if (profile && profile.isActive) {
-          return {
-            id: profile.id,
-            username: profile.username,
-            email: profile.email,
-            role: profile.role,
-            isActive: profile.isActive,
-            displayName: profile.displayName,
-            mediaUrl: profile.mediaUrl ?? null,
-          };
-        }
-      }
-    } catch {
-      // ignore JSON parse error
-    }
-  }
-
   const hash = hashToken(token);
+  const now = new Date();
 
-  // Validate from PostgreSQL DB
   try {
     const session = await db.session.findUnique({
       where: { sessionTokenHash: hash },
@@ -126,37 +126,178 @@ export async function validateSession(rawToken: string): Promise<AuthenticatedUs
       },
     });
 
-    if (session) {
-      if (new Date() > session.expiresAt) {
-        await db.session.delete({ where: { id: session.id } }).catch(() => {});
-        return null;
-      }
-      if (!session.user.isActive) return null;
+    if (!session) return null;
 
-      return {
-        id: session.user.id,
-        username: session.user.username ?? null,
-        email: session.user.email ?? null,
-        role: session.user.role,
-        isActive: session.user.isActive,
-        displayName: session.user.profile?.displayName ?? session.user.username ?? session.user.email ?? session.user.id,
-        mediaUrl: session.user.profile?.mediaUrl ?? null,
-      };
+    // Check if session has been revoked
+    if (session.revokedAt) {
+      return null;
     }
+
+    // Check if session has expired
+    if (now > session.expiresAt) {
+      await db.session.delete({ where: { id: session.id } }).catch(() => {});
+      return null;
+    }
+
+    // Check if user is active
+    if (!session.user.isActive) {
+      return null;
+    }
+
+    // Rolling session renewal: if fewer than 15 days remain, extend by 30 days
+    const remainingMs = session.expiresAt.getTime() - now.getTime();
+    const shouldRenew = remainingMs < ROLLING_RENEWAL_THRESHOLD_SECONDS * 1000;
+    const shouldUpdateLastSeen =
+      !session.lastSeenAt || now.getTime() - session.lastSeenAt.getTime() > LAST_SEEN_THROTTLE_MS;
+
+    if (shouldRenew || shouldUpdateLastSeen) {
+      const newExpiresAt = shouldRenew
+        ? new Date(now.getTime() + SESSION_MAX_AGE_SECONDS * 1000)
+        : session.expiresAt;
+
+      await db.session.update({
+        where: { id: session.id },
+        data: {
+          expiresAt: newExpiresAt,
+          lastSeenAt: now,
+        },
+      }).catch(() => {});
+
+      if (shouldRenew) {
+        try {
+          const cookieStore = cookies();
+          cookieStore.set(COOKIE_NAME, token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            path: "/",
+            maxAge: SESSION_MAX_AGE_SECONDS,
+          });
+        } catch {}
+      }
+    }
+
+    return {
+      id: session.user.id,
+      username: session.user.username ?? null,
+      email: session.user.email ?? null,
+      role: session.user.role,
+      isActive: session.user.isActive,
+      displayName:
+        session.user.profile?.displayName ??
+        session.user.fullName ??
+        session.user.username ??
+        session.user.email ??
+        "Member",
+      mediaUrl: session.user.profile?.mediaUrl ?? null,
+      leadershipPosition: session.user.profile?.leadershipPosition ?? null,
+      primaryRole: session.user.profile?.primaryRole ?? null,
+    };
   } catch (err) {
     console.error("[validateSession Error]", err);
+    return null;
+  }
+}
+
+/**
+ * Returns the currently authenticated user from the request's `cxa_session` cookie.
+ */
+export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
+  try {
+    const cookieStore = cookies();
+    const token = cookieStore.get(COOKIE_NAME)?.value;
+    if (!token) return null;
+    return validateSession(token);
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
+ * Destroys a single session by token and clears the `cxa_session` cookie.
+ */
+export async function destroySession(token?: string): Promise<void> {
+  let sessionToken = token;
+  try {
+    if (!sessionToken) {
+      const cookieStore = cookies();
+      sessionToken = cookieStore.get(COOKIE_NAME)?.value;
+    }
+  } catch {}
+
+  if (sessionToken) {
+    const hash = hashToken(sessionToken);
+    try {
+      await db.session.updateMany({
+        where: { sessionTokenHash: hash },
+        data: { revokedAt: new Date() },
+      });
+    } catch {
+      // Ignore if session already gone
+    }
   }
 
-  return null;
+  // Clear cookie
+  try {
+    const cookieStore = cookies();
+    cookieStore.set(COOKIE_NAME, "", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 0,
+    });
+  } catch {}
 }
 
-export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
-  const cookieStore = cookies();
-  const token = cookieStore.get(COOKIE_NAME)?.value;
-  if (!token) return null;
-  return validateSession(token);
+/**
+ * Revokes all active sessions for a user (e.g. on password change, password reset, account disable, or "Log Out All Devices").
+ */
+export async function revokeAllUserSessions(userId: string): Promise<void> {
+  try {
+    await db.session.updateMany({
+      where: {
+        userId,
+        revokedAt: null,
+      },
+      data: {
+        revokedAt: new Date(),
+      },
+    });
+  } catch (err) {
+    console.error("[revokeAllUserSessions Error]", err);
+  }
 }
 
+/**
+ * Returns a list of active sessions for a user.
+ */
+export async function getUserActiveSessions(userId: string, currentToken?: string): Promise<SessionInfo[]> {
+  const currentHash = currentToken ? hashToken(currentToken) : null;
+  const now = new Date();
+
+  const sessions = await db.session.findMany({
+    where: {
+      userId,
+      revokedAt: null,
+      expiresAt: { gt: now },
+    },
+    orderBy: { lastSeenAt: "desc" },
+  });
+
+  return sessions.map((s) => ({
+    id: s.id,
+    createdAt: s.createdAt.toISOString(),
+    lastSeenAt: (s.lastSeenAt || s.createdAt).toISOString(),
+    expiresAt: s.expiresAt.toISOString(),
+    userAgent: s.userAgent || "Unknown Device",
+    isCurrent: s.sessionTokenHash === currentHash,
+  }));
+}
+
+/**
+ * Audit log helper
+ */
 export async function logProfileAction(
   actorUserId: string | null,
   targetUserId: string | null,

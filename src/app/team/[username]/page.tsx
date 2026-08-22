@@ -43,13 +43,15 @@ import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
 import { CodeXaMediaSelectorModal } from "@/components/ui/CodeXaMediaSelectorModal";
 import { Profile, Project, Post } from "@/lib/data-store";
 import { tabTransitionVariants, cardRevealVariants, buttonHoverVariants } from "@/lib/motion";
+import { useAuth } from "@/context/AuthContext";
 
-type TabType = "about" | "expertise" | "systems" | "projects" | "posts";
+type TabType = "about" | "expertise" | "systems" | "projects" | "builds" | "posts";
 
-export default function MemberProfilePage() {
+export default function DedicatedTeamProfilePage() {
   const params = useParams();
   const router = useRouter();
   const username = params?.username as string;
+  const { user: currentSessionUser } = useAuth();
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [stats, setStats] = useState({ projectsCount: 0, postsCount: 0, collabCount: 0 });
@@ -57,9 +59,6 @@ export default function MemberProfilePage() {
   const [collabProjects, setCollabProjects] = useState<Project[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Active viewer session & role
-  const [currentSessionUser, setCurrentSessionUser] = useState<any>(null);
 
   // UI state
   const [activeTab, setActiveTab] = useState<TabType>("about");
@@ -85,18 +84,6 @@ export default function MemberProfilePage() {
   const [newProjectCategory, setNewProjectCategory] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
-
-  // 1. Fetch Session & Profile Data
-  useEffect(() => {
-    fetch("/api/session")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.authenticated && data.user) {
-          setCurrentSessionUser(data.user);
-        }
-      })
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     if (!username) return;

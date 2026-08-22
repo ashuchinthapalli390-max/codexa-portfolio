@@ -21,9 +21,10 @@ import { ActivityEvent, Post, Project, Profile } from "@/lib/data-store";
 import { DashboardStatSkeleton, FeedSkeleton } from "@/components/ui/Skeletons";
 import { staggerContainer, staggerItem, cardRevealVariants, buttonHoverVariants, buttonPressVariants } from "@/lib/motion";
 import { MotionNumber } from "@/components/motion/MotionNumber";
+import { useAuth } from "@/context/AuthContext";
 
 export default function DashboardOverviewPage() {
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const { user: currentUser } = useAuth();
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
   const [latestPosts, setLatestPosts] = useState<Post[]>([]);
   const [myProjects, setMyProjects] = useState<Project[]>([]);
@@ -31,16 +32,10 @@ export default function DashboardOverviewPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/session")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.authenticated && data.user) {
-          setCurrentUser(data.user);
-          loadDashboardData(data.user);
-        }
-      })
-      .catch(() => {});
-  }, []);
+    if (currentUser) {
+      loadDashboardData(currentUser);
+    }
+  }, [currentUser]);
 
   const loadDashboardData = (user: any) => {
     setLoading(true);

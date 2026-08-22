@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState, useEffect, useRef, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
@@ -25,9 +25,13 @@ import {
 } from "lucide-react";
 import { CyberWebOverlay } from "@/components/ui/CyberWebOverlay";
 import { errorShakeVariants, digitPopVariants, modalDialogVariants, buttonHoverVariants } from "@/lib/motion";
+import { useAuth } from "@/context/AuthContext";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectParam = searchParams?.get("redirect");
+  const { user, status, refreshSession } = useAuth();
 
   // Stage: "credentials" | "2fa" | "forgot-password"
   const [authStage, setAuthStage] = useState<"credentials" | "2fa" | "forgot-password">("credentials");
@@ -86,6 +90,23 @@ export default function LoginPage() {
     return () => clearInterval(interval);
   }, [forgotResendCooldown]);
 
+  // Check if session already exists
+  useEffect(() => {
+    if (status === "authenticated" && user) {
+      const safeRedirect =
+        redirectParam && redirectParam.startsWith("/") && !redirectParam.startsWith("//")
+          ? redirectParam
+          : user.role === "OWNER"
+          ? "/owner"
+          : "/dashboard";
+
+      const timer = setTimeout(() => {
+        router.replace(safeRedirect);
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [status, user, redirectParam, router]);
+
   const formatCountdown = (seconds: number) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -120,10 +141,16 @@ export default function LoginPage() {
           setAuthStage("2fa");
         } else {
           // 2FA is OFF -> Instant Access!
+          await refreshSession();
           setLoginState("success");
+          const safeRedirect =
+            redirectParam && redirectParam.startsWith("/") && !redirectParam.startsWith("//")
+              ? redirectParam
+              : data.redirectUrl || (data.user?.role === "OWNER" ? "/owner" : "/dashboard");
+
           setTimeout(() => {
-            router.replace(data.redirectUrl || "/dashboard");
-          }, 800);
+            router.replace(safeRedirect);
+          }, 600);
         }
       } else {
         setLoginState("denied");
@@ -202,10 +229,16 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (res.ok && data.success) {
+        await refreshSession();
         setTwoFactorState("success");
+        const safeRedirect =
+          redirectParam && redirectParam.startsWith("/") && !redirectParam.startsWith("//")
+            ? redirectParam
+            : data.redirectUrl || (data.user?.role === "OWNER" ? "/owner" : "/dashboard");
+
         setTimeout(() => {
-          router.replace(data.redirectUrl || "/dashboard");
-        }, 850);
+          router.replace(safeRedirect);
+        }, 600);
       } else {
         setTwoFactorState("error");
         setTwoFactorError(data.error || "Verification failed.");
@@ -335,6 +368,57 @@ export default function LoginPage() {
       setForgotLoading(false);
     }
   };
+
+  if (status === "authenticated" && user) {
+    return (
+      <div className="relative min-h-screen bg-[#070707] text-white flex flex-col justify-between overflow-hidden">
+        <CyberWebOverlay />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[500px] bg-crimson/8 rounded-full blur-[160px] pointer-events-none" />
+
+        <header className="relative z-20 px-6 py-6 max-w-7xl mx-auto w-full flex justify-between items-center">
+          <Link href="/" className="flex items-center gap-2 group">
+            <div className="p-2 rounded bg-deep-red/30 border border-crimson/30 group-hover:border-bright-red/50 transition-all duration-300">
+              <Shield className="w-5 h-5 text-bright-red" />
+            </div>
+            <span className="font-orbitron font-black text-sm tracking-[0.2em] text-white">
+              CODEXA <span className="text-crimson text-xs font-normal">GATEWAY</span>
+            </span>
+          </Link>
+        </header>
+
+        <main className="relative z-20 flex items-center justify-center px-4 py-12">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-md p-8 sm:p-10 rounded-3xl bg-[#090909]/95 border border-bright-red/50 shadow-[0_0_50px_rgba(217,4,41,0.25)] text-center space-y-6"
+          >
+            <div className="w-16 h-16 rounded-2xl bg-crimson/20 border border-bright-red flex items-center justify-center mx-auto shadow-[0_0_20px_rgba(217,4,41,0.4)]">
+              <CheckCircle2 className="w-8 h-8 text-bright-red" />
+            </div>
+            <div className="space-y-2">
+              <span className="text-[10px] font-orbitron font-bold uppercase tracking-[0.25em] text-bright-red px-3 py-1 rounded-full bg-crimson/15 border border-crimson/30">
+                CODEXA SECURE SESSION
+              </span>
+              <h2 className="font-orbitron font-black text-xl text-white uppercase tracking-wider">
+                SESSION RESTORED
+              </h2>
+              <p className="text-xs text-[#AAAAAA]">
+                Welcome back, <span className="text-white font-semibold">{user.displayName || `@${user.username}`}</span>.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-2 text-[11px] font-mono text-[#777777]">
+              <Loader2 className="w-4 h-4 animate-spin text-bright-red" />
+              <span>Redirecting to command center...</span>
+            </div>
+          </motion.div>
+        </main>
+
+        <footer className="relative z-20 px-6 py-6 text-center text-xs text-[#444] font-mono">
+          CodeXa Developer Network &bull; Cryptographically Verified Platform
+        </footer>
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-screen bg-[#070707] text-white flex flex-col justify-between overflow-hidden">
@@ -974,5 +1058,19 @@ export default function LoginPage() {
         CodeXa Developer Network &bull; Cryptographically Verified Platform
       </footer>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#070707] flex items-center justify-center">
+          <Loader2 className="w-8 h-8 text-bright-red animate-spin" />
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

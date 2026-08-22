@@ -21,9 +21,10 @@ import { TeamCoreShell } from "@/components/layout/TeamCoreShell";
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
 import { CodeXaMediaSelectorModal } from "@/components/ui/CodeXaMediaSelectorModal";
 import { Profile } from "@/lib/data-store";
+import { useAuth } from "@/context/AuthContext";
 
 export default function MyProfileEditorPage() {
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const { user: currentUser } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -45,16 +46,10 @@ export default function MyProfileEditorPage() {
   const [feedbackMsg, setFeedbackMsg] = useState("");
 
   useEffect(() => {
-    fetch("/api/session")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.authenticated && data.user) {
-          setCurrentUser(data.user);
-          loadProfileData(data.user.username);
-        }
-      })
-      .catch(() => {});
-  }, []);
+    if (currentUser?.username) {
+      loadProfileData(currentUser.username);
+    }
+  }, [currentUser]);
 
   const loadProfileData = (username: string) => {
     setLoading(true);

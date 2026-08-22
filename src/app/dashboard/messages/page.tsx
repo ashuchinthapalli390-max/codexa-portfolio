@@ -39,6 +39,7 @@ import {
 import { TeamCoreShell } from "@/components/layout/TeamCoreShell";
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
 import { Conversation, ChatMessage, Profile } from "@/lib/data-store";
+import { useAuth } from "@/context/AuthContext";
 
 const QUICK_EMOJIS = ["❤️", "😂", "😮", "😢", "😡", "👍", "🔥", "🚀", "👏", "🎉", "💯", "✨"];
 const REACTION_BAR_EMOJIS = ["❤️", "😂", "😮", "😢", "😡", "👍"];
@@ -52,7 +53,7 @@ function MessagesContent() {
   const targetUsernameParam = searchParams?.get("username");
   const targetConvIdParam = searchParams?.get("conversation");
 
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const { user: currentUser } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvId] = useState<string>("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -96,18 +97,10 @@ function MessagesContent() {
 
   // ── 1. Load Session & Initial Data ──────────────────────────────────────────
   useEffect(() => {
-    fetch("/api/session")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.authenticated && data.user) {
-          setCurrentUser(data.user);
-          loadConversationsAndMembers(data.user.id);
-        } else {
-          router.replace("/login");
-        }
-      })
-      .catch(() => router.replace("/login"));
-  }, [router]);
+    if (currentUser?.id) {
+      loadConversationsAndMembers(currentUser.id);
+    }
+  }, [currentUser]);
 
   const loadConversationsAndMembers = async (userId: string) => {
     setLoading(true);
@@ -877,7 +870,7 @@ function MessagesContent() {
                                 key={rIdx}
                                 onClick={() => handleToggleReaction(msg.id, r.emoji)}
                                 className={`px-2 py-0.5 rounded-full text-[10px] flex items-center gap-1 border transition-all ${
-                                  r.userIds.includes(currentUser?.id)
+                                  r.userIds.includes(currentUser?.id || "")
                                     ? "bg-crimson/20 border-bright-red/50 text-white"
                                     : "bg-[#141414] border-white/10 text-[#AAA]"
                                 }`}

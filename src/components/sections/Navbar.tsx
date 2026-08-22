@@ -8,12 +8,13 @@ import { useScrollSpy } from "@/hooks/useScrollSpy";
 import { NeonButton } from "../ui/NeonButton";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "@/context/AuthContext";
 
 export function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [logoError, setLogoError] = useState(false);
-  const [sessionUser, setSessionUser] = useState<{ role: string; username: string } | null>(null);
+  const { user: sessionUser, authenticated } = useAuth();
   const isReduced = useReducedMotion();
 
   const navItems = [
@@ -43,17 +44,6 @@ export function Navbar() {
 
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
-  useEffect(() => {
-    fetch("/api/session")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.authenticated && data.user) {
-          setSessionUser(data.user);
-        }
-      })
-      .catch(() => {});
   }, []);
 
   const handleNavClick = (id: string) => {

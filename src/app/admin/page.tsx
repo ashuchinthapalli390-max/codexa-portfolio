@@ -24,12 +24,13 @@ import {
 import { TeamCoreShell } from "@/components/layout/TeamCoreShell";
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
 import { Profile, Project, Inquiry, Post } from "@/lib/data-store";
+import { useAuth } from "@/context/AuthContext";
 
 type AdminTab = "overview" | "inquiries" | "projects" | "members" | "feed";
 
 export default function AdminWorkspacePage() {
   const router = useRouter();
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const { user: currentUser, status } = useAuth();
   const [activeTab, setActiveTab] = useState<AdminTab>("overview");
   const [loading, setLoading] = useState(true);
 
@@ -39,13 +40,14 @@ export default function AdminWorkspacePage() {
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
 
-  // Modals & Actions
+  // Member Creation State
   const [newMemberModalOpen, setNewMemberModalOpen] = useState(false);
   const [newMemberData, setNewMemberData] = useState({
     fullName: "",
     username: "",
-    email: "",
     password: "",
+    displayName: "",
+    email: "",
     role: "TEAM_MEMBER",
     headline: "CodeXa Developer",
   });
@@ -55,22 +57,18 @@ export default function AdminWorkspacePage() {
   const [selectedInquiry, setSelectedInquiry] = useState<Inquiry | null>(null);
 
   useEffect(() => {
-    fetch("/api/session")
-      .then((r) => r.json())
-      .then((data) => {
-        if (!data.authenticated || !data.user) {
-          router.replace("/login");
-          return;
-        }
-        if (data.user.role !== "ADMIN" && data.user.role !== "OWNER") {
-          router.replace("/dashboard");
-          return;
-        }
-        setCurrentUser(data.user);
-        loadAdminData();
-      })
-      .catch(() => router.replace("/login"));
-  }, [router]);
+    if (status === "unauthenticated") {
+      router.replace("/login?redirect=/admin");
+      return;
+    }
+    if (status === "authenticated" && currentUser) {
+      if (currentUser.role !== "ADMIN" && currentUser.role !== "OWNER") {
+        router.replace("/dashboard");
+        return;
+      }
+      loadAdminData();
+    }
+  }, [status, currentUser, router]);
 
   const loadAdminData = () => {
     setLoading(true);
@@ -163,6 +161,7 @@ export default function AdminWorkspacePage() {
           setNewMemberData({
             fullName: "",
             username: "",
+            displayName: "",
             email: "",
             password: "",
             role: "TEAM_MEMBER",

@@ -91,7 +91,7 @@ export async function POST(req: Request) {
     await dataStore.consumePreAuthChallenge(challengeId);
 
     // Create session
-    await createSession(profile.id, true);
+    await createSession(profile.id);
 
     await dataStore.updateProfile(profile.id, {
       lastLoginAt: new Date().toISOString(),

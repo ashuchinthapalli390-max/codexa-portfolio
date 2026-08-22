@@ -67,6 +67,7 @@ import {
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
 import { CodeXaMediaSelectorModal } from "@/components/ui/CodeXaMediaSelectorModal";
 import { MotionNumber } from "@/components/motion/MotionNumber";
+import { useAuth } from "@/context/AuthContext";
 
 type OwnerTab = 
   | "overview" 
@@ -199,6 +200,8 @@ function OwnerDashboardContent() {
   });
   const [projectSaving, setProjectSaving] = useState(false);
 
+  const { user: authUser, status: authStatus, logout: authLogout } = useAuth();
+
   // Sync tab from URL query params
   useEffect(() => {
     if (requestedTab) {
@@ -207,31 +210,28 @@ function OwnerDashboardContent() {
   }, [requestedTab]);
 
   useEffect(() => {
-    fetch("/api/session")
-      .then((r) => r.json())
-      .then((data) => {
-        if (!data.authenticated || !data.user) {
-          router.replace("/login");
-          return;
-        }
-        if (data.user.role !== "OWNER") {
-          router.replace("/dashboard");
-          return;
-        }
-        setCurrentUser(data.user);
-        setSelfFormData({
-          displayName: data.user.displayName || "",
-          headline: data.user.headline || "",
-          bio: data.user.bio || "",
-          skillsStr: Array.isArray(data.user.skills) ? data.user.skills.join(", ") : "",
-          githubUrl: data.user.githubUrl || "",
-          linkedinUrl: data.user.linkedinUrl || "",
-          portfolioUrl: data.user.portfolioUrl || "",
-        });
-        loadAllOwnerData();
-      })
-      .catch(() => router.replace("/login"));
-  }, [router]);
+    if (authStatus === "unauthenticated") {
+      router.replace("/login?redirect=/owner");
+      return;
+    }
+    if (authStatus === "authenticated" && authUser) {
+      if (authUser.role !== "OWNER") {
+        router.replace("/dashboard");
+        return;
+      }
+      setCurrentUser(authUser);
+      setSelfFormData({
+        displayName: authUser.displayName || "",
+        headline: (authUser as any).headline || "",
+        bio: (authUser as any).bio || "",
+        skillsStr: Array.isArray((authUser as any).skills) ? (authUser as any).skills.join(", ") : "",
+        githubUrl: (authUser as any).githubUrl || "",
+        linkedinUrl: (authUser as any).linkedinUrl || "",
+        portfolioUrl: (authUser as any).portfolioUrl || "",
+      });
+      loadAllOwnerData();
+    }
+  }, [authStatus, authUser, router]);
 
   const loadAllOwnerData = () => {
     setLoading(true);
@@ -878,9 +878,7 @@ function OwnerDashboardContent() {
               Public Profile <ExternalLink className="w-3.5 h-3.5 text-bright-red" />
             </Link>
             <button
-              onClick={() => {
-                fetch("/api/auth/logout", { method: "POST" }).finally(() => router.replace("/login"));
-              }}
+              onClick={() => authLogout()}
               className="w-full py-2 rounded-xl bg-[#121212] hover:bg-deep-red/40 text-[#AAA] hover:text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5"
             >
               <LogOut className="w-3.5 h-3.5 text-crimson" /> Sign Out

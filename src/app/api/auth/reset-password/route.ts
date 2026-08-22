@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { dataStore } from "@/lib/data-store";
 import { sendPasswordChangedEmail } from "@/lib/email";
+import { revokeAllUserSessions } from "@/lib/auth";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
@@ -96,10 +100,13 @@ export async function POST(req: Request) {
       updatedAt: new Date().toISOString(),
     });
 
+    // Invalidate all existing sessions on all devices for this user
+    await revokeAllUserSessions(profile.id);
+
     await dataStore.logAudit({
       action: "PASSWORD_RESET_COMPLETED",
       actorId: profile.id,
-      details: `Password reset successfully for @${profile.username}`,
+      details: `Password reset successfully for @${profile.username}. All existing sessions revoked.`,
     });
 
     // Dispatch security alert email to user

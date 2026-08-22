@@ -31,6 +31,7 @@ import {
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
 import { isOwner, isCeoOrAdmin } from "@/lib/permissions";
 import { NotificationItem } from "@/lib/data-store";
+import { useAuth } from "@/context/AuthContext";
 
 interface TeamCoreShellProps {
   children: React.ReactNode;
@@ -47,10 +48,7 @@ export function TeamCoreShell({
 }: TeamCoreShellProps) {
   const router = useRouter();
   const pathname = usePathname();
-
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [loadingSession, setLoadingSession] = useState(true);
-  const [sessionError, setSessionError] = useState(false);
+  const { user: currentUser, status, loading: loadingSession, logout } = useAuth();
 
   // Notifications & Messages state
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -63,43 +61,37 @@ export function TeamCoreShell({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
-    fetch("/api/session")
-      .then((r) => r.json())
-      .then((data) => {
-        if (!data.authenticated || !data.user) {
-          router.replace("/login");
-          return;
-        }
-        setCurrentUser(data.user);
-        // Load notifications
-        fetch("/api/notifications")
-          .then((nr) => nr.json())
-          .then((nData) => {
-            if (nData.notifications) setNotifications(nData.notifications);
-            if (nData.unreadCount !== undefined) setUnreadNotifsCount(nData.unreadCount);
-          })
-          .catch(() => {});
+    if (status === "unauthenticated") {
+      const safeRedirect = pathname ? `?redirect=${encodeURIComponent(pathname)}` : "";
+      router.replace(`/login${safeRedirect}`);
+      return;
+    }
 
-        // Load chat conversations to calculate unread DM count
-        fetch("/api/chat/conversations")
-          .then((cr) => cr.json())
-          .then((cData) => {
-            if (cData.conversations) {
-              const totalUnread = cData.conversations.reduce((sum: number, c: any) => sum + (c.unreadCount || 0), 0);
-              setUnreadMessagesCount(totalUnread);
-            }
-          })
-          .catch(() => {});
-      })
-      .catch(() => {
-        setSessionError(true);
-      })
-      .finally(() => setLoadingSession(false));
-  }, [router]);
+    if (status === "authenticated" && currentUser) {
+      // Load notifications
+      fetch("/api/notifications")
+        .then((nr) => nr.json())
+        .then((nData) => {
+          if (nData.notifications) setNotifications(nData.notifications);
+          if (nData.unreadCount !== undefined) setUnreadNotifsCount(nData.unreadCount);
+        })
+        .catch(() => {});
+
+      // Load chat conversations to calculate unread DM count
+      fetch("/api/chat/conversations")
+        .then((cr) => cr.json())
+        .then((cData) => {
+          if (cData.conversations) {
+            const totalUnread = cData.conversations.reduce((sum: number, c: any) => sum + (c.unreadCount || 0), 0);
+            setUnreadMessagesCount(totalUnread);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [status, currentUser, pathname, router]);
 
   const handleLogout = async () => {
-    await fetch("/api/logout", { method: "POST" }).catch(() => {});
-    router.replace("/login");
+    await logout();
   };
 
   const handleMarkNotifsRead = async () => {
@@ -119,22 +111,6 @@ export function TeamCoreShell({
       <div className="min-h-screen bg-[#070707] text-white flex flex-col items-center justify-center space-y-4">
         <div className="w-12 h-12 rounded-full border-2 border-bright-red border-t-transparent animate-spin" />
         <p className="font-orbitron text-xs text-[#888] uppercase tracking-widest">Entering CodeXa Team Core...</p>
-      </div>
-    );
-  }
-
-  if (sessionError) {
-    return (
-      <div className="min-h-screen bg-[#070707] text-white flex flex-col items-center justify-center space-y-4 p-6 text-center">
-        <AlertCircle className="w-12 h-12 text-bright-red" />
-        <h2 className="font-orbitron font-black text-xl text-white uppercase">Unable to Load Workspace</h2>
-        <p className="text-xs text-[#888] max-w-sm">Please check your connection and authenticate your session.</p>
-        <button
-          onClick={() => window.location.reload()}
-          className="px-6 py-2.5 rounded-xl bg-crimson font-orbitron text-xs font-bold uppercase tracking-wider text-white"
-        >
-          Retry Connection
-        </button>
       </div>
     );
   }

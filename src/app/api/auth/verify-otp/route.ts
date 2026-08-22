@@ -31,7 +31,7 @@ export async function POST(req: Request) {
 
     if (purpose === "LOGIN") {
       // Create authenticated DB session + cookie
-      await createSession(profile.id, true);
+      await createSession(profile.id);
 
       const sessionData = {
         id: profile.id,
