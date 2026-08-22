@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, Suspense } from "react";
+import React, { useState, useEffect, useRef, useMemo, Suspense, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
@@ -20,26 +20,23 @@ import {
   Edit3,
   Trash2,
   Reply,
-  Copy,
   ExternalLink,
   Info,
   Heart,
-  MoreVertical,
   ChevronDown,
   AlertCircle,
-  Sparkles,
   Loader2,
   FolderKanban,
-  Bell,
-  BellOff,
   Grid,
-  ChevronRight,
-  Download
+  RotateCcw,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { TeamCoreShell } from "@/components/layout/TeamCoreShell";
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
 import { Conversation, ChatMessage, Profile } from "@/lib/data-store";
 import { useAuth } from "@/context/AuthContext";
+import { subscribeToConversationRealtime } from "@/lib/chat-realtime";
 
 const QUICK_EMOJIS = ["❤️", "😂", "😮", "😢", "😡", "👍", "🔥", "🚀", "👏", "🎉", "💯", "✨"];
 const REACTION_BAR_EMOJIS = ["❤️", "😂", "😮", "😢", "😡", "👍"];
@@ -60,6 +57,7 @@ function MessagesContent() {
   const [teamMembers, setTeamMembers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [messagesLoading, setMessagesLoading] = useState(false);
+  const [realtimeStatus, setRealtimeStatus] = useState<"CONNECTED" | "CONNECTING" | "DISCONNECTED">("CONNECTING");
 
   // Search & Filter
   const [categoryTab, setCategoryTab] = useState<CategoryTab>("ALL");
@@ -69,7 +67,6 @@ function MessagesContent() {
 
   // Chat Details Drawer
   const [chatDetailsOpen, setChatDetailsOpen] = useState(false);
-  const [detailsTab, setDetailsTab] = useState<"INFO" | "MEDIA">("INFO");
 
   // Composer States
   const [messageText, setMessageText] = useState("");
@@ -88,26 +85,64 @@ function MessagesContent() {
   // New Messages Floating Scroll Pill
   const [showScrollBottom, setShowScrollBottom] = useState(false);
 
-  // Refs
+  // In-Memory Client-Side Cache (conversationId -> messages)
+  const conversationMessagesCache = useRef<Map<string, ChatMessage[]>>(new Map());
+
+  // Refs for State and Cleanup
   const messageStreamRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const activeConvIdRef = useRef<string>("");
+  const messagesRef = useRef<ChatMessage[]>([]);
+  const isSyncingDeltaRef = useRef<boolean>(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const markReadTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const teamMembersMap = useRef<Map<string, Profile>>(new Map());
 
-  // ── 1. Load Session & Initial Data ──────────────────────────────────────────
+  activeConvIdRef.current = activeConvId;
+  messagesRef.current = messages;
+
+  // Keep cache updated with latest state
+  useEffect(() => {
+    if (activeConvId && messages.length > 0) {
+      conversationMessagesCache.current.set(activeConvId, messages);
+    }
+  }, [activeConvId, messages]);
+
+  // ── Debounced Mark Read Helper ──────────────────────────────────────────────
+  const triggerDebouncedMarkRead = useCallback((convId: string) => {
+    if (markReadTimerRef.current) clearTimeout(markReadTimerRef.current);
+    markReadTimerRef.current = setTimeout(() => {
+      if (!document.hidden && activeConvIdRef.current === convId) {
+        fetch("/api/chat/read", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conversationId: convId }),
+          cache: "no-store",
+        }).catch(() => {});
+
+        // Reset unread count in conversations state
+        setConversations((prev) =>
+          prev.map((c) => (c.id === convId ? { ...c, unreadCount: 0 } : c))
+        );
+      }
+    }, 600);
+  }, []);
+
+  // ── 1. Load Initial Conversations & Team Directory ──────────────────────────
   useEffect(() => {
     if (currentUser?.id) {
-      loadConversationsAndMembers(currentUser.id);
+      loadInitialData(currentUser.id);
     }
   }, [currentUser]);
 
-  const loadConversationsAndMembers = async (userId: string) => {
+  const loadInitialData = async (userId: string) => {
     setLoading(true);
     try {
       const [convRes, teamRes] = await Promise.all([
-        fetch("/api/chat/conversations").then((r) => r.json()),
-        fetch("/api/team/public").then((r) => r.json()),
+        fetch("/api/chat/conversations", { cache: "no-store" }).then((r) => r.json()),
+        fetch("/api/team/public", { cache: "no-store" }).then((r) => r.json()),
       ]);
 
       const convList: Conversation[] = convRes.conversations || [];
@@ -115,25 +150,48 @@ function MessagesContent() {
 
       const membersList: Profile[] = (teamRes.profiles || []).filter((p: Profile) => p.id !== userId);
       setTeamMembers(membersList);
+      membersList.forEach((m) => teamMembersMap.current.set(m.id, m));
 
-      // Check if target user param was passed in URL (?user=... or ?username=...)
+      // Handle query param routing (?user=... or ?conversation=...)
       if (targetUserIdParam || targetUsernameParam) {
         const targetIdentifier = targetUserIdParam || targetUsernameParam!;
         await handleOpenDirectChatWithUser(targetIdentifier, convList);
       } else if (targetConvIdParam) {
         const targetConv = convList.find((c) => c.id === targetConvIdParam);
         if (targetConv) {
-          setActiveConvId(targetConv.id);
-          loadMessages(targetConv.id);
+          switchActiveConversation(targetConv.id);
         }
       } else if (convList.length > 0) {
-        setActiveConvId(convList[0].id);
-        loadMessages(convList[0].id);
+        switchActiveConversation(convList[0].id);
       }
     } catch (err) {
       console.error("[Messages] Load Error:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ── Switch Conversation with In-Memory Cache ───────────────────────────────
+  const switchActiveConversation = (convId: string) => {
+    if (activeConvId === convId) return;
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+
+    setActiveConvId(convId);
+    setSendError(null);
+    setReplyingTo(null);
+    setEditingMessage(null);
+
+    const cached = conversationMessagesCache.current.get(convId);
+    if (cached && cached.length > 0) {
+      setMessages(cached);
+      // Background sync delta
+      syncDeltaMessages(convId);
+    } else {
+      loadFullMessages(convId);
     }
   };
 
@@ -144,6 +202,7 @@ function MessagesContent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ recipientId: targetIdOrUsername }),
+        cache: "no-store",
       });
       const data = await res.json();
       if (res.ok && data.success && data.conversation) {
@@ -154,8 +213,7 @@ function MessagesContent() {
           }
           return prev;
         });
-        setActiveConvId(newConv.id);
-        loadMessages(newConv.id);
+        switchActiveConversation(newConv.id);
         setNewMsgModalOpen(false);
         setTimeout(() => textareaRef.current?.focus(), 150);
       }
@@ -164,48 +222,196 @@ function MessagesContent() {
     }
   };
 
-  // ── 3. Load Messages for Active Conversation ────────────────────────────────
-  const loadMessages = async (convId: string, isSilent = false) => {
-    if (!isSilent) setMessagesLoading(true);
+  // ── 3. Full Message Loader for Initial Open ─────────────────────────────────
+  const loadFullMessages = async (convId: string) => {
+    setMessagesLoading(true);
     try {
-      const res = await fetch(`/api/chat/messages?conversationId=${convId}`);
+      const res = await fetch(`/api/chat/messages?conversationId=${convId}&limit=50`, {
+        signal: abortControllerRef.current?.signal,
+        cache: "no-store",
+      });
       const data = await res.json();
       if (res.ok && data.success && data.messages) {
         setMessages(data.messages);
-        // Mark as read
-        fetch("/api/chat/read", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ conversationId: convId }),
-        }).catch(() => {});
-
-        // Reset unread count locally
-        setConversations((prev) =>
-          prev.map((c) => (c.id === convId ? { ...c, unreadCount: 0 } : c))
-        );
+        conversationMessagesCache.current.set(convId, data.messages);
+        triggerDebouncedMarkRead(convId);
       }
-    } catch (err) {
-      console.error("[loadMessages]", err);
+    } catch (err: any) {
+      if (err.name !== "AbortError") {
+        console.error("[loadFullMessages]", err);
+      }
     } finally {
-      if (!isSilent) setMessagesLoading(false);
+      setMessagesLoading(false);
     }
   };
 
-  // ── 4. Polling Live Updates (every 2.5s) ─────────────────────────────────────
+  // ── 4. Delta Synchronization (Returns only new messages) ────────────────────
+  const syncDeltaMessages = async (convId: string) => {
+    if (isSyncingDeltaRef.current || activeConvIdRef.current !== convId) return;
+    isSyncingDeltaRef.current = true;
+
+    try {
+      const currentList = messagesRef.current;
+      const latestMsg = currentList[currentList.length - 1];
+      const afterQuery =
+        latestMsg && latestMsg.createdAt && !latestMsg.id.startsWith("temp-")
+          ? `&after=${encodeURIComponent(latestMsg.createdAt)}`
+          : "";
+
+      const res = await fetch(`/api/chat/messages?conversationId=${convId}${afterQuery}`, {
+        cache: "no-store",
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success && Array.isArray(data.messages) && data.messages.length > 0) {
+        if (activeConvIdRef.current !== convId) return;
+
+        setMessages((prev) => {
+          const existingIds = new Set(prev.map((m) => m.id));
+          const existingClientIds = new Set(prev.map((m) => m.clientId).filter(Boolean));
+          const newItems: ChatMessage[] = [];
+
+          for (const incoming of data.messages) {
+            if (incoming.clientId && existingClientIds.has(incoming.clientId)) {
+              continue;
+            }
+            if (!existingIds.has(incoming.id)) {
+              newItems.push(incoming);
+            }
+          }
+
+          if (newItems.length === 0) return prev;
+          return [...prev, ...newItems];
+        });
+
+        // If incoming messages include messages from others, debounced mark as read
+        const hasIncomingFromOther = data.messages.some((m: ChatMessage) => m.senderId !== currentUser?.id);
+        if (hasIncomingFromOther) {
+          triggerDebouncedMarkRead(convId);
+        }
+      }
+    } catch (err) {
+      // Silent delta recovery
+    } finally {
+      isSyncingDeltaRef.current = false;
+    }
+  };
+
+  // ── 5. Realtime Pub/Sub Channel & Fallback Delta Poller ──────────────────────
   useEffect(() => {
-    if (!activeConvId) return;
+    if (!activeConvId || !currentUser) return;
 
-    loadMessages(activeConvId);
+    // A. Subscribe to Realtime Supabase Channel
+    const unsubscribe = subscribeToConversationRealtime({
+      conversationId: activeConvId,
+      onMessageInsert: (rawMsg) => {
+        const sender =
+          teamMembersMap.current.get(rawMsg.senderId) ||
+          (rawMsg.senderId === currentUser.id ? currentUser : undefined);
 
-    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-    pollTimerRef.current = setInterval(() => {
-      loadMessages(activeConvId, true);
-    }, 2500);
+        const newMsg: ChatMessage = {
+          id: rawMsg.id,
+          conversationId: rawMsg.conversationId,
+          senderId: rawMsg.senderId,
+          clientId: rawMsg.clientId,
+          message: rawMsg.isDeleted ? "Message unsent" : rawMsg.message,
+          fileUrl: rawMsg.fileUrl,
+          fileName: rawMsg.fileName,
+          isDeleted: rawMsg.isDeleted,
+          replyToId: rawMsg.replyToId,
+          createdAt: rawMsg.createdAt,
+          updatedAt: rawMsg.updatedAt,
+          sendStatus: "sent",
+          sender: sender
+            ? {
+                id: sender.id,
+                username: sender.username || "user",
+                displayName: (sender as any).displayName || sender.username || "User",
+                mediaUrl: (sender as any).mediaUrl || null,
+                role: sender.role,
+              }
+            : undefined,
+          reactions: [],
+        };
+
+        setMessages((prev) => {
+          // Replace matching optimistic message by clientId or temp ID
+          if (newMsg.clientId && prev.some((m) => m.clientId === newMsg.clientId)) {
+            return prev.map((m) => (m.clientId === newMsg.clientId ? newMsg : m));
+          }
+          if (prev.some((m) => m.id === newMsg.id)) {
+            return prev.map((m) => (m.id === newMsg.id ? newMsg : m));
+          }
+          return [...prev, newMsg];
+        });
+
+        // Update conversation list locally
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === activeConvId
+              ? {
+                  ...c,
+                  lastMessageText: newMsg.fileUrl ? "📷 Photo" : newMsg.message,
+                  lastMessageAt: newMsg.createdAt,
+                  unreadCount: 0,
+                }
+              : c
+          )
+        );
+
+        if (rawMsg.senderId !== currentUser.id) {
+          triggerDebouncedMarkRead(activeConvId);
+        }
+      },
+      onMessageUpdate: (rawMsg) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === rawMsg.id
+              ? {
+                  ...m,
+                  message: rawMsg.isDeleted ? "Message unsent" : rawMsg.message,
+                  isDeleted: rawMsg.isDeleted,
+                  updatedAt: rawMsg.updatedAt,
+                }
+              : m
+          )
+        );
+      },
+      onMessageDelete: (rawMsg) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === rawMsg.id
+              ? { ...m, isDeleted: true, message: "Message unsent" }
+              : m
+          )
+        );
+      },
+      onConnectionStatusChange: (status) => {
+        setRealtimeStatus(status);
+      },
+    });
+
+    // B. Low-frequency delta sync fallback (12-15s foreground, 45s background)
+    const intervalMs = document.hidden ? 45000 : 12000;
+    const deltaTimer = setInterval(() => {
+      syncDeltaMessages(activeConvId);
+    }, intervalMs);
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden && activeConvId) {
+        syncDeltaMessages(activeConvId);
+        triggerDebouncedMarkRead(activeConvId);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      unsubscribe();
+      clearInterval(deltaTimer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [activeConvId]);
+  }, [activeConvId, currentUser, triggerDebouncedMarkRead]);
 
   // Scroll listener for "New messages ↓" button
   const handleScroll = () => {
@@ -222,7 +428,7 @@ function MessagesContent() {
     }
   }, [messages, showScrollBottom]);
 
-  // ── 5. Multi-Image Selection Handler (Up to 4 images) ───────────────────────
+  // ── 6. Multi-Image Selection Handler (Controlled Max 4 images) ───────────────
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
@@ -267,10 +473,10 @@ function MessagesContent() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  // ── 6. Send Message ─────────────────────────────────────────────────────────
+  // ── 7. Optimistic Message Sending with Idempotency ───────────────────────────
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!activeConvId) return;
+    if (!activeConvId || !currentUser) return;
 
     const trimmed = messageText.trim();
     if (!trimmed && selectedFiles.length === 0) return;
@@ -284,6 +490,7 @@ function MessagesContent() {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message: trimmed }),
+          cache: "no-store",
         });
         const data = await res.json();
         if (res.ok && data.success && data.message) {
@@ -297,61 +504,171 @@ function MessagesContent() {
       return;
     }
 
-    // Upload selected images (up to 4)
-    const uploadedAttachments: any[] = [];
+    const clientId = crypto.randomUUID();
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+    // Controlled batch uploads (max 2 parallel)
+    let uploadedAttachments: any[] = [];
     if (selectedFiles.length > 0) {
       setUploadingImage(true);
       try {
-        for (const file of selectedFiles) {
-          const formData = new FormData();
-          formData.append("file", file);
-          formData.append("conversationId", activeConvId);
+        for (let i = 0; i < selectedFiles.length; i += 2) {
+          const batch = selectedFiles.slice(i, i + 2);
+          const batchResults = await Promise.all(
+            batch.map(async (file) => {
+              const formData = new FormData();
+              formData.append("file", file);
+              formData.append("conversationId", activeConvId);
 
-          const upRes = await fetch("/api/chat/upload", {
-            method: "POST",
-            body: formData,
-          });
-          const upData = await upRes.json();
-          if (upRes.ok && upData.success && upData.attachment) {
-            uploadedAttachments.push(upData.attachment);
-          }
+              const upRes = await fetch("/api/chat/upload", {
+                method: "POST",
+                body: formData,
+              });
+              const upData = await upRes.json();
+              return upRes.ok && upData.success && upData.attachment ? upData.attachment : null;
+            })
+          );
+          uploadedAttachments.push(...batchResults.filter(Boolean));
         }
       } catch (err) {
-        console.error("[Upload Image Error]", err);
+        console.error("[Upload Error]", err);
       } finally {
         setUploadingImage(false);
       }
     }
 
-    const payload = {
+    const optimisticMessage: ChatMessage = {
+      id: tempId,
+      clientId,
       conversationId: activeConvId,
+      senderId: currentUser.id,
       message: trimmed,
       attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
       fileUrl: uploadedAttachments[0]?.url,
       fileName: uploadedAttachments[0]?.name,
       replyToId: replyingTo?.id || null,
+      replyTo: replyingTo
+        ? {
+            id: replyingTo.id,
+            message: replyingTo.message,
+            senderName: replyingTo.sender?.displayName || "Member",
+          }
+        : null,
+      isDeleted: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      sendStatus: "sending",
+      sender: {
+        id: currentUser.id,
+        username: currentUser.username || "user",
+        displayName: currentUser.displayName || currentUser.username || "User",
+        mediaUrl: currentUser.mediaUrl || null,
+        role: currentUser.role,
+      },
+      reactions: [],
     };
 
+    // 1. Immediately render optimistic message
+    setMessages((prev) => [...prev, optimisticMessage]);
+
+    // 2. Clear inputs immediately
     setMessageText("");
     clearAllFiles();
     setReplyingTo(null);
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 30);
+
+    // 3. Post to server
+    try {
+      const res = await fetch("/api/chat/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: activeConvId,
+          message: trimmed,
+          clientId,
+          attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
+          fileUrl: uploadedAttachments[0]?.url,
+          fileName: uploadedAttachments[0]?.name,
+          replyToId: optimisticMessage.replyToId,
+        }),
+        cache: "no-store",
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success && data.message) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempId || (m.clientId && m.clientId === clientId)
+              ? { ...data.message, sendStatus: "sent" }
+              : m
+          )
+        );
+      } else {
+        // Mark as failed
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempId || (m.clientId && m.clientId === clientId)
+              ? { ...m, sendStatus: "failed" }
+              : m
+          )
+        );
+        setSendError(data.error || "Message delivery interrupted. Click retry.");
+      }
+    } catch (err) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempId || (m.clientId && m.clientId === clientId)
+            ? { ...m, sendStatus: "failed" }
+            : m
+        )
+      );
+      setSendError("Network interrupted. Click retry to send.");
+    }
+  };
+
+  // ── 8. Retry Failed Message ────────────────────────────────────────────────
+  const handleRetrySendMessage = async (failedMsg: ChatMessage) => {
+    setMessages((prev) =>
+      prev.map((m) => (m.id === failedMsg.id ? { ...m, sendStatus: "sending" } : m))
+    );
+    setSendError(null);
 
     try {
       const res = await fetch("/api/chat/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          conversationId: failedMsg.conversationId,
+          message: failedMsg.message,
+          clientId: failedMsg.clientId,
+          attachments: failedMsg.attachments,
+          fileUrl: failedMsg.fileUrl,
+          fileName: failedMsg.fileName,
+          replyToId: failedMsg.replyToId,
+        }),
+        cache: "no-store",
       });
+
       const data = await res.json();
       if (res.ok && data.success && data.message) {
-        setMessages((prev) => [...prev, data.message]);
-        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === failedMsg.id || (m.clientId && m.clientId === failedMsg.clientId)
+              ? { ...data.message, sendStatus: "sent" }
+              : m
+          )
+        );
       } else {
-        setSendError("Failed to send message. Please retry.");
+        setMessages((prev) =>
+          prev.map((m) => (m.id === failedMsg.id ? { ...m, sendStatus: "failed" } : m))
+        );
+        setSendError("Retry failed. Please check connection.");
       }
-    } catch (err) {
-      console.error("[Send Message Error]", err);
-      setSendError("Network error sending message.");
+    } catch {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === failedMsg.id ? { ...m, sendStatus: "failed" } : m))
+      );
+      setSendError("Network retry failed.");
     }
   };
 
@@ -363,7 +680,7 @@ function MessagesContent() {
     }
   };
 
-  // ── 7. Reaction Handling ───────────────────────────────────────────────────
+  // ── 9. Reaction Handling ───────────────────────────────────────────────────
   const handleToggleReaction = async (messageId: string, emoji: string) => {
     if (emoji === "❤️") {
       setHeartAnimMessageId(messageId);
@@ -375,6 +692,7 @@ function MessagesContent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messageId, emoji }),
+        cache: "no-store",
       });
       const data = await res.json();
       if (res.ok && data.success && data.reactions) {
@@ -385,32 +703,35 @@ function MessagesContent() {
     } catch {}
   };
 
-  // ── 8. Unsend / Delete Message ──────────────────────────────────────────────
+  // ── 10. Unsend / Delete Message ─────────────────────────────────────────────
   const handleUnsendMessage = async (messageId: string) => {
     if (!confirm("Unsend this message? It will be replaced for everyone in this chat.")) return;
     try {
       const res = await fetch(`/api/chat/messages?id=${messageId}`, {
         method: "DELETE",
+        cache: "no-store",
       });
       const data = await res.json();
       if (res.ok && data.success) {
         setMessages((prev) =>
-          prev.map((m) => (m.id === messageId ? { ...m, isDeleted: true, message: "", attachments: [] } : m))
+          prev.map((m) => (m.id === messageId ? { ...m, isDeleted: true, message: "Message unsent", attachments: [] } : m))
         );
       }
     } catch {}
   };
 
-  // ── 9. Delete Chat For Me (Hide Conversation) ──────────────────────────────
+  // ── 11. Delete Chat For Me (Hide Conversation) ─────────────────────────────
   const handleDeleteChatForMe = async (convId: string) => {
     if (!confirm("Delete this chat from your inbox? Other participants will still keep their history.")) return;
     try {
       const res = await fetch(`/api/chat/conversations?id=${convId}`, {
         method: "DELETE",
+        cache: "no-store",
       });
       const data = await res.json();
       if (res.ok && data.success) {
         setConversations((prev) => prev.filter((c) => c.id !== convId));
+        conversationMessagesCache.current.delete(convId);
         setActiveConvId("");
         setMessages([]);
         setChatDetailsOpen(false);
@@ -418,22 +739,28 @@ function MessagesContent() {
     } catch {}
   };
 
-  // ── 10. Copy Text ───────────────────────────────────────────────────────────
-  const handleCopyText = (text: string) => {
-    navigator.clipboard.writeText(text);
-  };
-
   const activeConv = conversations.find((c) => c.id === activeConvId);
   const activeOtherMember = activeConv?.otherMember;
 
+  // Shared Media list derived from messages
+  const sharedMediaPhotos = useMemo(() => {
+    return messages.flatMap((m) => {
+      if (m.attachments && m.attachments.length > 0) {
+        return m.attachments;
+      }
+      if (m.fileUrl) {
+        return [{ url: m.fileUrl, name: m.fileName || "Photo" }];
+      }
+      return [];
+    });
+  }, [messages]);
+
   // Filter conversations by category tab & search query
   const filteredConversations = conversations.filter((c) => {
-    // Category tab filter
     if (categoryTab === "DIRECT" && c.type !== "DIRECT") return false;
     if (categoryTab === "CHANNELS" && c.type !== "GROUP" && c.type !== "PROJECT") return false;
     if (categoryTab === "UNREAD" && (!c.unreadCount || c.unreadCount === 0)) return false;
 
-    // Text search query
     const q = chatSearch.toLowerCase();
     if (!q) return true;
     const titleMatch = c.title?.toLowerCase().includes(q);
@@ -450,50 +777,40 @@ function MessagesContent() {
     return (
       m.displayName.toLowerCase().includes(q) ||
       m.username.toLowerCase().includes(q) ||
-      m.headline?.toLowerCase().includes(q)
+      (m.headline && m.headline.toLowerCase().includes(q))
     );
   });
-
-  // Extract shared media photos across the active conversation
-  const sharedMediaPhotos = messages
-    .filter((m) => !m.isDeleted && m.attachments && m.attachments.length > 0)
-    .flatMap((m) => m.attachments || []);
 
   return (
     <TeamCoreShell
       title="Direct Messages"
-      subtitle="Encrypted Private Communications & Channels"
-      actions={
-        <button
-          onClick={() => setNewMsgModalOpen(true)}
-          className="px-4 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(217,4,41,0.3)] flex items-center gap-1.5"
-        >
-          <Plus className="w-3.5 h-3.5" /> New Message
-        </button>
-      }
+      subtitle="Ultra-low latency real-time encrypted messaging channel"
     >
-      <div className="h-[78vh] rounded-3xl bg-[#080808] border border-crimson/25 overflow-hidden flex flex-col md:flex-row shadow-2xl relative">
+      <div className="h-[calc(100vh-140px)] min-h-[600px] flex rounded-3xl bg-[#080808] border border-crimson/20 overflow-hidden shadow-2xl relative">
         
         {/* ═════════════════════════════════════════════════════════════════════
-            LEFT PANEL: CONVERSATION LIST (CATEGORIES + SEARCH + STREAM)
+            LEFT SIDEBAR: CONVERSATION DIRECTORY & CATEGORY FILTERS
         ══════════════════════════════════════════════════════════════════════ */}
         <div
-          className={`w-full md:w-80 lg:w-96 border-r border-crimson/15 flex flex-col justify-between bg-[#0A0A0A] flex-shrink-0 ${
+          className={`w-full md:w-80 lg:w-96 flex flex-col border-r border-crimson/20 bg-[#0A0A0A] flex-shrink-0 ${
             activeConvId ? "hidden md:flex" : "flex"
           }`}
         >
-          {/* Top Search & Filter */}
-          <div className="p-3.5 border-b border-white/5 space-y-2.5">
+          {/* Header & Controls */}
+          <div className="p-4 border-b border-crimson/15 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="font-orbitron font-black text-xs text-white uppercase tracking-widest flex items-center gap-2">
-                <MessageSquare className="w-3.5 h-3.5 text-bright-red" /> Direct Messages
-              </span>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-bright-red animate-pulse" />
+                <h3 className="font-orbitron font-bold text-sm text-white uppercase tracking-wider">
+                  Channels
+                </h3>
+              </div>
               <button
                 onClick={() => setNewMsgModalOpen(true)}
-                className="p-1.5 rounded-lg bg-[#141414] hover:bg-deep-red/20 text-[#888] hover:text-white transition-colors"
-                title="Start New DM"
+                className="p-2 rounded-xl bg-crimson hover:bg-bright-red text-white transition-all shadow-[0_0_12px_rgba(217,4,41,0.4)]"
+                title="Start a new Direct Message"
               >
-                <Plus className="w-4 h-4 text-bright-red" />
+                <Plus className="w-4 h-4" />
               </button>
             </div>
 
@@ -560,10 +877,7 @@ function MessagesContent() {
                 return (
                   <div
                     key={conv.id}
-                    onClick={() => {
-                      setActiveConvId(conv.id);
-                      loadMessages(conv.id);
-                    }}
+                    onClick={() => switchActiveConversation(conv.id)}
                     className={`p-3.5 flex items-center justify-between cursor-pointer transition-colors ${
                       isActive
                         ? "bg-crimson/15 border-l-2 border-bright-red"
@@ -673,6 +987,21 @@ function MessagesContent() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {/* Connection indicator */}
+                  <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#111] border border-white/5 text-[9px] font-mono">
+                    {realtimeStatus === "CONNECTED" ? (
+                      <>
+                        <Wifi className="w-3 h-3 text-emerald-400" />
+                        <span className="text-emerald-400 hidden sm:inline">LIVE</span>
+                      </>
+                    ) : (
+                      <>
+                        <WifiOff className="w-3 h-3 text-amber-400" />
+                        <span className="text-amber-400 hidden sm:inline">SYNCED</span>
+                      </>
+                    )}
+                  </div>
+
                   {activeConv.type === "DIRECT" && activeOtherMember?.username && (
                     <Link
                       href={`/team/${activeOtherMember.username}`}
@@ -714,14 +1043,13 @@ function MessagesContent() {
                     </div>
                     <p className="font-orbitron font-bold text-sm text-white">Start the conversation</p>
                     <p className="text-xs text-[#777] max-w-xs">
-                      Send a message, share code, or upload design assets with {activeOtherMember?.displayName || "your teammate"}.
+                      Send a message, share code, or collaborate in real time with {activeOtherMember?.displayName || "your teammate"}.
                     </p>
                   </div>
                 ) : (
-                  messages.map((msg, idx) => {
+                  messages.map((msg) => {
                     const isSelf = msg.senderId === currentUser?.id;
                     const isDeleted = msg.isDeleted;
-                    const isLastSelf = isSelf && idx === messages.length - 1;
 
                     return (
                       <div
@@ -781,7 +1109,9 @@ function MessagesContent() {
                           <div
                             className={`p-3.5 rounded-3xl text-xs space-y-2 relative transition-all ${
                               isSelf
-                                ? "bg-gradient-to-r from-crimson to-bright-red text-white shadow-[0_0_15px_rgba(217,4,41,0.25)] rounded-br-sm"
+                                ? msg.sendStatus === "failed"
+                                  ? "bg-red-950/80 border border-bright-red/50 text-white rounded-br-sm shadow-[0_0_15px_rgba(217,4,41,0.2)]"
+                                  : "bg-gradient-to-r from-crimson to-bright-red text-white shadow-[0_0_15px_rgba(217,4,41,0.25)] rounded-br-sm"
                                 : "bg-[#141414] border border-white/10 text-[#EEE] rounded-bl-sm"
                             }`}
                           >
@@ -829,12 +1159,33 @@ function MessagesContent() {
                               msg.message && <p className="leading-relaxed whitespace-pre-line break-words">{msg.message}</p>
                             )}
 
-                            {/* Timestamp & Edited Indicator */}
-                            <div className={`flex items-center gap-1.5 text-[9px] font-mono opacity-70 ${isSelf ? "justify-end text-white/90" : "justify-start text-[#777]"}`}>
+                            {/* Timestamp, Edited Indicator, and Send Status */}
+                            <div className={`flex items-center gap-1.5 text-[9px] font-mono opacity-80 ${isSelf ? "justify-end text-white/90" : "justify-start text-[#777]"}`}>
                               {msg.isEdited && <span>(edited)</span>}
                               <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                              
+                              {/* Send Status Indicator */}
                               {isSelf && (
-                                <CheckCheck className={`w-3 h-3 ${msg.isSeen ? "text-cyan-300" : "text-white/90"}`} />
+                                <>
+                                  {msg.sendStatus === "sending" ? (
+                                    <Loader2 className="w-3 h-3 text-white/70 animate-spin" />
+                                  ) : msg.sendStatus === "failed" ? (
+                                    <div className="flex items-center gap-1 text-amber-300">
+                                      <AlertCircle className="w-3 h-3 text-amber-400" />
+                                      <span className="font-bold">Failed</span>
+                                      <button
+                                        onClick={() => handleRetrySendMessage(msg)}
+                                        className="underline font-bold text-white hover:text-cyan-300 ml-1 flex items-center gap-0.5"
+                                      >
+                                        <RotateCcw className="w-2.5 h-2.5" /> Retry
+                                      </button>
+                                    </div>
+                                  ) : msg.isSeen ? (
+                                    <CheckCheck className="w-3 h-3 text-cyan-300" />
+                                  ) : (
+                                    <Check className="w-3 h-3 text-white/90" />
+                                  )}
+                                </>
                               )}
                             </div>
                           </div>
@@ -881,13 +1232,6 @@ function MessagesContent() {
                               </button>
                             ))}
                           </div>
-                        )}
-
-                        {/* Read Receipt Seen indicator on latest sent message */}
-                        {isLastSelf && activeConv.type === "DIRECT" && msg.isSeen && (
-                          <span className="text-[9px] font-mono text-cyan-400/80 pr-1 mt-0.5">
-                            Seen
-                          </span>
                         )}
                       </div>
                     );

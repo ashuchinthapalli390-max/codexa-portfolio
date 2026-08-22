@@ -875,6 +875,7 @@ function OwnerDashboardContent() {
     if (!newMessageText.trim() || !activeConversationId) return;
 
     const msg = newMessageText.trim();
+    const clientId = crypto.randomUUID();
     setNewMessageText("");
 
     try {
@@ -884,10 +885,12 @@ function OwnerDashboardContent() {
         body: JSON.stringify({
           conversationId: activeConversationId,
           message: msg,
+          clientId,
         }),
+        cache: "no-store",
       });
       const data = await res.json();
-      if (res.ok && data.success) {
+      if (res.ok && data.success && data.message) {
         setChatMessages((prev) => [...prev, data.message]);
       }
     } catch {}

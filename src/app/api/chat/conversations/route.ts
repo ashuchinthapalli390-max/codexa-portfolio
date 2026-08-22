@@ -89,12 +89,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       conversation,
-    });
+    }, { headers: NO_CACHE_HEADERS });
   } catch (error: any) {
     console.error("[POST /api/chat/conversations]", error);
+    const isPoolError = error?.code === "P2024" || error?.message?.includes("timed out") || error?.message?.includes("connection pool");
+    if (isPoolError) {
+      return NextResponse.json(
+        { success: false, error: "CHAT_TEMPORARILY_UNAVAILABLE", retryable: true },
+        { status: 503, headers: NO_CACHE_HEADERS }
+      );
+    }
     return NextResponse.json(
       { success: false, error: "Failed to start direct conversation." },
-      { status: 500 }
+      { status: 500, headers: NO_CACHE_HEADERS }
     );
   }
 }

@@ -283,6 +283,8 @@ export interface ChatMessage {
     userId: string;
     emoji: string;
   }>;
+  clientId?: string;
+  sendStatus?: "sending" | "sent" | "failed";
   isSeen?: boolean;
 }
 
@@ -1679,13 +1681,45 @@ export const dataStore = {
     return this.getConversationById(created.id, user1Id) as Promise<Conversation>;
   },
 
-  async getMessages(conversationId: string, userId?: string): Promise<ChatMessage[]> {
+  async isConversationMember(conversationId: string, userId: string): Promise<boolean> {
+    const member = await db.conversationMember.findUnique({
+      where: {
+        conversationId_userId: {
+          conversationId,
+          userId,
+        },
+      },
+      select: { id: true },
+    });
+    return !!member;
+  },
+
+  async getMessages(
+    conversationId: string,
+    options?: { limit?: number; before?: string; after?: string }
+  ): Promise<ChatMessage[]> {
+    const limit = Math.min(Math.max(options?.limit || 50, 1), 100);
+    const where: Prisma.MessageWhereInput = { conversationId };
+
+    if (options?.after) {
+      const afterDate = new Date(options.after);
+      if (!isNaN(afterDate.getTime())) {
+        where.createdAt = { gt: afterDate };
+      }
+    } else if (options?.before) {
+      const beforeDate = new Date(options.before);
+      if (!isNaN(beforeDate.getTime())) {
+        where.createdAt = { lt: beforeDate };
+      }
+    }
+
     const list = await db.message.findMany({
-      where: { conversationId },
+      where,
       include: {
         sender: { include: { profile: true } },
       },
       orderBy: { createdAt: "asc" },
+      take: options?.before ? limit : undefined,
     });
 
     return list.map((m) => {
@@ -1694,6 +1728,7 @@ export const dataStore = {
         id: m.id,
         conversationId: m.conversationId,
         senderId: m.senderId,
+        clientId: m.clientId || undefined,
         message: m.isDeleted ? "Message unsent" : m.message,
         fileUrl: m.fileUrl,
         fileName: m.fileName,
@@ -1717,15 +1752,56 @@ export const dataStore = {
     conversationId: string;
     senderId: string;
     message: string;
+    clientId?: string;
     attachments?: ChatMessageAttachment[];
     fileUrl?: string;
     fileName?: string;
     replyToId?: string | null;
   }): Promise<ChatMessage> {
+    // Idempotency check: If clientId was provided and already exists for this sender, return the existing message
+    if (data.clientId) {
+      const existing = await db.message.findFirst({
+        where: {
+          conversationId: data.conversationId,
+          senderId: data.senderId,
+          clientId: data.clientId,
+        },
+        include: {
+          sender: { include: { profile: true } },
+        },
+      });
+
+      if (existing) {
+        const senderProfile = existing.sender.profile;
+        return {
+          id: existing.id,
+          conversationId: existing.conversationId,
+          senderId: existing.senderId,
+          clientId: existing.clientId || undefined,
+          message: existing.message,
+          fileUrl: existing.fileUrl,
+          fileName: existing.fileName,
+          isDeleted: existing.isDeleted,
+          replyToId: existing.replyToId,
+          createdAt: existing.createdAt.toISOString(),
+          updatedAt: existing.updatedAt.toISOString(),
+          sender: {
+            id: existing.sender.id,
+            username: existing.sender.username,
+            displayName: senderProfile?.displayName || existing.sender.fullName || existing.sender.username,
+            mediaUrl: senderProfile?.mediaUrl || existing.sender.profileMediaUrl || null,
+            role: existing.sender.role,
+          },
+          reactions: [],
+        };
+      }
+    }
+
     const created = await db.message.create({
       data: {
         conversationId: data.conversationId,
         senderId: data.senderId,
+        clientId: data.clientId || null,
         message: data.message || "",
         fileUrl: data.fileUrl || (data.attachments && data.attachments[0] ? data.attachments[0].url : null),
         fileName: data.fileName || (data.attachments && data.attachments[0] ? data.attachments[0].name : null),
@@ -1736,16 +1812,18 @@ export const dataStore = {
       },
     });
 
-    await db.conversation.update({
+    // Update conversation timestamp non-blockingly
+    db.conversation.update({
       where: { id: data.conversationId },
       data: { updatedAt: new Date() },
-    });
+    }).catch(() => {});
 
     const senderProfile = created.sender.profile;
     return {
       id: created.id,
       conversationId: created.conversationId,
       senderId: created.senderId,
+      clientId: created.clientId || undefined,
       message: created.message,
       fileUrl: created.fileUrl,
       fileName: created.fileName,
