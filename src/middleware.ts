@@ -14,6 +14,14 @@ const COOKIE_NAME = "cxa_session";
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // 0. Canonical host redirect (ensure persistent cookies stay on single domain)
+  const host = req.headers.get("host") || "";
+  if (host === "www.codxa-agency.online") {
+    const url = req.nextUrl.clone();
+    url.host = "codxa-agency.online";
+    return NextResponse.redirect(url, 301);
+  }
+
   // 1. Redirect old admin login / access gate routes to /login
   if (pathname === "/admin/login" || pathname === "/admin/access") {
     const url = req.nextUrl.clone();

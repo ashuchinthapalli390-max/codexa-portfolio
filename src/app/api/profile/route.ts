@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentSessionResult } from "@/lib/auth";
 import { dataStore } from "@/lib/data-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const NO_CACHE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+  Pragma: "no-cache",
+  Expires: "0",
+};
 
 /**
  * GET /api/profile
@@ -11,23 +17,38 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401 });
+    const auth = await getCurrentSessionResult();
+
+    if (auth.status === "error") {
+      return NextResponse.json(
+        { success: false, error: "Authentication service is temporarily unavailable.", requestId: auth.requestId },
+        { status: 503, headers: NO_CACHE_HEADERS }
+      );
     }
 
+    if (auth.status === "unauthenticated") {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized. Please log in." },
+        { status: 401, headers: NO_CACHE_HEADERS }
+      );
+    }
+
+    const user = auth.user;
     const profile = await dataStore.getProfileById(user.id);
     if (!profile) {
-      return NextResponse.json({ success: false, error: "Profile not found." }, { status: 404 });
+      return NextResponse.json({ success: false, error: "Profile not found." }, { status: 404, headers: NO_CACHE_HEADERS });
     }
 
-    return NextResponse.json({
-      success: true,
-      profile,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        profile,
+      },
+      { headers: NO_CACHE_HEADERS }
+    );
   } catch (err: any) {
     console.error("[GET /api/profile] Error:", err);
-    return NextResponse.json({ success: false, error: "Failed to fetch profile." }, { status: 500 });
+    return NextResponse.json({ success: false, error: "Failed to fetch profile." }, { status: 500, headers: NO_CACHE_HEADERS });
   }
 }
 
@@ -37,10 +58,23 @@ export async function GET() {
  */
 export async function PATCH(req: NextRequest) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401 });
+    const auth = await getCurrentSessionResult();
+
+    if (auth.status === "error") {
+      return NextResponse.json(
+        { success: false, error: "Authentication service is temporarily unavailable.", requestId: auth.requestId },
+        { status: 503, headers: NO_CACHE_HEADERS }
+      );
     }
+
+    if (auth.status === "unauthenticated") {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized. Please log in." },
+        { status: 401, headers: NO_CACHE_HEADERS }
+      );
+    }
+
+    const user = auth.user;
 
     const contentType = req.headers.get("content-type") || "";
     let updates: any = {};

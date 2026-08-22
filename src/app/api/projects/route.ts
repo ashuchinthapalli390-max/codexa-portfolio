@@ -1,13 +1,15 @@
-/**
- * /api/projects
- * GET: Fetch projects (supports isMainProject, isPublic, category, developerId, search)
- * POST: Create a new project (Team members, Admin, Owner) with collaborators
- */
 import { NextRequest, NextResponse } from "next/server";
 import { dataStore } from "@/lib/data-store";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentSessionResult } from "@/lib/auth";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const NO_CACHE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+  Pragma: "no-cache",
+  Expires: "0",
+};
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -28,18 +30,31 @@ export async function GET(req: NextRequest) {
     if (search) filter.search = search;
 
     const projects = await dataStore.getProjects(filter);
-    return NextResponse.json({ success: true, projects });
+    return NextResponse.json({ success: true, projects }, { headers: NO_CACHE_HEADERS });
   } catch (err: any) {
     console.error("[GET /api/projects]", err);
-    return NextResponse.json({ error: "Failed to load projects." }, { status: 500 });
+    return NextResponse.json({ error: "Failed to load projects." }, { status: 500, headers: NO_CACHE_HEADERS });
   }
 }
 
 export async function POST(req: NextRequest) {
-  const user = await getCurrentUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized. Session required to submit projects." }, { status: 401 });
+  const auth = await getCurrentSessionResult();
+
+  if (auth.status === "error") {
+    return NextResponse.json(
+      { error: "Authentication service is temporarily unavailable.", requestId: auth.requestId },
+      { status: 503, headers: NO_CACHE_HEADERS }
+    );
   }
+
+  if (auth.status === "unauthenticated") {
+    return NextResponse.json(
+      { error: "Unauthorized. Session required to submit projects." },
+      { status: 401, headers: NO_CACHE_HEADERS }
+    );
+  }
+
+  const user = auth.user;
 
   try {
     const body = await req.json();

@@ -4,19 +4,45 @@
  * DELETE: Owner deletes account.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser, revokeAllUserSessions } from "@/lib/auth";
+import { getCurrentSessionResult, revokeAllUserSessions } from "@/lib/auth";
 import { dataStore } from "@/lib/data-store";
 import bcrypt from "bcryptjs";
 import { sendPasswordChangedEmail, sendAccountStatusChangedEmail } from "@/lib/email";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const NO_CACHE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+  Pragma: "no-cache",
+  Expires: "0",
+};
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const currentUser = await getCurrentUser();
-  if (!currentUser || currentUser.role !== "OWNER") {
-    return NextResponse.json({ error: "Forbidden. Owner access required." }, { status: 403 });
+  const auth = await getCurrentSessionResult();
+
+  if (auth.status === "error") {
+    return NextResponse.json(
+      { error: "Authentication service is temporarily unavailable.", requestId: auth.requestId },
+      { status: 503, headers: NO_CACHE_HEADERS }
+    );
   }
 
+  if (auth.status === "unauthenticated") {
+    return NextResponse.json(
+      { error: "Unauthorized. Valid session required." },
+      { status: 401, headers: NO_CACHE_HEADERS }
+    );
+  }
+
+  if (auth.user.role !== "OWNER") {
+    return NextResponse.json(
+      { error: "Forbidden. Owner access required." },
+      { status: 403, headers: NO_CACHE_HEADERS }
+    );
+  }
+
+  const currentUser = auth.user;
   const { id } = params;
 
   try {
@@ -25,11 +51,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     const profileBefore = await dataStore.getProfileById(id);
     if (!profileBefore) {
-      return NextResponse.json({ error: "Account not found." }, { status: 404 });
+      return NextResponse.json({ error: "Account not found." }, { status: 404, headers: NO_CACHE_HEADERS });
     }
 
     const updates: any = {};
-    if (role && ["OWNER", "ADMIN", "TEAM_MEMBER"].includes(role)) {
+    if (role && ["OWNER", "CO_FOUNDER", "CEO", "ADMIN", "TEAM_MEMBER"].includes(role)) {
       updates.role = role;
     }
     if (leadershipPosition !== undefined) {
@@ -60,7 +86,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     const updatedProfile = await dataStore.updateProfile(id, updates);
     if (!updatedProfile) {
-      return NextResponse.json({ error: "Account not found." }, { status: 404 });
+      return NextResponse.json({ error: "Account not found." }, { status: 404, headers: NO_CACHE_HEADERS });
     }
 
     // If status changed, notify the member
@@ -89,24 +115,43 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
     });
 
-    return NextResponse.json({ success: true, account: updatedProfile });
+    return NextResponse.json({ success: true, account: updatedProfile }, { headers: NO_CACHE_HEADERS });
   } catch (err: any) {
     console.error("[PATCH /api/owner/accounts/[id]]", err);
-    return NextResponse.json({ error: "Failed to update account." }, { status: 500 });
+    return NextResponse.json({ error: "Failed to update account." }, { status: 500, headers: NO_CACHE_HEADERS });
   }
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
-  const currentUser = await getCurrentUser();
-  if (!currentUser || currentUser.role !== "OWNER") {
-    return NextResponse.json({ error: "Forbidden. Owner access required." }, { status: 403 });
+  const auth = await getCurrentSessionResult();
+
+  if (auth.status === "error") {
+    return NextResponse.json(
+      { error: "Authentication service is temporarily unavailable.", requestId: auth.requestId },
+      { status: 503, headers: NO_CACHE_HEADERS }
+    );
   }
 
+  if (auth.status === "unauthenticated") {
+    return NextResponse.json(
+      { error: "Unauthorized. Valid session required." },
+      { status: 401, headers: NO_CACHE_HEADERS }
+    );
+  }
+
+  if (auth.user.role !== "OWNER") {
+    return NextResponse.json(
+      { error: "Forbidden. Owner access required." },
+      { status: 403, headers: NO_CACHE_HEADERS }
+    );
+  }
+
+  const currentUser = auth.user;
   const { id } = params;
 
   // Cannot delete own account
   if (currentUser.id === id) {
-    return NextResponse.json({ error: "You cannot delete your own Owner account." }, { status: 400 });
+    return NextResponse.json({ error: "You cannot delete your own Owner account." }, { status: 400, headers: NO_CACHE_HEADERS });
   }
 
   try {
@@ -114,7 +159,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
 
     const deleted = await dataStore.deleteProfile(id);
     if (!deleted) {
-      return NextResponse.json({ error: "Account not found." }, { status: 404 });
+      return NextResponse.json({ error: "Account not found." }, { status: 404, headers: NO_CACHE_HEADERS });
     }
 
     await dataStore.logAudit({
@@ -124,9 +169,9 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
       ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
     });
 
-    return NextResponse.json({ success: true, message: "Account deleted successfully." });
+    return NextResponse.json({ success: true, message: "Account deleted successfully." }, { headers: NO_CACHE_HEADERS });
   } catch (err: any) {
     console.error("[DELETE /api/owner/accounts/[id]]", err);
-    return NextResponse.json({ error: "Failed to delete account." }, { status: 500 });
+    return NextResponse.json({ error: "Failed to delete account." }, { status: 500, headers: NO_CACHE_HEADERS });
   }
 }

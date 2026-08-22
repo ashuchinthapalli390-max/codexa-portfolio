@@ -1,38 +1,66 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentSessionResult } from "@/lib/auth";
 import { dataStore } from "@/lib/data-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const NO_CACHE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+  Pragma: "no-cache",
+  Expires: "0",
+};
+
 export async function GET() {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401 });
+    const auth = await getCurrentSessionResult();
+
+    if (auth.status === "error") {
+      return NextResponse.json(
+        { success: false, error: "Authentication service is temporarily unavailable.", requestId: auth.requestId },
+        { status: 503, headers: NO_CACHE_HEADERS }
+      );
     }
 
+    if (auth.status === "unauthenticated") {
+      return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401, headers: NO_CACHE_HEADERS });
+    }
+
+    const user = auth.user;
     const conversations = await dataStore.getConversations(user.id);
 
-    return NextResponse.json({
-      success: true,
-      conversations,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        conversations,
+      },
+      { headers: NO_CACHE_HEADERS }
+    );
   } catch (error: any) {
     console.error("[GET /api/chat/conversations]", error);
     return NextResponse.json(
       { success: false, error: "Failed to fetch conversations." },
-      { status: 500 }
+      { status: 500, headers: NO_CACHE_HEADERS }
     );
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401 });
+    const auth = await getCurrentSessionResult();
+
+    if (auth.status === "error") {
+      return NextResponse.json(
+        { success: false, error: "Authentication service is temporarily unavailable.", requestId: auth.requestId },
+        { status: 503, headers: NO_CACHE_HEADERS }
+      );
     }
+
+    if (auth.status === "unauthenticated") {
+      return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401, headers: NO_CACHE_HEADERS });
+    }
+
+    const user = auth.user;
 
     const body = await req.json();
     const { recipientId } = body;
@@ -73,25 +101,34 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401 });
+    const auth = await getCurrentSessionResult();
+
+    if (auth.status === "error") {
+      return NextResponse.json(
+        { success: false, error: "Authentication service is temporarily unavailable.", requestId: auth.requestId },
+        { status: 503, headers: NO_CACHE_HEADERS }
+      );
     }
 
+    if (auth.status === "unauthenticated") {
+      return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401, headers: NO_CACHE_HEADERS });
+    }
+
+    const user = auth.user;
     const { searchParams } = new URL(req.url);
     const conversationId = searchParams.get("id");
 
     if (!conversationId) {
-      return NextResponse.json({ success: false, error: "Conversation ID is required." }, { status: 400 });
+      return NextResponse.json({ success: false, error: "Conversation ID is required." }, { status: 400, headers: NO_CACHE_HEADERS });
     }
 
     const success = await dataStore.hideConversation(conversationId, user.id);
-    return NextResponse.json({ success });
+    return NextResponse.json({ success }, { headers: NO_CACHE_HEADERS });
   } catch (error: any) {
     console.error("[DELETE /api/chat/conversations]", error);
     return NextResponse.json(
       { success: false, error: "Failed to hide conversation." },
-      { status: 500 }
+      { status: 500, headers: NO_CACHE_HEADERS }
     );
   }
 }

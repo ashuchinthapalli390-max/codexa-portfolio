@@ -1,39 +1,91 @@
 /**
  * /api/owner/accounts
  * OWNER-ONLY Account Creation & User Management.
+ * Source of truth: PostgreSQL via Prisma
  */
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentSessionResult } from "@/lib/auth";
 import { dataStore } from "@/lib/data-store";
 import bcrypt from "bcryptjs";
 import { sendAccountCreatedEmail } from "@/lib/email";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const NO_CACHE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+  Pragma: "no-cache",
+  Expires: "0",
+};
 
 export async function GET() {
-  const user = await getCurrentUser();
-  if (!user || user.role !== "OWNER") {
-    return NextResponse.json({ error: "Forbidden. Owner access required." }, { status: 403 });
+  const auth = await getCurrentSessionResult();
+
+  if (auth.status === "error") {
+    return NextResponse.json(
+      { error: "Authentication service is temporarily unavailable.", requestId: auth.requestId },
+      { status: 503, headers: NO_CACHE_HEADERS }
+    );
+  }
+
+  if (auth.status === "unauthenticated") {
+    return NextResponse.json(
+      { error: "Unauthorized. Valid session required." },
+      { status: 401, headers: NO_CACHE_HEADERS }
+    );
+  }
+
+  if (auth.user.role !== "OWNER") {
+    return NextResponse.json(
+      { error: "Forbidden. Owner access required." },
+      { status: 403, headers: NO_CACHE_HEADERS }
+    );
   }
 
   try {
     const profiles = await dataStore.getProfiles();
-    return NextResponse.json({ success: true, accounts: profiles });
+    return NextResponse.json(
+      { success: true, accounts: profiles },
+      { headers: NO_CACHE_HEADERS }
+    );
   } catch (err: any) {
     console.error("[GET /api/owner/accounts]", err);
-    return NextResponse.json({ error: "Failed to load accounts." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to load accounts from database." },
+      { status: 500, headers: NO_CACHE_HEADERS }
+    );
   }
 }
 
 export async function POST(req: NextRequest) {
-  const currentUser = await getCurrentUser();
-  if (!currentUser || currentUser.role !== "OWNER") {
-    return NextResponse.json({ error: "Forbidden. Only the CodeXa Owner can create accounts." }, { status: 403 });
+  const auth = await getCurrentSessionResult();
+
+  if (auth.status === "error") {
+    return NextResponse.json(
+      { error: "Authentication service is temporarily unavailable.", requestId: auth.requestId },
+      { status: 503, headers: NO_CACHE_HEADERS }
+    );
   }
+
+  if (auth.status === "unauthenticated") {
+    return NextResponse.json(
+      { error: "Unauthorized. Valid session required." },
+      { status: 401, headers: NO_CACHE_HEADERS }
+    );
+  }
+
+  if (auth.user.role !== "OWNER") {
+    return NextResponse.json(
+      { error: "Forbidden. Only the CodeXa Owner can create accounts." },
+      { status: 403, headers: NO_CACHE_HEADERS }
+    );
+  }
+
+  const currentUser = auth.user;
 
   try {
     const body = await req.json();
-    const { fullName, username, email, role, temporaryPassword, headline, bio } = body;
+    const { fullName, username, email, role, temporaryPassword, headline, bio, leadershipPosition } = body;
 
     // Validation
     if (!fullName || !fullName.trim()) {
@@ -51,9 +103,10 @@ export async function POST(req: NextRequest) {
 
     const cleanUsername = username.toLowerCase().trim().replace(/[^a-z0-9_]/g, "");
     const cleanEmail = email.toLowerCase().trim();
-    const accountRole = ["OWNER", "ADMIN", "TEAM_MEMBER"].includes(role) ? role : "TEAM_MEMBER";
+    const accountRole = ["OWNER", "CO_FOUNDER", "CEO", "TEAM_MEMBER", "ADMIN"].includes(role) ? role : "TEAM_MEMBER";
+    const memberType = ["OWNER", "CO_FOUNDER", "CEO", "ADMIN"].includes(accountRole) ? "LEADERSHIP" : "CORE_TEAM";
 
-    // Check duplicate
+    // Check duplicate in database
     const existing = await dataStore.getProfiles();
     if (existing.some((p) => p.username.toLowerCase() === cleanUsername || p.email.toLowerCase() === cleanEmail)) {
       return NextResponse.json({ error: "An account with this username or email already exists." }, { status: 409 });
@@ -61,17 +114,18 @@ export async function POST(req: NextRequest) {
 
     const passwordHash = await bcrypt.hash(temporaryPassword, 12);
 
-    // Create profile in database
+    // Create profile in PostgreSQL with genuine clean fields (Zero dummy/filler text)
     const newProfile = await dataStore.createProfile({
       username: cleanUsername,
       email: cleanEmail,
       displayName: fullName.trim(),
       passwordHash,
       role: accountRole,
-      memberType: "CORE_TEAM",
-      headline: headline || `${accountRole.replace("_", " ")} at CodeXa`,
-      bio: bio || "Passionate engineer contributing to CodeXa ecosystem builds.",
-      skills: ["Full Stack", "TypeScript", "React"],
+      memberType,
+      leadershipPosition: leadershipPosition || (accountRole === "OWNER" ? "FOUNDER" : accountRole === "CO_FOUNDER" ? "CO_FOUNDER" : accountRole === "CEO" ? "CEO" : null),
+      headline: headline?.trim() || null,
+      bio: bio?.trim() || null,
+      skills: [],
       mediaUrl: "/assets/images/logo.jpeg",
       isActive: true,
       isPublic: true,
@@ -102,6 +156,6 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: any) {
     console.error("[POST /api/owner/accounts]", err);
-    return NextResponse.json({ error: "Failed to create account." }, { status: 500 });
+    return NextResponse.json({ error: "Failed to create account in database." }, { status: 500 });
   }
 }

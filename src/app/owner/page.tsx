@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
@@ -101,13 +101,35 @@ function OwnerDashboardContent() {
 
   // Real Database Data states (Zero Dummy Data)
   const [accounts, setAccounts] = useState<Profile[]>([]);
+  const [accountsLoading, setAccountsLoading] = useState(true);
+  const [accountsSyncing, setAccountsSyncing] = useState(false);
+  const [accountsError, setAccountsError] = useState<string | null>(null);
+
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
+  const [inquiriesLoading, setInquiriesLoading] = useState(true);
+  const [inquiriesError, setInquiriesError] = useState<string | null>(null);
+
   const [projects, setProjects] = useState<Project[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(true);
+  const [projectsError, setProjectsError] = useState<string | null>(null);
+
   const [posts, setPosts] = useState<Post[]>([]);
+  const [postsLoading, setPostsLoading] = useState(true);
+  const [postsError, setPostsError] = useState<string | null>(null);
+
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
-  const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
   const [unreadNotifsCount, setUnreadNotifsCount] = useState(0);
+  const [notifsLoading, setNotifsLoading] = useState(true);
+  const [notifsError, setNotifsError] = useState<string | null>(null);
+
+  const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
+  const [auditLoading, setAuditLoading] = useState(true);
+  const [auditError, setAuditError] = useState<string | null>(null);
+
+  const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
+  const [activityLoading, setActivityLoading] = useState(true);
+  const [activityError, setActivityError] = useState<string | null>(null);
+
   const [siteSettings, setSiteSettings] = useState<SiteSettings>({
     mainProjectsHomeVisible: true,
     teamProjectsHomeVisible: true,
@@ -209,11 +231,247 @@ function OwnerDashboardContent() {
     }
   }, [requestedTab]);
 
-  useEffect(() => {
-    if (authStatus === "unauthenticated") {
-      router.replace("/login?redirect=/owner");
-      return;
+  // Individual Granular Fetch Handlers
+  const fetchAccounts = useCallback(async (isSync = false) => {
+    if (isSync) setAccountsSyncing(true);
+    else setAccountsLoading(true);
+
+    try {
+      const res = await fetch("/api/owner/accounts", {
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+      });
+      const data = await res.json();
+      if (res.ok && data.success && Array.isArray(data.accounts)) {
+        setAccounts(data.accounts);
+        setAccountsError(null);
+      } else {
+        setAccountsError(data.error || "Unable to load team accounts.");
+      }
+    } catch (err: any) {
+      console.error("[fetchAccounts Error]", err);
+      setAccountsError("Network error connecting to accounts service.");
+    } finally {
+      setAccountsLoading(false);
+      setAccountsSyncing(false);
     }
+  }, []);
+
+  const fetchInquiries = useCallback(async () => {
+    setInquiriesLoading(true);
+    try {
+      const res = await fetch("/api/inquiries", {
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+      });
+      const data = await res.json();
+      if (res.ok && data.success && Array.isArray(data.inquiries)) {
+        setInquiries(data.inquiries);
+        setInquiriesError(null);
+      } else {
+        setInquiriesError(data.error || "Failed to load inquiries.");
+      }
+    } catch {
+      setInquiriesError("Network error loading inquiries.");
+    } finally {
+      setInquiriesLoading(false);
+    }
+  }, []);
+
+  const fetchProjects = useCallback(async () => {
+    setProjectsLoading(true);
+    try {
+      const res = await fetch("/api/projects", {
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+      });
+      const data = await res.json();
+      if (res.ok && data.success && Array.isArray(data.projects)) {
+        setProjects(data.projects);
+        setProjectsError(null);
+      } else {
+        setProjectsError(data.error || "Failed to load projects.");
+      }
+    } catch {
+      setProjectsError("Network error loading projects.");
+    } finally {
+      setProjectsLoading(false);
+    }
+  }, []);
+
+  const fetchPosts = useCallback(async () => {
+    setPostsLoading(true);
+    try {
+      const res = await fetch("/api/feed/posts", {
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+      });
+      const data = await res.json();
+      if (res.ok && data.success && Array.isArray(data.posts)) {
+        setPosts(data.posts);
+        setPostsError(null);
+      } else {
+        setPostsError(data.error || "Failed to load posts.");
+      }
+    } catch {
+      setPostsError("Network error loading posts.");
+    } finally {
+      setPostsLoading(false);
+    }
+  }, []);
+
+  const fetchNotifications = useCallback(async () => {
+    setNotifsLoading(true);
+    try {
+      const res = await fetch("/api/notifications", {
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+      });
+      const data = await res.json();
+      if (res.ok && data.success && Array.isArray(data.notifications)) {
+        setNotifications(data.notifications);
+        setUnreadNotifsCount(data.unreadCount || 0);
+        setNotifsError(null);
+      } else {
+        setNotifsError(data.error || "Failed to load notifications.");
+      }
+    } catch {
+      setNotifsError("Network error loading notifications.");
+    } finally {
+      setNotifsLoading(false);
+    }
+  }, []);
+
+  const fetchAuditLogs = useCallback(async () => {
+    setAuditLoading(true);
+    try {
+      const res = await fetch("/api/audit-logs", {
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+      });
+      const data = await res.json();
+      if (res.ok && data.success && Array.isArray(data.logs)) {
+        setAuditLogs(data.logs);
+        setAuditError(null);
+      } else {
+        setAuditError(data.error || "Failed to load audit logs.");
+      }
+    } catch {
+      setAuditError("Network error loading audit logs.");
+    } finally {
+      setAuditLoading(false);
+    }
+  }, []);
+
+  const fetchActivityEvents = useCallback(async () => {
+    setActivityLoading(true);
+    try {
+      const res = await fetch("/api/activity", {
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+      });
+      const data = await res.json();
+      if (res.ok && data.success && Array.isArray(data.activities)) {
+        setActivityEvents(data.activities);
+        setActivityError(null);
+      }
+    } catch {
+      setActivityError("Network error loading activity.");
+    } finally {
+      setActivityLoading(false);
+    }
+  }, []);
+
+  const fetchSiteSettings = useCallback(async () => {
+    try {
+      const res = await fetch("/api/site-settings", {
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+      });
+      const data = await res.json();
+      if (res.ok && data.settings) {
+        setSiteSettings(data.settings);
+      }
+    } catch {}
+  }, []);
+
+  const fetchConversations = useCallback(async () => {
+    try {
+      const res = await fetch("/api/chat/conversations", {
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+      });
+      const data = await res.json();
+      if (res.ok && data.success && Array.isArray(data.conversations)) {
+        setConversations(data.conversations);
+        if (data.conversations.length > 0 && !activeConversationId) {
+          setActiveConversationId(data.conversations[0].id);
+        }
+      }
+    } catch {}
+  }, [activeConversationId]);
+
+  const fetchProfileDetails = useCallback(async () => {
+    try {
+      const res = await fetch("/api/profile", {
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.profile) {
+        setCurrentUser(data.profile);
+        setSelfFormData({
+          displayName: data.profile.displayName || "",
+          headline: data.profile.headline || "",
+          bio: data.profile.bio || "",
+          skillsStr: Array.isArray(data.profile.skills) ? data.profile.skills.join(", ") : "",
+          githubUrl: data.profile.githubUrl || "",
+          linkedinUrl: data.profile.linkedinUrl || "",
+          portfolioUrl: data.profile.portfolioUrl || "",
+        });
+      }
+    } catch {}
+  }, []);
+
+  const loadAllOwnerData = useCallback(async () => {
+    setLoading(true);
+    await Promise.allSettled([
+      fetchAccounts(),
+      fetchInquiries(),
+      fetchProjects(),
+      fetchPosts(),
+      fetchNotifications(),
+      fetchAuditLogs(),
+      fetchActivityEvents(),
+      fetchSiteSettings(),
+      fetchConversations(),
+      fetchProfileDetails(),
+    ]);
+    setLoading(false);
+  }, [
+    fetchAccounts,
+    fetchInquiries,
+    fetchProjects,
+    fetchPosts,
+    fetchNotifications,
+    fetchAuditLogs,
+    fetchActivityEvents,
+    fetchSiteSettings,
+    fetchConversations,
+    fetchProfileDetails,
+  ]);
+
+  useEffect(() => {
     if (authStatus === "authenticated" && authUser) {
       if (authUser.role !== "OWNER") {
         router.replace("/dashboard");
@@ -231,55 +489,7 @@ function OwnerDashboardContent() {
       });
       loadAllOwnerData();
     }
-  }, [authStatus, authUser, router]);
-
-  const loadAllOwnerData = () => {
-    setLoading(true);
-    Promise.all([
-      fetch("/api/owner/accounts").then((r) => r.json()).catch(() => ({ accounts: [] })),
-      fetch("/api/inquiries").then((r) => r.json()).catch(() => ({ inquiries: [] })),
-      fetch("/api/projects").then((r) => r.json()).catch(() => ({ projects: [] })),
-      fetch("/api/feed/posts").then((r) => r.json()).catch(() => ({ posts: [] })),
-      fetch("/api/notifications").then((r) => r.json()).catch(() => ({ notifications: [], unreadCount: 0 })),
-      fetch("/api/audit-logs").then((r) => r.json()).catch(() => ({ logs: [] })),
-      fetch("/api/activity").then((r) => r.json()).catch(() => ({ events: [] })),
-      fetch("/api/site-settings").then((r) => r.json()).catch(() => ({ settings: null })),
-      fetch("/api/chat/conversations").then((r) => r.json()).catch(() => ({ conversations: [] })),
-      fetch("/api/profile").then((r) => r.json()).catch(() => ({ profile: null })),
-    ])
-      .then(([accRes, inqRes, projRes, feedRes, notifRes, auditRes, actRes, siteRes, convRes, profRes]) => {
-        if (accRes.accounts) setAccounts(accRes.accounts);
-        if (inqRes.inquiries) setInquiries(inqRes.inquiries);
-        if (projRes.projects) setProjects(projRes.projects);
-        if (feedRes.posts) setPosts(feedRes.posts);
-        if (notifRes.notifications) {
-          setNotifications(notifRes.notifications);
-          setUnreadNotifsCount(notifRes.unreadCount || 0);
-        }
-        if (auditRes.logs) setAuditLogs(auditRes.logs);
-        if (actRes.events) setActivityEvents(actRes.events);
-        if (siteRes.settings) setSiteSettings(siteRes.settings);
-        if (convRes.conversations) {
-          setConversations(convRes.conversations);
-          if (convRes.conversations.length > 0 && !activeConversationId) {
-            setActiveConversationId(convRes.conversations[0].id);
-          }
-        }
-        if (profRes.profile) {
-          setCurrentUser(profRes.profile);
-          setSelfFormData({
-            displayName: profRes.profile.displayName || "",
-            headline: profRes.profile.headline || "",
-            bio: profRes.profile.bio || "",
-            skillsStr: Array.isArray(profRes.profile.skills) ? profRes.profile.skills.join(", ") : "",
-            githubUrl: profRes.profile.githubUrl || "",
-            linkedinUrl: profRes.profile.linkedinUrl || "",
-            portfolioUrl: profRes.profile.portfolioUrl || "",
-          });
-        }
-      })
-      .finally(() => setLoading(false));
-  };
+  }, [authStatus, authUser, router, loadAllOwnerData]);
 
   useEffect(() => {
     if (!activeConversationId) return;
@@ -400,15 +610,18 @@ function OwnerDashboardContent() {
     try {
       const res = await fetch("/api/owner/accounts", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
         body: JSON.stringify(accountFormData),
       });
       const data = await res.json();
 
-      if (res.ok && data.success) {
+      if (res.ok && data.success && data.account) {
         setAccountFormState("success");
-        setAccountFormMsg(data.message || "Account provisioned successfully.");
-        setAccounts((prev) => [data.account, ...prev]);
+        setAccountFormMsg(data.message || "Account provisioned successfully in PostgreSQL.");
+        setAccounts((prev) => [data.account, ...prev.filter((a) => a.id !== data.account.id)]);
+        fetchAccounts(true);
         setTimeout(() => {
           setCreateAccountModalOpen(false);
           setAccountFormState("idle");
@@ -423,7 +636,7 @@ function OwnerDashboardContent() {
             headline: "",
             bio: ""
           });
-        }, 1500);
+        }, 1200);
       } else {
         setAccountFormState("error");
         setAccountFormMsg(data.error || "Failed to create account.");
@@ -440,11 +653,14 @@ function OwnerDashboardContent() {
     try {
       const res = await fetch(`/api/owner/accounts/${account.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
         body: JSON.stringify({ isActive: newStatus }),
       });
       if (res.ok) {
         setAccounts((prev) => prev.map((a) => a.id === account.id ? { ...a, isActive: newStatus } : a));
+        fetchAccounts(true);
       }
     } catch {}
   };
@@ -453,11 +669,14 @@ function OwnerDashboardContent() {
     try {
       const res = await fetch(`/api/owner/accounts/${account.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
         body: JSON.stringify({ role: newRole }),
       });
       if (res.ok) {
         setAccounts((prev) => prev.map((a) => a.id === account.id ? { ...a, role: newRole as any } : a));
+        fetchAccounts(true);
       }
     } catch {}
   };
@@ -467,7 +686,9 @@ function OwnerDashboardContent() {
     try {
       const res = await fetch(`/api/owner/accounts/${resetPasswordModalUser.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
         body: JSON.stringify({ newPassword: newPasswordInput }),
       });
       if (res.ok) {
@@ -481,9 +702,14 @@ function OwnerDashboardContent() {
   const handleDeleteAccount = async (account: Profile) => {
     if (!confirm(`Are you sure you want to permanently delete account @${account.username}? This action is irreversible.`)) return;
     try {
-      const res = await fetch(`/api/owner/accounts/${account.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/owner/accounts/${account.id}`, {
+        method: "DELETE",
+        credentials: "include",
+        cache: "no-store",
+      });
       if (res.ok) {
         setAccounts((prev) => prev.filter((a) => a.id !== account.id));
+        fetchAccounts(true);
       }
     } catch {}
   };
@@ -1212,88 +1438,141 @@ function OwnerDashboardContent() {
                     Team Members & Profiles
                   </h1>
                 </div>
-                <button
-                  onClick={() => setCreateAccountModalOpen(true)}
-                  className="px-4 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(217,4,41,0.3)] inline-flex items-center gap-1.5"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Create Member
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => fetchAccounts(true)}
+                    disabled={accountsSyncing}
+                    className="p-2.5 rounded-xl bg-[#141414] hover:bg-[#1A1A1A] border border-crimson/20 text-[#AAA] hover:text-white transition-all text-xs font-orbitron inline-flex items-center gap-1.5"
+                    title="Sync from Database"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${accountsSyncing ? "animate-spin text-bright-red" : ""}`} />
+                    <span className="hidden sm:inline">{accountsSyncing ? "Syncing..." : "Sync DB"}</span>
+                  </button>
+                  <button
+                    onClick={() => setCreateAccountModalOpen(true)}
+                    className="px-4 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(217,4,41,0.3)] inline-flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Create Member
+                  </button>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {accounts.map((member) => (
-                  <div
-                    key={member.id}
-                    className="cyber-card p-6 flex flex-col justify-between space-y-4"
-                  >
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-3.5">
-                        <CodeXaAvatar src={member.mediaUrl} alt={member.displayName} size="md" showGlow />
-                        <div className="flex-1">
-                          <h4 className="font-orbitron font-bold text-sm text-white">{member.displayName}</h4>
-                          <p className="text-[10px] font-mono text-crimson">@{member.username}</p>
-                          <span className="inline-block mt-0.5 px-2 py-0.2 rounded-full bg-crimson/15 border border-crimson/30 text-[8px] font-orbitron font-bold text-bright-red uppercase">
-                            {member.leadershipPosition || member.role.replace("_", " ")}
-                          </span>
-                        </div>
-                      </div>
-
-                      <p className="text-xs text-[#888] line-clamp-2 leading-relaxed">
-                        {member.headline || member.bio || "Specialized CodeXa developer."}
-                      </p>
-
-                      {/* Skills */}
-                      {member.skills && member.skills.length > 0 && (
-                        <div className="flex flex-wrap gap-1 pt-1">
-                          {member.skills.slice(0, 3).map((s, idx) => (
-                            <span key={idx} className="px-2 py-0.5 rounded bg-[#141414] border border-white/5 text-[9px] font-orbitron text-[#AAA]">
-                              {s}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Owner Management Controls */}
-                    <div className="space-y-2 pt-3 border-t border-white/5">
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          onClick={() => handleOpenEditMemberModal(member)}
-                          className="py-2 rounded-xl bg-[#141414] hover:bg-crimson text-white text-[10px] font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1"
-                        >
-                          <Edit3 className="w-3 h-3 text-bright-red" /> Edit Profile
-                        </button>
-                        <Link
-                          href={`/team/${member.username}`}
-                          target="_blank"
-                          className="py-2 rounded-xl bg-[#141414] hover:bg-[#202020] text-white text-[10px] font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1"
-                        >
-                          <Eye className="w-3 h-3 text-[#888]" /> View
-                        </Link>
-                      </div>
-
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleStartDirectChat(member.id)}
-                          className="flex-1 py-1.5 rounded-lg bg-[#111] hover:bg-deep-red/20 text-[#888] hover:text-white text-[9px] font-orbitron uppercase transition-colors flex items-center justify-center gap-1"
-                        >
-                          <MessageSquare className="w-3 h-3" /> Message
-                        </button>
-                        {member.role !== "OWNER" && (
-                          <button
-                            onClick={() => handleToggleAccountActive(member)}
-                            className={`px-3 py-1.5 rounded-lg text-[9px] font-orbitron uppercase transition-colors ${
-                              member.isActive ? "bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20" : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20"
-                            }`}
-                          >
-                            {member.isActive ? "Deactivate" : "Activate"}
-                          </button>
-                        )}
-                      </div>
+              {accountsError && (
+                <div className="p-4 rounded-2xl bg-deep-red/30 border border-crimson/50 flex items-center justify-between gap-4 text-xs font-mono text-white shadow-[0_0_20px_rgba(217,4,41,0.15)]">
+                  <div className="flex items-center gap-2.5">
+                    <AlertCircle className="w-5 h-5 text-bright-red shrink-0" />
+                    <div>
+                      <p className="font-orbitron font-bold text-white text-[11px] uppercase tracking-wider">TEAM CORE SYNC INTERRUPTED</p>
+                      <p className="text-[10px] text-[#BBB]">We couldn&apos;t refresh team accounts from PostgreSQL. Your previously loaded data has been preserved.</p>
                     </div>
                   </div>
-                ))}
-              </div>
+                  <button
+                    onClick={() => fetchAccounts(false)}
+                    className="px-3 py-1.5 rounded-lg bg-crimson hover:bg-bright-red text-white text-[10px] font-orbitron font-bold uppercase tracking-wider shrink-0 transition-colors"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+
+              {accountsLoading && accounts.length === 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {[1, 2, 3].map((n) => (
+                    <div key={n} className="cyber-card p-6 h-56 animate-pulse flex flex-col justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-full bg-white/5" />
+                        <div className="space-y-2 flex-1">
+                          <div className="h-4 w-32 bg-white/10 rounded" />
+                          <div className="h-3 w-20 bg-white/5 rounded" />
+                        </div>
+                      </div>
+                      <div className="h-3 w-full bg-white/5 rounded" />
+                      <div className="h-8 w-full bg-white/5 rounded" />
+                    </div>
+                  ))}
+                </div>
+              ) : !accountsLoading && !accountsError && accounts.length === 0 ? (
+                <div className="text-center py-16 bg-[#0A0A0A] rounded-3xl border border-crimson/15 space-y-3">
+                  <Users className="w-10 h-10 text-crimson/50 mx-auto" />
+                  <h3 className="font-orbitron font-bold text-white text-sm">No Team Members Found</h3>
+                  <p className="text-xs font-mono text-[#666]">Use &quot;Create Member&quot; above to provision your first team account in PostgreSQL.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {accounts.map((member) => (
+                    <div
+                      key={member.id}
+                      className="cyber-card p-6 flex flex-col justify-between space-y-4"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-3.5">
+                          <CodeXaAvatar src={member.mediaUrl} alt={member.displayName} size="md" showGlow />
+                          <div className="flex-1">
+                            <h4 className="font-orbitron font-bold text-sm text-white">{member.displayName}</h4>
+                            <p className="text-[10px] font-mono text-crimson">@{member.username}</p>
+                            <span className="inline-block mt-0.5 px-2 py-0.2 rounded-full bg-crimson/15 border border-crimson/30 text-[8px] font-orbitron font-bold text-bright-red uppercase">
+                              {member.leadershipPosition || member.role.replace("_", " ")}
+                            </span>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-[#888] line-clamp-2 leading-relaxed">
+                          {member.headline || member.bio || "CodeXa Agency member."}
+                        </p>
+
+                        {/* Skills */}
+                        {member.skills && member.skills.length > 0 && (
+                          <div className="flex flex-wrap gap-1 pt-1">
+                            {member.skills.slice(0, 3).map((s, idx) => (
+                              <span key={idx} className="px-2 py-0.5 rounded bg-[#141414] border border-white/5 text-[9px] font-orbitron text-[#AAA]">
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Owner Management Controls */}
+                      <div className="space-y-2 pt-3 border-t border-white/5">
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            onClick={() => handleOpenEditMemberModal(member)}
+                            className="py-2 rounded-xl bg-[#141414] hover:bg-crimson text-white text-[10px] font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1"
+                          >
+                            <Edit3 className="w-3 h-3 text-bright-red" /> Edit Profile
+                          </button>
+                          <Link
+                            href={`/team/${member.username}`}
+                            target="_blank"
+                            className="py-2 rounded-xl bg-[#141414] hover:bg-[#202020] text-white text-[10px] font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1"
+                          >
+                            <Eye className="w-3 h-3 text-[#888]" /> View
+                          </Link>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleStartDirectChat(member.id)}
+                            className="flex-1 py-1.5 rounded-lg bg-[#111] hover:bg-deep-red/20 text-[#888] hover:text-white text-[9px] font-orbitron uppercase transition-colors flex items-center justify-center gap-1"
+                          >
+                            <MessageSquare className="w-3 h-3" /> Message
+                          </button>
+                          {member.role !== "OWNER" && (
+                            <button
+                              onClick={() => handleToggleAccountActive(member)}
+                              className={`px-3 py-1.5 rounded-lg text-[9px] font-orbitron uppercase transition-colors ${
+                                member.isActive ? "bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20" : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20"
+                              }`}
+                            >
+                              {member.isActive ? "Deactivate" : "Activate"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -1309,13 +1588,42 @@ function OwnerDashboardContent() {
                     Accounts Management
                   </h1>
                 </div>
-                <button
-                  onClick={() => setCreateAccountModalOpen(true)}
-                  className="px-4 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(217,4,41,0.3)] inline-flex items-center gap-1.5"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Provision Account
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => fetchAccounts(true)}
+                    disabled={accountsSyncing}
+                    className="p-2.5 rounded-xl bg-[#141414] hover:bg-[#1A1A1A] border border-crimson/20 text-[#AAA] hover:text-white transition-all text-xs font-orbitron inline-flex items-center gap-1.5"
+                    title="Sync from Database"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${accountsSyncing ? "animate-spin text-bright-red" : ""}`} />
+                    <span className="hidden sm:inline">{accountsSyncing ? "Syncing..." : "Sync DB"}</span>
+                  </button>
+                  <button
+                    onClick={() => setCreateAccountModalOpen(true)}
+                    className="px-4 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(217,4,41,0.3)] inline-flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Provision Account
+                  </button>
+                </div>
               </div>
+
+              {accountsError && (
+                <div className="p-4 rounded-2xl bg-deep-red/30 border border-crimson/50 flex items-center justify-between gap-4 text-xs font-mono text-white shadow-[0_0_20px_rgba(217,4,41,0.15)]">
+                  <div className="flex items-center gap-2.5">
+                    <AlertCircle className="w-5 h-5 text-bright-red shrink-0" />
+                    <div>
+                      <p className="font-orbitron font-bold text-white text-[11px] uppercase tracking-wider">TEAM CORE SYNC INTERRUPTED</p>
+                      <p className="text-[10px] text-[#BBB]">We couldn&apos;t refresh team accounts from PostgreSQL. Your previously loaded data has been preserved.</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => fetchAccounts(false)}
+                    className="px-3 py-1.5 rounded-lg bg-crimson hover:bg-bright-red text-white text-[10px] font-orbitron font-bold uppercase tracking-wider shrink-0 transition-colors"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
 
               <div className="overflow-x-auto rounded-3xl bg-[#0A0A0A] border border-crimson/25 p-6 shadow-xl">
                 <table className="w-full text-xs text-left">
@@ -1331,76 +1639,98 @@ function OwnerDashboardContent() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {accounts.map((acc) => (
-                      <tr key={acc.id} className="hover:bg-[#111] transition-colors">
-                        <td className="py-3.5">
-                          <div className="flex items-center gap-3">
-                            <CodeXaAvatar src={acc.mediaUrl} size="xs" />
-                            <div>
-                              <p className="font-orbitron font-bold text-white">{acc.displayName}</p>
-                              <p className="text-[9px] font-mono text-crimson">@{acc.username}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-3 text-[#AAA] font-mono">{acc.email}</td>
-                        <td className="py-3">
-                          {acc.role === "OWNER" ? (
-                            <span className="px-2 py-0.5 rounded bg-crimson text-white font-orbitron text-[9px] font-black uppercase">
-                              OWNER
-                            </span>
-                          ) : (
-                            <select
-                              value={acc.role}
-                              onChange={(e) => handleChangeRole(acc, e.target.value)}
-                              className="bg-[#141414] border border-crimson/20 rounded-lg px-2 py-1 text-[9px] font-orbitron text-white outline-none"
-                            >
-                              <option value="TEAM_MEMBER">TEAM_MEMBER</option>
-                              <option value="ADMIN">ADMIN</option>
-                            </select>
-                          )}
-                        </td>
-                        <td className="py-3">
-                          <span className={`px-2 py-0.5 rounded text-[8px] font-orbitron font-bold uppercase ${
-                            acc.twoFactorEnabled ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-[#161616] text-[#777] border border-white/10"
-                          }`}>
-                            {acc.twoFactorEnabled ? "2FA ON" : "2FA OFF"}
-                          </span>
-                        </td>
-                        <td className="py-3">
-                          <span className={`px-2 py-0.5 rounded text-[8px] font-orbitron font-bold uppercase ${
-                            acc.isActive ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30"
-                          }`}>
-                            {acc.isActive ? "ACTIVE" : "DISABLED"}
-                          </span>
-                        </td>
-                        <td className="py-3 text-[#777] font-mono">
-                          {new Date(acc.createdAt).toLocaleDateString()}
-                        </td>
-                        <td className="py-3 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => {
-                                setResetPasswordModalUser(acc);
-                                setNewPasswordInput("");
-                              }}
-                              className="p-1.5 rounded-lg bg-[#141414] hover:bg-deep-red/20 text-[#888] hover:text-white transition-colors"
-                              title="Reset Password"
-                            >
-                              <Key className="w-3.5 h-3.5 text-amber-400" />
-                            </button>
-                            {acc.role !== "OWNER" && (
-                              <button
-                                onClick={() => handleDeleteAccount(acc)}
-                                className="p-1.5 rounded-lg bg-[#141414] hover:bg-crimson text-[#888] hover:text-white transition-colors"
-                                title="Delete Account"
-                              >
-                                <Trash2 className="w-3.5 h-3.5 text-bright-red" />
-                              </button>
-                            )}
-                          </div>
+                    {accountsLoading && accounts.length === 0 ? (
+                      [1, 2, 3].map((n) => (
+                        <tr key={n} className="animate-pulse">
+                          <td className="py-4"><div className="h-4 w-28 bg-white/10 rounded" /></td>
+                          <td className="py-4"><div className="h-4 w-36 bg-white/5 rounded" /></td>
+                          <td className="py-4"><div className="h-4 w-20 bg-white/5 rounded" /></td>
+                          <td className="py-4"><div className="h-4 w-16 bg-white/5 rounded" /></td>
+                          <td className="py-4"><div className="h-4 w-16 bg-white/5 rounded" /></td>
+                          <td className="py-4"><div className="h-4 w-24 bg-white/5 rounded" /></td>
+                          <td className="py-4 text-right"><div className="h-4 w-12 bg-white/5 rounded ml-auto" /></td>
+                        </tr>
+                      ))
+                    ) : !accountsLoading && !accountsError && accounts.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-12 text-center text-xs font-mono text-[#666]">
+                          No team member accounts registered yet. Click &quot;Provision Account&quot; to create one in PostgreSQL.
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      accounts.map((acc) => (
+                        <tr key={acc.id} className="hover:bg-[#111] transition-colors">
+                          <td className="py-3.5">
+                            <div className="flex items-center gap-3">
+                              <CodeXaAvatar src={acc.mediaUrl} size="xs" />
+                              <div>
+                                <p className="font-orbitron font-bold text-white">{acc.displayName}</p>
+                                <p className="text-[9px] font-mono text-crimson">@{acc.username}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3 text-[#AAA] font-mono">{acc.email}</td>
+                          <td className="py-3">
+                            {acc.role === "OWNER" ? (
+                              <span className="px-2 py-0.5 rounded bg-crimson text-white font-orbitron text-[9px] font-black uppercase">
+                                OWNER
+                              </span>
+                            ) : (
+                              <select
+                                value={acc.role}
+                                onChange={(e) => handleChangeRole(acc, e.target.value)}
+                                className="bg-[#141414] border border-crimson/20 rounded-lg px-2 py-1 text-[9px] font-orbitron text-white outline-none"
+                              >
+                                <option value="TEAM_MEMBER">TEAM_MEMBER</option>
+                                <option value="CO_FOUNDER">CO_FOUNDER</option>
+                                <option value="CEO">CEO</option>
+                                <option value="ADMIN">ADMIN</option>
+                              </select>
+                            )}
+                          </td>
+                          <td className="py-3">
+                            <span className={`px-2 py-0.5 rounded text-[8px] font-orbitron font-bold uppercase ${
+                              acc.twoFactorEnabled ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-[#161616] text-[#777] border border-white/10"
+                            }`}>
+                              {acc.twoFactorEnabled ? "2FA ON" : "2FA OFF"}
+                            </span>
+                          </td>
+                          <td className="py-3">
+                            <span className={`px-2 py-0.5 rounded text-[8px] font-orbitron font-bold uppercase ${
+                              acc.isActive ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30"
+                            }`}>
+                              {acc.isActive ? "ACTIVE" : "DISABLED"}
+                            </span>
+                          </td>
+                          <td className="py-3 text-[#777] font-mono">
+                            {new Date(acc.createdAt).toLocaleDateString()}
+                          </td>
+                          <td className="py-3 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => {
+                                  setResetPasswordModalUser(acc);
+                                  setNewPasswordInput("");
+                                }}
+                                className="p-1.5 rounded-lg bg-[#141414] hover:bg-deep-red/20 text-[#888] hover:text-white transition-colors"
+                                title="Reset Password"
+                              >
+                                <Key className="w-3.5 h-3.5 text-amber-400" />
+                              </button>
+                              {acc.role !== "OWNER" && (
+                                <button
+                                  onClick={() => handleDeleteAccount(acc)}
+                                  className="p-1.5 rounded-lg bg-[#141414] hover:bg-crimson text-[#888] hover:text-white transition-colors"
+                                  title="Delete Account"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 text-bright-red" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -2091,6 +2421,8 @@ function OwnerDashboardContent() {
                       className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
                     >
                       <option value="TEAM_MEMBER">TEAM_MEMBER</option>
+                      <option value="CO_FOUNDER">CO_FOUNDER</option>
+                      <option value="CEO">CEO</option>
                       <option value="ADMIN">ADMIN</option>
                     </select>
                   </div>
@@ -2196,7 +2528,7 @@ function OwnerDashboardContent() {
                     value={accountFormData.temporaryPassword}
                     onChange={(e) => setAccountFormData({ ...accountFormData, temporaryPassword: e.target.value })}
                     className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
-                    placeholder="At least 6 chars..."
+                    placeholder="At least 8 chars..."
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -2208,6 +2540,8 @@ function OwnerDashboardContent() {
                       className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
                     >
                       <option value="TEAM_MEMBER">TEAM_MEMBER</option>
+                      <option value="CO_FOUNDER">CO_FOUNDER</option>
+                      <option value="CEO">CEO</option>
                       <option value="ADMIN">ADMIN</option>
                     </select>
                   </div>

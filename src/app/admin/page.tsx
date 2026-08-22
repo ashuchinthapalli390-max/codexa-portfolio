@@ -70,21 +70,29 @@ export default function AdminWorkspacePage() {
     }
   }, [status, currentUser, router]);
 
-  const loadAdminData = () => {
+  const loadAdminData = async () => {
     setLoading(true);
-    Promise.all([
-      fetch("/api/team/public").then((r) => r.json()).catch(() => ({ profiles: [] })),
-      fetch("/api/projects").then((r) => r.json()).catch(() => ({ projects: [] })),
-      fetch("/api/inquiries").then((r) => r.json()).catch(() => ({ inquiries: [] })),
-      fetch("/api/feed/posts").then((r) => r.json()).catch(() => ({ posts: [] })),
-    ])
-      .then(([teamRes, projRes, inqRes, feedRes]) => {
-        if (teamRes.profiles) setTeamMembers(teamRes.profiles);
-        if (projRes.projects) setProjects(projRes.projects);
-        if (inqRes.inquiries) setInquiries(inqRes.inquiries);
-        if (feedRes.posts) setPosts(feedRes.posts);
-      })
-      .finally(() => setLoading(false));
+    const fetchOpts = {
+      credentials: "include" as const,
+      cache: "no-store" as const,
+      headers: { "Cache-Control": "no-store" },
+    };
+
+    await Promise.allSettled([
+      fetch("/api/team/public", fetchOpts).then((r) => r.json()).then((data) => {
+        if (data?.profiles && Array.isArray(data.profiles)) setTeamMembers(data.profiles);
+      }).catch(() => {}),
+      fetch("/api/projects", fetchOpts).then((r) => r.json()).then((data) => {
+        if (data?.projects && Array.isArray(data.projects)) setProjects(data.projects);
+      }).catch(() => {}),
+      fetch("/api/inquiries", fetchOpts).then((r) => r.json()).then((data) => {
+        if (data?.inquiries && Array.isArray(data.inquiries)) setInquiries(data.inquiries);
+      }).catch(() => {}),
+      fetch("/api/feed/posts", fetchOpts).then((r) => r.json()).then((data) => {
+        if (data?.posts && Array.isArray(data.posts)) setPosts(data.posts);
+      }).catch(() => {}),
+    ]);
+    setLoading(false);
   };
 
   // Toggle Main Project

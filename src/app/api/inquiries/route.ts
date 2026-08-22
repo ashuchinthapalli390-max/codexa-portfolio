@@ -5,7 +5,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { dataStore } from "@/lib/data-store";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentSessionResult } from "@/lib/auth";
 import { sendOwnerInquiryNotification, sendClientConfirmation } from "@/lib/email";
 
 export const runtime = "nodejs";
@@ -70,10 +70,36 @@ export async function POST(req: NextRequest) {
   }
 }
 
+export const dynamic = "force-dynamic";
+
+const NO_CACHE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+  Pragma: "no-cache",
+  Expires: "0",
+};
+
 export async function GET(req: NextRequest) {
-  const user = await getCurrentUser();
-  if (!user || (user.role !== "OWNER" && user.role !== "ADMIN")) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  const auth = await getCurrentSessionResult();
+
+  if (auth.status === "error") {
+    return NextResponse.json(
+      { error: "Authentication service is temporarily unavailable.", requestId: auth.requestId },
+      { status: 503, headers: NO_CACHE_HEADERS }
+    );
+  }
+
+  if (auth.status === "unauthenticated") {
+    return NextResponse.json(
+      { error: "Unauthorized. Valid session required." },
+      { status: 401, headers: NO_CACHE_HEADERS }
+    );
+  }
+
+  if (auth.user.role !== "OWNER" && auth.user.role !== "ADMIN") {
+    return NextResponse.json(
+      { error: "Forbidden. Administrative access required." },
+      { status: 403, headers: NO_CACHE_HEADERS }
+    );
   }
 
   const { searchParams } = new URL(req.url);
@@ -83,9 +109,9 @@ export async function GET(req: NextRequest) {
 
   try {
     const inquiries = await dataStore.getInquiries({ status, priority, search });
-    return NextResponse.json({ success: true, inquiries });
+    return NextResponse.json({ success: true, inquiries }, { headers: NO_CACHE_HEADERS });
   } catch (err: any) {
     console.error("[GET /api/inquiries]", err);
-    return NextResponse.json({ error: "Failed to retrieve inquiries." }, { status: 500 });
+    return NextResponse.json({ error: "Failed to retrieve inquiries." }, { status: 500, headers: NO_CACHE_HEADERS });
   }
 }
