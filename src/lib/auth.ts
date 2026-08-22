@@ -42,11 +42,44 @@ export interface SessionInfo {
   isCurrent: boolean;
 }
 
+export type SessionValidationResult =
+  | {
+      status: "authenticated";
+      user: AuthenticatedUser;
+      session: {
+        id: string;
+        expiresAt: Date;
+        lastSeenAt: Date | null;
+      };
+    }
+  | {
+      status: "unauthenticated";
+      reason:
+        | "NO_COOKIE"
+        | "INVALID_TOKEN"
+        | "EXPIRED"
+        | "REVOKED"
+        | "ACCOUNT_DISABLED";
+    }
+  | {
+      status: "error";
+      reason: "DATABASE_UNAVAILABLE";
+      error: string;
+      requestId: string;
+    };
+
 /**
  * Generates a cryptographically secure random session token (32 bytes = 64 hex chars).
  */
 export function generateSessionToken(): string {
   return crypto.randomBytes(32).toString("hex");
+}
+
+/**
+ * Generates a safe diagnostic request ID for auth tracking.
+ */
+export function generateRequestId(): string {
+  return `CXA-AUTH-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
 }
 
 /**
@@ -100,11 +133,17 @@ export async function createSession(
 }
 
 /**
- * Validates a session token from the database, applies rolling renewal if needed,
- * and returns the authenticated user payload.
+ * Comprehensive session validation returning explicit 3-way status:
+ * - "authenticated"
+ * - "unauthenticated" (positive reason)
+ * - "error" (temporary database / service unavailability)
+ *
+ * Never collapses database errors into unauthenticated.
  */
-export async function validateSession(rawToken: string): Promise<AuthenticatedUser | null> {
-  if (!rawToken || typeof rawToken !== "string") return null;
+export async function validateSessionResult(rawToken?: string | null): Promise<SessionValidationResult> {
+  if (!rawToken || typeof rawToken !== "string" || !rawToken.trim()) {
+    return { status: "unauthenticated", reason: "NO_COOKIE" };
+  }
 
   let token = rawToken.trim();
   try {
@@ -126,22 +165,24 @@ export async function validateSession(rawToken: string): Promise<AuthenticatedUs
       },
     });
 
-    if (!session) return null;
+    if (!session) {
+      return { status: "unauthenticated", reason: "INVALID_TOKEN" };
+    }
 
     // Check if session has been revoked
     if (session.revokedAt) {
-      return null;
+      return { status: "unauthenticated", reason: "REVOKED" };
     }
 
     // Check if session has expired
     if (now > session.expiresAt) {
       await db.session.delete({ where: { id: session.id } }).catch(() => {});
-      return null;
+      return { status: "unauthenticated", reason: "EXPIRED" };
     }
 
     // Check if user is active
     if (!session.user.isActive) {
-      return null;
+      return { status: "unauthenticated", reason: "ACCOUNT_DISABLED" };
     }
 
     // Rolling session renewal: if fewer than 15 days remain, extend by 30 days
@@ -155,13 +196,15 @@ export async function validateSession(rawToken: string): Promise<AuthenticatedUs
         ? new Date(now.getTime() + SESSION_MAX_AGE_SECONDS * 1000)
         : session.expiresAt;
 
-      await db.session.update({
-        where: { id: session.id },
-        data: {
-          expiresAt: newExpiresAt,
-          lastSeenAt: now,
-        },
-      }).catch(() => {});
+      await db.session
+        .update({
+          where: { id: session.id },
+          data: {
+            expiresAt: newExpiresAt,
+            lastSeenAt: now,
+          },
+        })
+        .catch((e) => console.warn("[validateSessionResult renewal warning]", e?.message));
 
       if (shouldRenew) {
         try {
@@ -177,7 +220,7 @@ export async function validateSession(rawToken: string): Promise<AuthenticatedUs
       }
     }
 
-    return {
+    const authUser: AuthenticatedUser = {
       id: session.user.id,
       username: session.user.username ?? null,
       email: session.user.email ?? null,
@@ -193,9 +236,61 @@ export async function validateSession(rawToken: string): Promise<AuthenticatedUs
       leadershipPosition: session.user.profile?.leadershipPosition ?? null,
       primaryRole: session.user.profile?.primaryRole ?? null,
     };
-  } catch (err) {
-    console.error("[validateSession Error]", err);
-    return null;
+
+    return {
+      status: "authenticated",
+      user: authUser,
+      session: {
+        id: session.id,
+        expiresAt: session.expiresAt,
+        lastSeenAt: session.lastSeenAt,
+      },
+    };
+  } catch (err: any) {
+    const requestId = generateRequestId();
+    console.error(`[validateSessionResult Error] [${requestId}]`, {
+      code: err?.code,
+      message: err?.message,
+    });
+
+    return {
+      status: "error",
+      reason: "DATABASE_UNAVAILABLE",
+      error: "Authentication service is temporarily unavailable.",
+      requestId,
+    };
+  }
+}
+
+/**
+ * Validates a session token from the database, applies rolling renewal if needed,
+ * and returns the authenticated user payload (null if unauthenticated or on error).
+ */
+export async function validateSession(rawToken: string): Promise<AuthenticatedUser | null> {
+  const result = await validateSessionResult(rawToken);
+  if (result.status === "authenticated") {
+    return result.user;
+  }
+  return null;
+}
+
+/**
+ * Returns full session result from the request's `cxa_session` cookie.
+ */
+export async function getCurrentSessionResult(): Promise<SessionValidationResult> {
+  try {
+    const cookieStore = cookies();
+    const token = cookieStore.get(COOKIE_NAME)?.value;
+    return validateSessionResult(token);
+  } catch (err: any) {
+    const requestId = generateRequestId();
+    console.error(`[getCurrentSessionResult Error] [${requestId}]`, err?.message);
+    return {
+      status: "error",
+      reason: "DATABASE_UNAVAILABLE",
+      error: "Authentication service is temporarily unavailable.",
+      requestId,
+    };
   }
 }
 
@@ -203,14 +298,11 @@ export async function validateSession(rawToken: string): Promise<AuthenticatedUs
  * Returns the currently authenticated user from the request's `cxa_session` cookie.
  */
 export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
-  try {
-    const cookieStore = cookies();
-    const token = cookieStore.get(COOKIE_NAME)?.value;
-    if (!token) return null;
-    return validateSession(token);
-  } catch (err) {
-    return null;
+  const result = await getCurrentSessionResult();
+  if (result.status === "authenticated") {
+    return result.user;
   }
+  return null;
 }
 
 /**

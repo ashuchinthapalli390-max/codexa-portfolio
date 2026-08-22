@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { dataStore } from "@/lib/data-store";
-import { createSession } from "@/lib/auth";
+import { createSession, generateRequestId } from "@/lib/auth";
 
 // Helper to mask email e.g. "a******@codexa.agency"
 function maskEmail(email: string): string {
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
 
     if (!profile) {
       return NextResponse.json(
-        { success: false, error: "Invalid credentials. Access denied." },
+        { success: false, error: "Invalid username/email or password." },
         { status: 401 }
       );
     }
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
         details: `Failed password attempt for @${profile.username}`,
       });
       return NextResponse.json(
-        { success: false, error: "Invalid credentials. Access denied." },
+        { success: false, error: "Invalid username/email or password." },
         { status: 401 }
       );
     }
@@ -123,10 +123,19 @@ export async function POST(req: Request) {
     });
 
   } catch (error: any) {
-    console.error("Login Error:", error);
+    const requestId = generateRequestId();
+    console.error(`[POST /api/login Error] [${requestId}]`, {
+      code: error?.code,
+      message: error?.message,
+    });
+
     return NextResponse.json(
-      { success: false, error: "An unexpected error occurred during authentication." },
-      { status: 500 }
+      {
+        success: false,
+        error: "Authentication service is temporarily unavailable. Please retry in a moment.",
+        requestId,
+      },
+      { status: 503 }
     );
   }
 }

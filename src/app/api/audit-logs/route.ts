@@ -7,6 +7,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { dataStore } from "@/lib/data-store";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   const user = await getCurrentUser();

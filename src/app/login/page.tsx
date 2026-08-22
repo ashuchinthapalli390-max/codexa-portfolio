@@ -31,7 +31,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectParam = searchParams?.get("redirect");
-  const { user, status, refreshSession } = useAuth();
+  const { user, status, refreshSession, retryConnection, errorMessage: authErrorMsg, requestId } = useAuth();
 
   // Stage: "credentials" | "2fa" | "forgot-password"
   const [authStage, setAuthStage] = useState<"credentials" | "2fa" | "forgot-password">("credentials");
@@ -368,6 +368,66 @@ function LoginForm() {
       setForgotLoading(false);
     }
   };
+
+  if (status === "temporarily-unavailable") {
+    return (
+      <div className="relative min-h-screen bg-[#070707] text-white flex flex-col justify-between overflow-hidden">
+        <CyberWebOverlay />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[500px] bg-crimson/8 rounded-full blur-[160px] pointer-events-none" />
+
+        <header className="relative z-20 px-6 py-6 max-w-7xl mx-auto w-full flex justify-between items-center">
+          <Link href="/" className="flex items-center gap-2 group">
+            <div className="p-2 rounded bg-deep-red/30 border border-crimson/30 group-hover:border-bright-red/50 transition-all duration-300">
+              <Shield className="w-5 h-5 text-bright-red" />
+            </div>
+            <span className="font-orbitron font-black text-sm tracking-[0.2em] text-white">
+              CODEXA <span className="text-crimson text-xs font-normal">GATEWAY</span>
+            </span>
+          </Link>
+        </header>
+
+        <main className="relative z-20 flex items-center justify-center px-4 py-12">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-md p-8 sm:p-10 rounded-3xl bg-[#090909]/95 border border-crimson/40 shadow-[0_0_50px_rgba(217,4,41,0.2)] text-center space-y-6"
+          >
+            <div className="w-16 h-16 rounded-2xl bg-crimson/20 border border-bright-red flex items-center justify-center mx-auto shadow-[0_0_20px_rgba(217,4,41,0.4)]">
+              <RefreshCw className="w-8 h-8 text-bright-red animate-spin" />
+            </div>
+            <div className="space-y-2">
+              <span className="text-[10px] font-orbitron font-bold uppercase tracking-[0.25em] text-bright-red px-3 py-1 rounded-full bg-crimson/15 border border-crimson/30">
+                CODEXA SECURITY
+              </span>
+              <h2 className="font-orbitron font-black text-xl text-white uppercase tracking-wider">
+                RESTORING SECURE SESSION...
+              </h2>
+              <p className="text-xs text-[#AAAAAA] leading-relaxed">
+                {authErrorMsg || "Connection to the authentication service is temporarily unavailable. Retrying..."}
+              </p>
+              {requestId && (
+                <p className="text-[10px] font-mono text-[#666666]">
+                  Diagnostic Ref: {requestId}
+                </p>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => retryConnection()}
+              className="w-full py-3.5 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" /> RETRY CONNECTION
+            </button>
+          </motion.div>
+        </main>
+
+        <footer className="relative z-20 px-6 py-6 text-center text-xs text-[#444] font-mono">
+          CodeXa Developer Network &bull; Cryptographically Verified Platform
+        </footer>
+      </div>
+    );
+  }
 
   if (status === "authenticated" && user) {
     return (
