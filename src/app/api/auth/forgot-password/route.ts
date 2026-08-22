@@ -16,7 +16,7 @@ export async function POST(req: Request) {
     const profile = await dataStore.getProfileByEmailOrUsername(email);
 
     if (!profile) {
-      // Don't leak whether email exists
+      // Do not leak whether email exists
       return NextResponse.json({
         success: true,
         message: "If that email is registered in our system, a recovery code has been dispatched.",
@@ -25,14 +25,25 @@ export async function POST(req: Request) {
 
     const otp = await dataStore.createOtp(profile.email, profile.id, "PASSWORD_RESET");
 
-    await sendPasswordResetOtpEmail({
+    const emailResult = await sendPasswordResetOtpEmail({
       email: profile.email,
       name: profile.displayName,
       otp,
       ipAddress: "127.0.0.1",
     });
 
-    await dataStore.logAudit("PASSWORD_RESET_REQUESTED", profile.id, `Password recovery OTP dispatched to ${profile.email}`);
+    if (process.env.NODE_ENV === "production" && !emailResult.success) {
+      return NextResponse.json(
+        { success: false, error: "Failed to dispatch verification code. Please try again later." },
+        { status: 500 }
+      );
+    }
+
+    await dataStore.logAudit({
+      action: "PASSWORD_RESET_REQUESTED",
+      actorId: profile.id,
+      details: `Password recovery OTP dispatched to ${profile.email}`,
+    });
 
     return NextResponse.json({
       success: true,

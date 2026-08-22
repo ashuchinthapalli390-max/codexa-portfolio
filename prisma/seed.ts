@@ -2,13 +2,13 @@
  * CodeXa Agency — Seed Script (Prisma 5 + PostgreSQL)
  * Run with: npx tsx prisma/seed.ts
  *
- * Idempotent seeder that syncs owner, admin, and core team accounts.
- * Validates all required env variables before touching the database.
- * Updates passwords for existing users if env credentials changed.
+ * Idempotent seeder that syncs owner, admin, and core team accounts,
+ * and initializes official leadership identities while PRESERVING all Owner edits.
  */
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { config } from "dotenv";
+import { bootstrapOfficialLeadership } from "../src/lib/bootstrap-leadership";
 
 const BCRYPT_ROUNDS = 12;
 
@@ -91,24 +91,6 @@ async function main() {
     console.log("  ✓ OWNER user updated (username, email, name, password synced from env).");
   }
 
-  // Seed Founder profile
-  const existingOwnerProfile = await db.teamProfile.findFirst({ where: { userId: owner.id } });
-  if (!existingOwnerProfile) {
-    await db.teamProfile.create({
-      data: {
-        userId: owner.id,
-        memberType: "LEADERSHIP",
-        leadershipPosition: "FOUNDER",
-        displayName: ownerName,
-        publicBio: "I don't just write code. I engineer digital futures.",
-        mediaUrl: "/assets/images/128acbeb739b3eb8bc4d1d9ae15fcfb2.jpg",
-        mediaMimeType: "image/jpeg",
-        isPublic: true,
-        displayOrder: 1,
-      },
-    });
-  }
-
   // ─── 5. SEED ADMIN ACCOUNT ──────────────────────────────────────────────────
   let admin = await db.user.findFirst({ where: { role: "ADMIN" } });
   if (!admin) {
@@ -157,85 +139,10 @@ async function main() {
     console.log("  ✓ TEAM_MEMBER user updated (username, email, name, password synced from env).");
   }
 
-  // Seed Team Profile row
-  const existingTeamProfile = await db.teamProfile.findFirst({ where: { userId: teamUser.id } });
-  if (!existingTeamProfile) {
-    await db.teamProfile.create({
-      data: {
-        userId: teamUser.id,
-        memberType: "CORE_TEAM",
-        displayName: teamDisplayName,
-        publicBio: "Full-stack engineer focusing on high-performance web applications and databases.",
-        isPublic: true,
-        displayOrder: 10,
-      },
-    });
-  }
-
-  // ─── 7. SEED FIXED SITE CONFIG (LEADERSHIP PROFILES) ───────────────────────
-  let deepakUser = await db.user.findFirst({ where: { username: "deepak" } });
-  if (!deepakUser) {
-    const defaultPw = await bcrypt.hash("CxA!Deepak2026", BCRYPT_ROUNDS);
-    deepakUser = await db.user.create({
-      data: {
-        username: "deepak",
-        email: "deepak@codexa.agency",
-        passwordHash: defaultPw,
-        role: "TEAM_MEMBER",
-        isActive: true,
-        fullName: "Deepak",
-      },
-    });
-  }
-
-  const existingCoFounder = await db.teamProfile.findFirst({ where: { userId: deepakUser.id } });
-  if (!existingCoFounder) {
-    await db.teamProfile.create({
-      data: {
-        userId: deepakUser.id,
-        memberType: "LEADERSHIP",
-        leadershipPosition: "CO_FOUNDER",
-        displayName: "Deepak",
-        publicBio: "Helping every developer grow together.",
-        mediaUrl: "/assets/images/2299fdd2a1d01339a71af61a2c7e9cac.jpg",
-        mediaMimeType: "image/jpeg",
-        isPublic: true,
-        displayOrder: 2,
-      },
-    });
-  }
-
-  let venuUser = await db.user.findFirst({ where: { username: "venu" } });
-  if (!venuUser) {
-    const defaultPw = await bcrypt.hash("CxA!Venu2026", BCRYPT_ROUNDS);
-    venuUser = await db.user.create({
-      data: {
-        username: "venu",
-        email: "venu@codexa.agency",
-        passwordHash: defaultPw,
-        role: "TEAM_MEMBER",
-        isActive: true,
-        fullName: "Venu",
-      },
-    });
-  }
-
-  const existingCEO = await db.teamProfile.findFirst({ where: { userId: venuUser.id } });
-  if (!existingCEO) {
-    await db.teamProfile.create({
-      data: {
-        userId: venuUser.id,
-        memberType: "LEADERSHIP",
-        leadershipPosition: "CEO",
-        displayName: "Venu",
-        publicBio: "Vision creates companies. Execution builds them.",
-        mediaUrl: "/assets/images/2306fc1d8f6ea04d1ddd4ebfafd003f2.jpg",
-        mediaMimeType: "image/jpeg",
-        isPublic: true,
-        displayOrder: 3,
-      },
-    });
-  }
+  // ─── 7. BOOTSTRAP OFFICIAL LEADERSHIP (IDEMPOTENT & PRESERVES EDITS) ───────
+  console.log("  → Bootstrapping CodeXa Leadership identities (Founder, Co-Founder, CEO, Team Lead)...");
+  await bootstrapOfficialLeadership();
+  console.log("  ✓ Leadership identities initialized / synced.");
 
   // ─── 8. SEED CONFIRMATION OUTPUT (safe — no secrets printed) ────────────────
   console.log("");

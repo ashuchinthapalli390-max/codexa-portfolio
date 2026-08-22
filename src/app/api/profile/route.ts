@@ -50,8 +50,10 @@ export async function PATCH(req: NextRequest) {
     } else {
       const formData = await req.formData();
       const displayName = formData.get("displayName") as string | null;
+      const primaryRole = formData.get("primaryRole") as string | null;
       const headline = formData.get("headline") as string | null;
-      const bio = (formData.get("bio") || formData.get("publicBio")) as string | null;
+      const publicBio = formData.get("publicBio") as string | null;
+      const bio = formData.get("bio") as string | null;
       const skillsStr = formData.get("skills") as string | null;
       const githubUrl = formData.get("githubUrl") as string | null;
       const linkedinUrl = formData.get("linkedinUrl") as string | null;
@@ -59,7 +61,9 @@ export async function PATCH(req: NextRequest) {
       const mediaUrl = formData.get("mediaUrl") as string | null;
 
       if (displayName) updates.displayName = displayName.trim();
+      if (primaryRole !== null) updates.primaryRole = primaryRole.trim();
       if (headline !== null) updates.headline = headline.trim();
+      if (publicBio !== null) updates.publicBio = publicBio.trim();
       if (bio !== null) updates.bio = bio.trim();
       if (skillsStr !== null) {
         updates.skills = skillsStr.split(",").map((s) => s.trim()).filter(Boolean);
@@ -104,11 +108,12 @@ export async function PATCH(req: NextRequest) {
       link: `/team/${user.username}`,
     });
 
-    await dataStore.logAudit(
-      "PROFILE_UPDATED",
-      user.id,
-      `User @${user.username} (${user.role}) updated their profile details.`
-    );
+    await dataStore.logAudit({
+      action: "PROFILE_UPDATED",
+      actorId: user.id,
+      targetId: user.id,
+      details: `User @${user.username} (${user.role}) updated their profile details.`,
+    });
 
     return NextResponse.json({
       success: true,

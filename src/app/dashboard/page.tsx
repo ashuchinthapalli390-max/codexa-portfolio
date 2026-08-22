@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { motion } from "framer-motion";
 import {
   FolderGit2,
   Share2,
@@ -17,6 +18,9 @@ import {
 import { TeamCoreShell } from "@/components/layout/TeamCoreShell";
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
 import { ActivityEvent, Post, Project, Profile } from "@/lib/data-store";
+import { DashboardStatSkeleton, FeedSkeleton } from "@/components/ui/Skeletons";
+import { staggerContainer, staggerItem, cardRevealVariants, buttonHoverVariants, buttonPressVariants } from "@/lib/motion";
+import { MotionNumber } from "@/components/motion/MotionNumber";
 
 export default function DashboardOverviewPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -96,51 +100,72 @@ export default function DashboardOverviewPage() {
       <div className="space-y-8">
         
         {/* ─── QUICK METRICS ──────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Link
-            href="/dashboard/projects"
-            className="p-5 rounded-2xl bg-[#0A0A0A] border border-crimson/20 hover:border-bright-red/50 transition-all group shadow-lg"
+        {loading ? (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <DashboardStatSkeleton key={i} />
+            ))}
+          </div>
+        ) : (
+          <motion.div
+            variants={staggerContainer}
+            initial="initial"
+            animate="animate"
+            className="grid grid-cols-2 lg:grid-cols-4 gap-4"
           >
-            <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold">My Builds</span>
-            <div className="text-3xl font-orbitron font-black text-white mt-1 group-hover:text-bright-red transition-colors">
-              {myProjects.length}
-            </div>
-            <p className="text-[10px] font-mono text-emerald-400 mt-1">Active Projects</p>
-          </Link>
+            <motion.div variants={staggerItem}>
+              <Link
+                href="/dashboard/projects"
+                className="block p-5 rounded-2xl bg-[#0A0A0A] border border-crimson/20 hover:border-bright-red/50 transition-all group shadow-lg"
+              >
+                <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold">My Builds</span>
+                <div className="text-3xl font-orbitron font-black text-white mt-1 group-hover:text-bright-red transition-colors">
+                  <MotionNumber value={myProjects.length} />
+                </div>
+                <p className="text-[10px] font-mono text-emerald-400 mt-1">Active Projects</p>
+              </Link>
+            </motion.div>
 
-          <Link
-            href="/dashboard/feed"
-            className="p-5 rounded-2xl bg-[#0A0A0A] border border-crimson/20 hover:border-bright-red/50 transition-all group shadow-lg"
-          >
-            <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold">Team Feed</span>
-            <div className="text-3xl font-orbitron font-black text-white mt-1 group-hover:text-bright-red transition-colors">
-              {latestPosts.length}
-            </div>
-            <p className="text-[10px] font-mono text-bright-red mt-1">Published Updates</p>
-          </Link>
+            <motion.div variants={staggerItem}>
+              <Link
+                href="/dashboard/feed"
+                className="block p-5 rounded-2xl bg-[#0A0A0A] border border-crimson/20 hover:border-bright-red/50 transition-all group shadow-lg"
+              >
+                <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold">Team Feed</span>
+                <div className="text-3xl font-orbitron font-black text-white mt-1 group-hover:text-bright-red transition-colors">
+                  <MotionNumber value={latestPosts.length} />
+                </div>
+                <p className="text-[10px] font-mono text-bright-red mt-1">Published Updates</p>
+              </Link>
+            </motion.div>
 
-          <Link
-            href="/dashboard/profile"
-            className="p-5 rounded-2xl bg-[#0A0A0A] border border-crimson/20 hover:border-bright-red/50 transition-all group shadow-lg"
-          >
-            <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold">Profile Setup</span>
-            <div className="text-3xl font-orbitron font-black text-emerald-400 mt-1 font-mono">
-              {completionPct}%
-            </div>
-            <p className="text-[10px] font-mono text-[#AAA] mt-1">Digital Identity</p>
-          </Link>
+            <motion.div variants={staggerItem}>
+              <Link
+                href="/dashboard/profile"
+                className="block p-5 rounded-2xl bg-[#0A0A0A] border border-crimson/20 hover:border-bright-red/50 transition-all group shadow-lg"
+              >
+                <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold">Profile Setup</span>
+                <div className="text-3xl font-orbitron font-black text-emerald-400 mt-1 font-mono">
+                  <MotionNumber value={completionPct} suffix="%" />
+                </div>
+                <p className="text-[10px] font-mono text-[#AAA] mt-1">Digital Identity</p>
+              </Link>
+            </motion.div>
 
-          <Link
-            href="/team"
-            className="p-5 rounded-2xl bg-[#0A0A0A] border border-crimson/20 hover:border-bright-red/50 transition-all group shadow-lg"
-          >
-            <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold">Network</span>
-            <div className="text-2xl font-orbitron font-black text-white mt-1 uppercase">
-              ACTIVE
-            </div>
-            <p className="text-[10px] font-mono text-crimson mt-1">Team Directory &bull; Public</p>
-          </Link>
-        </div>
+            <motion.div variants={staggerItem}>
+              <Link
+                href="/team"
+                className="block p-5 rounded-2xl bg-[#0A0A0A] border border-crimson/20 hover:border-bright-red/50 transition-all group shadow-lg"
+              >
+                <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold">Network</span>
+                <div className="text-2xl font-orbitron font-black text-white mt-1 uppercase">
+                  ACTIVE
+                </div>
+                <p className="text-[10px] font-mono text-crimson mt-1">Team Directory &bull; Public</p>
+              </Link>
+            </motion.div>
+          </motion.div>
+        )}
 
         {/* ─── MAIN TWO-COLUMN CONTENT AREA ───────────────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -159,9 +184,13 @@ export default function DashboardOverviewPage() {
                   No recent activities recorded yet.
                 </div>
               ) : (
-                activities.slice(0, 6).map((act) => (
-                  <div
+                activities.slice(0, 6).map((act, idx) => (
+                  <motion.div
                     key={act.id}
+                    variants={cardRevealVariants}
+                    initial="initial"
+                    animate="animate"
+                    transition={{ delay: idx * 0.08 }}
                     className="p-4 rounded-2xl bg-[#0A0A0A] border border-crimson/20 hover:border-bright-red/40 transition-all flex items-start gap-3.5 shadow-md"
                   >
                     <CodeXaAvatar src={act.actorMediaUrl} alt={act.actorName} size="sm" />
@@ -182,7 +211,7 @@ export default function DashboardOverviewPage() {
                         </Link>
                       )}
                     </div>
-                  </div>
+                  </motion.div>
                 ))
               )}
             </div>
@@ -211,8 +240,15 @@ export default function DashboardOverviewPage() {
                     No posts shared yet. Be the first to share!
                   </div>
                 ) : (
-                  latestPosts.map((p) => (
-                    <div key={p.id} className="p-4 rounded-2xl bg-[#0A0A0A] border border-crimson/20 space-y-2">
+                  latestPosts.map((p, idx) => (
+                    <motion.div
+                      key={p.id}
+                      variants={cardRevealVariants}
+                      initial="initial"
+                      animate="animate"
+                      transition={{ delay: idx * 0.1 }}
+                      className="p-4 rounded-2xl bg-[#0A0A0A] border border-crimson/20 space-y-2"
+                    >
                       <div className="flex items-center gap-2.5">
                         <CodeXaAvatar src={p.author?.mediaUrl} alt={p.author?.displayName} size="xs" />
                         <div>
@@ -221,7 +257,7 @@ export default function DashboardOverviewPage() {
                         </div>
                       </div>
                       <p className="text-xs text-[#AAA] line-clamp-2 leading-relaxed">{p.content}</p>
-                    </div>
+                    </motion.div>
                   ))
                 )}
               </div>
@@ -238,7 +274,12 @@ export default function DashboardOverviewPage() {
 
               {/* Progress bar */}
               <div className="w-full h-1.5 rounded-full bg-[#1A1A1A] overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-crimson to-emerald-400 transition-all duration-500" style={{ width: `${completionPct}%` }} />
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${completionPct}%` }}
+                  transition={{ duration: 0.8, ease: "easeOut" }}
+                  className="h-full bg-gradient-to-r from-crimson to-emerald-400"
+                />
               </div>
 
               <div className="space-y-1.5 pt-1 text-[11px] text-[#888]">

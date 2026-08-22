@@ -32,15 +32,19 @@ import {
   X,
   Camera,
   AlertCircle,
-  Key
+  Key,
+  Terminal,
+  Smartphone,
+  Plus,
+  Trash2
 } from "lucide-react";
 import { CyberWebOverlay } from "@/components/ui/CyberWebOverlay";
-import { NeonButton } from "@/components/ui/NeonButton";
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
 import { CodeXaMediaSelectorModal } from "@/components/ui/CodeXaMediaSelectorModal";
 import { Profile, Project, Post } from "@/lib/data-store";
+import { tabTransitionVariants, cardRevealVariants, buttonHoverVariants } from "@/lib/motion";
 
-type TabType = "posts" | "projects" | "about";
+type TabType = "about" | "expertise" | "systems" | "projects" | "posts";
 
 export default function MemberProfilePage() {
   const params = useParams();
@@ -58,7 +62,7 @@ export default function MemberProfilePage() {
   const [currentSessionUser, setCurrentSessionUser] = useState<any>(null);
 
   // UI state
-  const [activeTab, setActiveTab] = useState<TabType>("posts");
+  const [activeTab, setActiveTab] = useState<TabType>("about");
   const [copied, setCopied] = useState(false);
   const [mediaSelectorOpen, setMediaSelectorOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -67,13 +71,18 @@ export default function MemberProfilePage() {
   // Edit Profile Form State
   const [editFormData, setEditFormData] = useState({
     displayName: "",
+    primaryRole: "",
     headline: "",
+    publicBio: "",
     bio: "",
     skillsStr: "",
     githubUrl: "",
     linkedinUrl: "",
     portfolioUrl: "",
+    featuredProjects: [] as Array<{ name: string; category: string; url?: string | null }>,
   });
+  const [newProjectName, setNewProjectName] = useState("");
+  const [newProjectCategory, setNewProjectCategory] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
@@ -105,12 +114,15 @@ export default function MemberProfilePage() {
 
           setEditFormData({
             displayName: data.profile.displayName || "",
+            primaryRole: data.profile.primaryRole || "",
             headline: data.profile.headline || "",
+            publicBio: data.profile.publicBio || "",
             bio: data.profile.bio || "",
             skillsStr: (data.profile.skills || []).join(", "),
             githubUrl: data.profile.githubUrl || "",
             linkedinUrl: data.profile.linkedinUrl || "",
             portfolioUrl: data.profile.portfolioUrl || "",
+            featuredProjects: data.profile.featuredProjects || [],
           });
         }
       })
@@ -137,6 +149,30 @@ export default function MemberProfilePage() {
     router.push(`/dashboard/messages?user=${profile.id}`);
   };
 
+  // Add a featured project item
+  const handleAddFeaturedProject = () => {
+    if (!newProjectName.trim()) return;
+    setEditFormData({
+      ...editFormData,
+      featuredProjects: [
+        ...editFormData.featuredProjects,
+        {
+          name: newProjectName.trim(),
+          category: newProjectCategory.trim() || "System Build",
+          url: null,
+        },
+      ],
+    });
+    setNewProjectName("");
+    setNewProjectCategory("");
+  };
+
+  const handleRemoveFeaturedProject = (index: number) => {
+    const updated = [...editFormData.featuredProjects];
+    updated.splice(index, 1);
+    setEditFormData({ ...editFormData, featuredProjects: updated });
+  };
+
   // Save Profile Changes
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,9 +185,12 @@ export default function MemberProfilePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           displayName: editFormData.displayName,
+          primaryRole: editFormData.primaryRole,
           headline: editFormData.headline,
+          publicBio: editFormData.publicBio,
           bio: editFormData.bio,
           skills: editFormData.skillsStr.split(",").map((s) => s.trim()).filter(Boolean),
+          featuredProjects: editFormData.featuredProjects,
           githubUrl: editFormData.githubUrl,
           linkedinUrl: editFormData.linkedinUrl,
           portfolioUrl: editFormData.portfolioUrl,
@@ -202,6 +241,23 @@ export default function MemberProfilePage() {
   }
 
   const allProjects = [...createdProjects, ...collabProjects];
+  const isFounder = profile.leadershipPosition === "FOUNDER" || profile.role === "OWNER" || profile.username.toLowerCase() === "ashu";
+
+  const capabilityStrip = [
+    "WEB DEVELOPMENT",
+    "AI ENGINEERING",
+    "CYBERSECURITY",
+    "LINUX",
+    "DESKTOP",
+    "ANDROID",
+    "iOS",
+    "macOS",
+    "FLUTTER",
+    "SaaS",
+    "CLOUD",
+    "AUTOMATION",
+    "DEVELOPER TOOLS",
+  ];
 
   return (
     <div className="min-h-screen bg-[#070707] text-white relative overflow-hidden flex flex-col">
@@ -304,10 +360,10 @@ export default function MemberProfilePage() {
               </div>
               <div>
                 <span className="text-xs font-orbitron font-black text-white uppercase tracking-wider block">
-                  OWNER DIGITAL PROFILE &bull; @{profile.username}
+                  FOUNDER DIGITAL PROFILE &bull; @{profile.username}
                 </span>
                 <p className="text-[10px] text-[#AAA] mt-0.5">
-                  Founder & Principal Authority at CodeXa Agency.
+                  Founder & Principal Architect at CodeXa Agency.
                 </p>
               </div>
             </div>
@@ -334,23 +390,32 @@ export default function MemberProfilePage() {
           </div>
         )}
 
-        {/* ─── INSTAGRAM-STYLE PROFILE HEADER ─────────────────────────── */}
-        <div className="rounded-3xl bg-[#0A0A0A] border border-crimson/25 p-6 sm:p-8 shadow-[0_0_40px_rgba(217,4,41,0.12)]">
-          <div className="flex flex-col md:flex-row items-start md:items-center gap-6 sm:gap-8">
+        {/* ─── LEADERSHIP HEADER CARD ──────────────────────────────────── */}
+        <div className="relative rounded-3xl bg-[#0A0A0A] border border-crimson/30 p-6 sm:p-10 shadow-[0_0_50px_rgba(217,4,41,0.15)] overflow-hidden">
+          
+          {/* Cyber Corner Marks */}
+          <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-crimson pointer-events-none" />
+          <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-crimson pointer-events-none" />
+          <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-crimson pointer-events-none" />
+          <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-crimson pointer-events-none" />
+
+          <div className="flex flex-col md:flex-row items-start md:items-center gap-6 sm:gap-10">
             
             {/* Avatar with Click-to-Change if Authorized */}
-            <div className="relative group mx-auto md:mx-0">
-              <CodeXaAvatar
-                src={profile.mediaUrl}
-                alt={profile.displayName}
-                size="2xl"
-                showGlow
-                className="w-28 h-28 sm:w-36 sm:h-36"
-              />
+            <div className="relative group mx-auto md:mx-0 flex-shrink-0">
+              <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-crimson to-bright-red opacity-60 blur-md group-hover:opacity-100 transition-opacity" />
+              <div className="relative rounded-3xl overflow-hidden border-2 border-bright-red bg-black">
+                <CodeXaAvatar
+                  src={profile.mediaUrl}
+                  alt={profile.displayName}
+                  size="2xl"
+                  className="w-32 h-32 sm:w-40 sm:h-40"
+                />
+              </div>
               {canEdit && (
                 <button
                   onClick={() => setMediaSelectorOpen(true)}
-                  className="absolute inset-0 rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-orbitron font-bold uppercase"
+                  className="absolute inset-0 rounded-3xl bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-orbitron font-bold uppercase z-10"
                   title="Change Profile Picture"
                 >
                   <Camera className="w-5 h-5 mb-1 text-bright-red" />
@@ -359,105 +424,70 @@ export default function MemberProfilePage() {
               )}
             </div>
 
-            {/* Profile Identity & Stats */}
+            {/* Profile Identity & Info */}
             <div className="flex-1 space-y-4 text-center md:text-left w-full">
               
-              {/* Name, Username & Badges */}
+              {/* Badge & Name */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
+                <div className="space-y-1">
                   <div className="flex items-center justify-center md:justify-start gap-2.5 flex-wrap">
-                    <h1 className="font-orbitron font-black text-2xl sm:text-3xl text-white uppercase tracking-wide">
-                      {profile.displayName}
-                    </h1>
-                    <span className="px-2.5 py-0.5 rounded-full bg-crimson/20 border border-crimson/40 text-bright-red font-orbitron text-[10px] font-bold uppercase tracking-wider">
-                      {profile.leadershipPosition || profile.role.replace("_", " ")}
+                    <span className="px-3 py-1 rounded-full bg-crimson/20 border border-bright-red/50 text-bright-red font-orbitron text-[10px] font-black uppercase tracking-widest">
+                      {profile.leadershipPosition
+                        ? `${profile.leadershipPosition} // CODEXA`
+                        : `${profile.role.replace("_", " ")} // CODEXA`}
                     </span>
                   </div>
-                  <p className="text-xs font-mono text-crimson mt-0.5">@{profile.username}</p>
+
+                  <h1 className="font-orbitron font-black text-3xl sm:text-4xl text-white uppercase tracking-wider mt-1">
+                    {profile.displayName}
+                  </h1>
+                  
+                  <p className="font-orbitron text-xs sm:text-sm font-bold text-crimson uppercase tracking-widest">
+                    {profile.primaryRole || (isFounder ? "Founder & Full-Stack Developer" : "CodeXa Engineer")}
+                  </p>
                 </div>
 
-                {/* Action Buttons: Message / Edit */}
+                {/* Action Buttons */}
                 <div className="flex items-center justify-center md:justify-end gap-2.5 pt-1 flex-wrap">
                   {!isSelf && (
                     <button
                       onClick={handleDirectMessage}
-                      className="px-4 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(217,4,41,0.3)] flex items-center gap-1.5"
+                      className="px-5 py-2.5 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-black uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(217,4,41,0.3)] flex items-center gap-1.5"
                     >
                       <MessageSquare className="w-3.5 h-3.5" /> Message
                     </button>
                   )}
-                  {isSelf && (
+                  {canEdit && (
                     <button
                       onClick={() => setEditModalOpen(true)}
-                      className="px-4 py-2 rounded-xl bg-[#151515] hover:bg-deep-red/20 border border-crimson/30 text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center gap-1.5"
+                      className="px-4 py-2.5 rounded-xl bg-[#151515] hover:bg-deep-red/20 border border-crimson/30 text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center gap-1.5"
                     >
                       <Edit3 className="w-3.5 h-3.5 text-bright-red" /> Edit Profile
                     </button>
                   )}
-                  {!isSelf && isOwnerViewer && (
-                    <>
-                      <button
-                        onClick={() => setEditModalOpen(true)}
-                        className="px-4 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(217,4,41,0.3)] flex items-center gap-1.5"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" /> Edit Member Profile
-                      </button>
-                      <Link
-                        href="/owner"
-                        className="px-4 py-2 rounded-xl bg-[#151515] hover:bg-deep-red/20 border border-crimson/30 text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center gap-1.5"
-                      >
-                        <Shield className="w-3.5 h-3.5 text-bright-red" /> Manage Account
-                      </Link>
-                    </>
-                  )}
                 </div>
               </div>
 
-              {/* Stats Row (Instagram Style) */}
-              <div className="flex items-center justify-center md:justify-start gap-8 py-2 border-y border-white/5 font-orbitron">
-                <div>
-                  <span className="font-black text-lg text-white">{stats.postsCount}</span>
-                  <span className="text-xs text-[#777] ml-1.5 uppercase">Posts</span>
-                </div>
-                <div>
-                  <span className="font-black text-lg text-white">{stats.projectsCount}</span>
-                  <span className="text-xs text-[#777] ml-1.5 uppercase">Projects</span>
-                </div>
-                <div>
-                  <span className="font-black text-lg text-white">{stats.collabCount}</span>
-                  <span className="text-xs text-[#777] ml-1.5 uppercase">Collabs</span>
-                </div>
-              </div>
+              {/* Headline */}
+              <p className="text-xs sm:text-sm text-[#CCCCCC] font-light leading-relaxed max-w-2xl">
+                {profile.headline || (isFounder ? "Full-Stack Developer • AI Engineer • Cybersecurity & Linux Specialist" : "")}
+              </p>
 
-              {/* Headline & Bio */}
-              <div className="space-y-1.5">
-                {profile.headline && (
-                  <h3 className="font-orbitron font-bold text-xs sm:text-sm text-[#DDD]">
-                    {profile.headline}
-                  </h3>
-                )}
-                {profile.bio && (
-                  <p className="text-xs text-[#AAA] whitespace-pre-line leading-relaxed max-w-2xl">
-                    {profile.bio}
-                  </p>
-                )}
-              </div>
-
-              {/* Skills Chips */}
-              {profile.skills && profile.skills.length > 0 && (
+              {/* Founder Capability Strip */}
+              {isFounder && (
                 <div className="flex flex-wrap gap-1.5 justify-center md:justify-start pt-1">
-                  {profile.skills.map((skill, idx) => (
+                  {capabilityStrip.map((cap, idx) => (
                     <span
                       key={idx}
-                      className="px-2.5 py-0.8 rounded-lg bg-[#141414] border border-crimson/20 text-[10px] font-orbitron text-[#CCC]"
+                      className="text-[9px] font-orbitron font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-[#121212] border border-crimson/20 text-[#DDD]"
                     >
-                      {skill}
+                      {cap}
                     </span>
                   ))}
                 </div>
               )}
 
-              {/* Social & Professional Links */}
+              {/* Social & Professional Links (Only shown if added by Owner) */}
               <div className="flex items-center justify-center md:justify-start gap-3 pt-2">
                 {profile.githubUrl && (
                   <a
@@ -499,13 +529,15 @@ export default function MemberProfilePage() {
           </div>
         </div>
 
-        {/* ─── 3 PROFILE TABS (POSTS / PROJECTS / ABOUT) ──────────────── */}
+        {/* ─── 5 INTERACTIVE PROFILE TABS ───────────────────────────────── */}
         <div className="space-y-6">
-          <div className="flex justify-center border-b border-crimson/20 bg-[#0A0A0A] rounded-2xl p-1.5 gap-2">
+          <div className="flex justify-center border-b border-crimson/20 bg-[#0A0A0A] rounded-2xl p-1.5 gap-2 overflow-x-auto">
             {[
-              { id: "posts", label: "Posts", icon: ImageIcon, count: posts.length },
-              { id: "projects", label: "Projects", icon: FolderGit2, count: allProjects.length },
               { id: "about", label: "About", icon: UserCheck },
+              { id: "expertise", label: "Expertise", icon: Cpu },
+              { id: "systems", label: "Selected Systems", icon: Code2, count: (profile.featuredProjects || []).length || (isFounder ? 8 : undefined) },
+              { id: "projects", label: "Builds", icon: FolderGit2, count: allProjects.length },
+              { id: "posts", label: "Posts", icon: ImageIcon, count: posts.length },
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -513,7 +545,7 @@ export default function MemberProfilePage() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as TabType)}
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-orbitron text-xs font-bold uppercase tracking-wider transition-all ${
+                  className={`flex-1 min-w-[110px] flex items-center justify-center gap-2 py-3 rounded-xl font-orbitron text-xs font-bold uppercase tracking-wider transition-all ${
                     isActive
                       ? "bg-crimson text-white shadow-[0_0_15px_rgba(217,4,41,0.3)] border border-bright-red"
                       : "text-[#888] hover:text-white hover:bg-[#121212]"
@@ -533,95 +565,300 @@ export default function MemberProfilePage() {
             })}
           </div>
 
-          {/* TAB 1: POSTS */}
           <AnimatePresence mode="wait">
-            {activeTab === "posts" && (
+            
+            {/* ═══ TAB 1: ABOUT ════════════════════════════════════════════ */}
+            {activeTab === "about" && (
               <motion.div
-                key="posts"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.25 }}
-                className="space-y-4"
+                key="about"
+                variants={tabTransitionVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+                className="rounded-3xl bg-[#0A0A0A] border border-crimson/25 p-6 sm:p-8 space-y-6 shadow-xl"
               >
-                {posts.length === 0 ? (
-                  <div className="text-center py-16 rounded-3xl bg-[#0A0A0A] border border-white/5 space-y-2">
-                    <ImageIcon className="w-8 h-8 text-[#555] mx-auto" />
-                    <h4 className="font-orbitron font-bold text-xs text-[#AAA] uppercase">No posts published yet</h4>
-                    <p className="text-xs text-[#666]">Posts created by @{profile.username} will appear in this feed gallery.</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {posts.map((post) => (
-                      <div
-                        key={post.id}
-                        className="cyber-card p-5 space-y-4 flex flex-col justify-between"
-                      >
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between text-xs text-[#666]">
-                          <span className="font-mono">{new Date(post.createdAt).toLocaleDateString()}</span>
-                          {post.isAnnouncement && (
-                            <span className="px-2 py-0.5 rounded bg-crimson/20 border border-crimson/30 text-bright-red text-[9px] font-orbitron font-bold uppercase">
-                              ANNOUNCEMENT
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-white leading-relaxed whitespace-pre-line">{post.content}</p>
-
-                        {/* Post Media Images */}
-                        {post.media && post.media.length > 0 && (
-                          <div className="grid grid-cols-2 gap-2 pt-1">
-                            {post.media.map((m, idx) => (
-                              <div
-                                key={idx}
-                                onClick={() => setActiveLightboxImage(m.mediaUrl)}
-                                className="relative rounded-xl overflow-hidden aspect-video border border-crimson/20 cursor-pointer group bg-[#050505]"
-                              >
-                                <img src={m.mediaUrl} alt="Post media" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Attached Project */}
-                        {post.project && (
-                          <Link
-                            href={`/projects/${post.project.slug}`}
-                            className="block p-3 rounded-xl bg-[#111] border border-crimson/30 hover:border-bright-red transition-all"
-                          >
-                            <span className="text-[9px] font-orbitron text-bright-red uppercase font-bold">Attached Project &bull; View Case Study</span>
-                            <h4 className="font-orbitron font-bold text-xs text-white mt-0.5">{post.project.title}</h4>
-                          </Link>
-                        )}
-                      </div>
-
-                      <div className="flex items-center justify-between pt-3 border-t border-white/5 text-xs text-[#777]">
-                        <div className="flex items-center gap-4">
-                          <span className="flex items-center gap-1"><Heart className="w-3.5 h-3.5 text-crimson" /> {post.likesCount}</span>
-                          <span className="flex items-center gap-1"><MessageCircle className="w-3.5 h-3.5" /> {post.commentsCount}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                <div>
+                  <h3 className="font-orbitron font-black text-sm text-bright-red uppercase tracking-wider mb-3">
+                    Professional Biography
+                  </h3>
+                  <p className="text-xs sm:text-sm text-[#CCCCCC] whitespace-pre-line leading-relaxed">
+                    {profile.bio || profile.publicBio || "No extended bio provided."}
+                  </p>
                 </div>
-              )}
-            </motion.div>
-          )}
 
-          {/* TAB 2: PROJECTS */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4 border-t border-white/5">
+                  <div>
+                    <h4 className="font-orbitron font-bold text-xs text-[#888] uppercase mb-1.5">Leadership Identity</h4>
+                    <p className="text-xs text-white font-orbitron font-semibold">
+                      {profile.leadershipPosition || profile.role.replace("_", " ")}
+                    </p>
+                    <p className="text-[11px] text-[#777] mt-0.5">{profile.headline}</p>
+                  </div>
+                  <div>
+                    <h4 className="font-orbitron font-bold text-xs text-[#888] uppercase mb-1.5">Role Classification</h4>
+                    <p className="text-xs text-white font-mono">
+                      {profile.primaryRole || (isFounder ? "Founder & Full-Stack Developer" : "Core Team Member")}
+                    </p>
+                  </div>
+                </div>
+
+                {profile.skills && profile.skills.length > 0 && (
+                  <div className="pt-4 border-t border-white/5">
+                    <h4 className="font-orbitron font-bold text-xs text-[#888] uppercase mb-3">Primary Focus Areas</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {profile.skills.map((skill, idx) => (
+                        <span key={idx} className="px-3 py-1.5 rounded-xl bg-[#141414] border border-crimson/25 text-xs font-orbitron text-white">
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {/* ═══ TAB 2: GROUPED EXPERTISE MATRIX ══════════════════════════ */}
+            {activeTab === "expertise" && (
+              <motion.div
+                key="expertise"
+                variants={tabTransitionVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+                className="space-y-6"
+              >
+                {/* Categorized Matrix Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  
+                  {/* Category: Development Languages */}
+                  <div className="p-6 rounded-2xl bg-[#0A0A0A] border border-crimson/25 space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Terminal className="w-4 h-4 text-bright-red" />
+                      <h4 className="font-orbitron font-bold text-xs text-white uppercase tracking-wider">
+                        Development Languages
+                      </h4>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {["HTML", "CSS", "JavaScript", "TypeScript", "Python", "Java", "C", "C++", "C#"].map((lang, idx) => (
+                        <span key={idx} className="px-3 py-1 rounded-lg bg-[#141414] border border-white/5 font-mono text-xs text-[#DDD]">
+                          {lang}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Category: Full-Stack Engineering */}
+                  <div className="p-6 rounded-2xl bg-[#0A0A0A] border border-crimson/25 space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-bright-red" />
+                      <h4 className="font-orbitron font-bold text-xs text-white uppercase tracking-wider">
+                        Full-Stack Engineering
+                      </h4>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        "Frontend Development",
+                        "Backend Development",
+                        "REST APIs",
+                        "Database Architecture",
+                        "Authentication Systems",
+                        "Admin Dashboards",
+                        "SaaS Platforms",
+                        "Developer Platforms",
+                        "Web Applications",
+                        "Cloud Deployment",
+                        "Automation",
+                      ].map((item, idx) => (
+                        <span key={idx} className="px-2.5 py-1 rounded-lg bg-[#141414] border border-white/5 font-orbitron text-[10px] text-[#DDD]">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Category: AI Engineering */}
+                  <div className="p-6 rounded-2xl bg-[#0A0A0A] border border-crimson/25 space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Cpu className="w-4 h-4 text-bright-red" />
+                      <h4 className="font-orbitron font-bold text-xs text-white uppercase tracking-wider">
+                        AI Engineering
+                      </h4>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        "AI Applications",
+                        "AI Agents",
+                        "AI Workflow Engineering",
+                        "LLM Integration",
+                        "Automation Systems",
+                        "Intelligent Assistants",
+                        "AI-Powered SaaS",
+                        "Prompt Engineering",
+                        "AI Tool Development",
+                      ].map((item, idx) => (
+                        <span key={idx} className="px-2.5 py-1 rounded-lg bg-[#141414] border border-white/5 font-orbitron text-[10px] text-[#DDD]">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Category: Cybersecurity & Ethical Hacking */}
+                  <div className="p-6 rounded-2xl bg-[#0A0A0A] border border-crimson/25 space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-bright-red" />
+                      <h4 className="font-orbitron font-bold text-xs text-white uppercase tracking-wider">
+                        Cybersecurity & Defense
+                      </h4>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        "Ethical Hacking",
+                        "Security Testing",
+                        "Secure App Development",
+                        "Authentication Security",
+                        "Web Security",
+                        "Cybersecurity Tools",
+                        "Security Automation",
+                        "Linux Security",
+                      ].map((item, idx) => (
+                        <span key={idx} className="px-2.5 py-1 rounded-lg bg-[#141414] border border-white/5 font-orbitron text-[10px] text-[#DDD]">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Category: Linux & Systems */}
+                  <div className="p-6 rounded-2xl bg-[#0A0A0A] border border-crimson/25 space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Terminal className="w-4 h-4 text-bright-red" />
+                      <h4 className="font-orbitron font-bold text-xs text-white uppercase tracking-wider">
+                        Linux & Systems
+                      </h4>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        "Linux Administration",
+                        "Developer Environments",
+                        "System Automation",
+                        "Command-Line Workflows",
+                        "Deployment Environments",
+                        "Server Management",
+                        "Security Tooling",
+                      ].map((item, idx) => (
+                        <span key={idx} className="px-2.5 py-1 rounded-lg bg-[#141414] border border-white/5 font-orbitron text-[10px] text-[#DDD]">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Category: Application Engineering */}
+                  <div className="p-6 rounded-2xl bg-[#0A0A0A] border border-crimson/25 space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Smartphone className="w-4 h-4 text-bright-red" />
+                      <h4 className="font-orbitron font-bold text-xs text-white uppercase tracking-wider">
+                        Application Platforms
+                      </h4>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        "Web Applications",
+                        "SaaS Applications",
+                        "Desktop Applications",
+                        "Android Applications",
+                        "iOS Applications",
+                        "macOS Applications",
+                        "Cross-Platform Builds",
+                        "Flutter Applications",
+                        "Developer Tools",
+                      ].map((item, idx) => (
+                        <span key={idx} className="px-2.5 py-1 rounded-lg bg-[#141414] border border-white/5 font-orbitron text-[10px] text-[#DDD]">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                </div>
+              </motion.div>
+            )}
+
+            {/* ═══ TAB 3: SELECTED PROJECTS & SYSTEMS ════════════════════════ */}
+            {activeTab === "systems" && (
+              <motion.div
+                key="systems"
+                variants={tabTransitionVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+                className="space-y-6"
+              >
+                <div className="p-6 rounded-3xl bg-[#0A0A0A] border border-crimson/25 space-y-6 shadow-xl">
+                  <div>
+                    <h3 className="font-orbitron font-black text-sm text-bright-red uppercase tracking-wider">
+                      Selected Projects & Systems Architecture
+                    </h3>
+                    <p className="text-xs text-[#888] font-light mt-1">
+                      Display-only architectural highlights and software systems engineered within the CodeXa ecosystem.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {(profile.featuredProjects && profile.featuredProjects.length > 0
+                      ? profile.featuredProjects
+                      : [
+                          { name: "CodeXa IDE", category: "Developer Platform" },
+                          { name: "Nexa AI", category: "Artificial Intelligence" },
+                          { name: "EDITH AI Agent", category: "AI Agent" },
+                          { name: "Cyber Kivi Max", category: "Cybersecurity" },
+                          { name: "Vishnu Max", category: "Application" },
+                          { name: "CloudWave", category: "Cloud / Platform" },
+                          { name: "NodeWave", category: "Developer System" },
+                          { name: "CodeXa OS", category: "System Platform" },
+                        ]
+                    ).map((proj, idx) => (
+                      <div
+                        key={idx}
+                        className="group relative p-4 rounded-2xl bg-[#111111] border border-white/5 hover:border-crimson/60 hover:bg-[#141414] transition-all duration-300 flex flex-col justify-between overflow-hidden shadow-sm"
+                      >
+                        <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-crimson to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        
+                        <div className="space-y-1">
+                          <h4 className="font-orbitron font-bold text-sm text-white uppercase group-hover:text-bright-red transition-colors truncate">
+                            {proj.name}
+                          </h4>
+                          <p className="text-[10px] font-mono text-[#777] uppercase truncate">
+                            {proj.category}
+                          </p>
+                        </div>
+
+                        <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] text-[#555] font-mono">
+                          <span>SYSTEM BUILD</span>
+                          <span className="text-crimson font-bold">ACTIVE</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {/* ═══ TAB 4: BUILDS / PROJECTS ═════════════════════════════════ */}
             {activeTab === "projects" && (
               <motion.div
                 key="projects"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.25 }}
+                variants={tabTransitionVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
                 className="space-y-4"
               >
                 {allProjects.length === 0 ? (
                   <div className="text-center py-16 rounded-3xl bg-[#0A0A0A] border border-white/5 space-y-2">
                     <FolderGit2 className="w-8 h-8 text-[#555] mx-auto" />
-                    <h4 className="font-orbitron font-bold text-xs text-[#AAA] uppercase">No projects linked yet</h4>
+                    <h4 className="font-orbitron font-bold text-xs text-[#AAA] uppercase">No project case studies published yet</h4>
                     <p className="text-xs text-[#666]">Projects created or collaborated by @{profile.username} will be featured here.</p>
                   </div>
                 ) : (
@@ -686,53 +923,68 @@ export default function MemberProfilePage() {
               </motion.div>
             )}
 
-            {/* TAB 3: ABOUT */}
-            {activeTab === "about" && (
+            {/* ═══ TAB 5: POSTS ═════════════════════════════════════════════ */}
+            {activeTab === "posts" && (
               <motion.div
-                key="about"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.25 }}
-                className="rounded-3xl bg-[#0A0A0A] border border-crimson/25 p-6 sm:p-8 space-y-6 shadow-xl"
+                key="posts"
+                variants={tabTransitionVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+                className="space-y-4"
               >
-                <div>
-                  <h3 className="font-orbitron font-black text-sm text-bright-red uppercase tracking-wider mb-2">
-                    Professional Bio
-                  </h3>
-                  <p className="text-xs text-[#CCC] whitespace-pre-line leading-relaxed">
-                    {profile.bio || "No extended bio provided."}
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4 border-t border-white/5">
-                  <div>
-                    <h4 className="font-orbitron font-bold text-xs text-[#888] uppercase mb-2">Role & Title</h4>
-                    <p className="text-xs text-white font-orbitron font-semibold">
-                      {profile.leadershipPosition || profile.role.replace("_", " ")}
-                    </p>
-                    <p className="text-[11px] text-[#777] mt-0.5">{profile.headline}</p>
+                {posts.length === 0 ? (
+                  <div className="text-center py-16 rounded-3xl bg-[#0A0A0A] border border-white/5 space-y-2">
+                    <ImageIcon className="w-8 h-8 text-[#555] mx-auto" />
+                    <h4 className="font-orbitron font-bold text-xs text-[#AAA] uppercase">No posts published yet</h4>
+                    <p className="text-xs text-[#666]">Posts created by @{profile.username} will appear in this feed gallery.</p>
                   </div>
-                  <div>
-                    <h4 className="font-orbitron font-bold text-xs text-[#888] uppercase mb-2">Joined CodeXa</h4>
-                    <p className="text-xs text-white font-mono">
-                      {new Date(profile.createdAt).toLocaleDateString(undefined, { year: "numeric", month: "long" })}
-                    </p>
-                  </div>
-                </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {posts.map((post) => (
+                      <div
+                        key={post.id}
+                        className="cyber-card p-5 space-y-4 flex flex-col justify-between"
+                      >
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between text-xs text-[#666]">
+                            <span className="font-mono">{new Date(post.createdAt).toLocaleDateString()}</span>
+                            {post.isAnnouncement && (
+                              <span className="px-2 py-0.5 rounded bg-crimson/20 border border-crimson/30 text-bright-red text-[9px] font-orbitron font-bold uppercase">
+                                ANNOUNCEMENT
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-white leading-relaxed whitespace-pre-line">{post.content}</p>
 
-                <div className="pt-4 border-t border-white/5">
-                  <h4 className="font-orbitron font-bold text-xs text-[#888] uppercase mb-2.5">Competencies & Skills</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {profile.skills?.map((skill, idx) => (
-                      <span key={idx} className="px-3 py-1 rounded-xl bg-[#141414] border border-crimson/25 text-xs font-orbitron text-white">
-                        {skill}
-                      </span>
+                          {post.media && post.media.length > 0 && (
+                            <div className="grid grid-cols-2 gap-2 pt-1">
+                              {post.media.map((m, idx) => (
+                                <div
+                                  key={idx}
+                                  onClick={() => setActiveLightboxImage(m.mediaUrl)}
+                                  className="relative rounded-xl overflow-hidden aspect-video border border-crimson/20 cursor-pointer group bg-[#050505]"
+                                >
+                                  <img src={m.mediaUrl} alt="Post media" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between pt-3 border-t border-white/5 text-xs text-[#777]">
+                          <div className="flex items-center gap-4">
+                            <span className="flex items-center gap-1"><Heart className="w-3.5 h-3.5 text-crimson" /> {post.likesCount}</span>
+                            <span className="flex items-center gap-1"><MessageCircle className="w-3.5 h-3.5" /> {post.commentsCount}</span>
+                          </div>
+                        </div>
+                      </div>
                     ))}
                   </div>
-                </div>
+                )}
               </motion.div>
             )}
+
           </AnimatePresence>
         </div>
       </main>
@@ -771,7 +1023,7 @@ export default function MemberProfilePage() {
                 </div>
               )}
 
-              <form onSubmit={handleSaveProfile} className="space-y-3.5 text-xs">
+              <form onSubmit={handleSaveProfile} className="space-y-4 text-xs">
                 <div>
                   <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Display Name</label>
                   <input
@@ -782,6 +1034,18 @@ export default function MemberProfilePage() {
                     className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
                   />
                 </div>
+
+                <div>
+                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Primary Role / Title</label>
+                  <input
+                    type="text"
+                    value={editFormData.primaryRole}
+                    onChange={(e) => setEditFormData({ ...editFormData, primaryRole: e.target.value })}
+                    className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                    placeholder="e.g. Founder & Full-Stack Developer"
+                  />
+                </div>
+
                 <div>
                   <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Professional Headline</label>
                   <input
@@ -789,19 +1053,32 @@ export default function MemberProfilePage() {
                     value={editFormData.headline}
                     onChange={(e) => setEditFormData({ ...editFormData, headline: e.target.value })}
                     className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
-                    placeholder="e.g. AI Developer &bull; Full Stack &bull; Cybersecurity"
+                    placeholder="e.g. Founder of CodeXa Agency • Full-Stack Developer • AI Engineer"
                   />
                 </div>
+
                 <div>
-                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Bio</label>
+                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Short Introduction</label>
                   <textarea
-                    rows={4}
+                    rows={2}
+                    value={editFormData.publicBio}
+                    onChange={(e) => setEditFormData({ ...editFormData, publicBio: e.target.value })}
+                    className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none resize-none"
+                    placeholder="Short overview shown on spotlight cards..."
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Full Biography</label>
+                  <textarea
+                    rows={5}
                     value={editFormData.bio}
                     onChange={(e) => setEditFormData({ ...editFormData, bio: e.target.value })}
                     className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none resize-none"
-                    placeholder="Write a clear professional summary..."
+                    placeholder="Comprehensive professional biography..."
                   />
                 </div>
+
                 <div>
                   <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Skills (Comma-separated)</label>
                   <input
@@ -809,37 +1086,83 @@ export default function MemberProfilePage() {
                     value={editFormData.skillsStr}
                     onChange={(e) => setEditFormData({ ...editFormData, skillsStr: e.target.value })}
                     className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
-                    placeholder="Next.js, Python, AI, Cybersecurity"
+                    placeholder="Full-Stack, Python, AI, Cybersecurity"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+
+                {/* Featured Projects / Systems Editor */}
+                <div className="pt-2 border-t border-white/5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-orbitron uppercase text-bright-red font-bold">
+                      Selected Projects & Systems
+                    </label>
+                    <span className="text-[9px] font-mono text-[#666]">({editFormData.featuredProjects.length})</span>
+                  </div>
+
+                  <div className="space-y-2 max-h-36 overflow-y-auto p-2 bg-[#090909] rounded-xl border border-white/5">
+                    {editFormData.featuredProjects.map((p, idx) => (
+                      <div key={idx} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-[#141414] text-xs">
+                        <div className="truncate">
+                          <span className="font-orbitron font-bold text-white block truncate">{p.name}</span>
+                          <span className="text-[9px] font-mono text-[#888]">{p.category}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFeaturedProject(idx)}
+                          className="p-1 text-[#666] hover:text-bright-red transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newProjectName}
+                      onChange={(e) => setNewProjectName(e.target.value)}
+                      placeholder="Project Name (e.g. CodeXa IDE)"
+                      className="flex-1 bg-[#111] border border-crimson/20 rounded-xl p-2 text-xs text-white outline-none"
+                    />
+                    <input
+                      type="text"
+                      value={newProjectCategory}
+                      onChange={(e) => setNewProjectCategory(e.target.value)}
+                      placeholder="Category"
+                      className="w-1/3 bg-[#111] border border-crimson/20 rounded-xl p-2 text-xs text-white outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddFeaturedProject}
+                      className="px-3 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-2">
                   <div>
-                    <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">GitHub URL</label>
+                    <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">GitHub URL (Optional)</label>
                     <input
                       type="url"
                       value={editFormData.githubUrl}
                       onChange={(e) => setEditFormData({ ...editFormData, githubUrl: e.target.value })}
                       className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                      placeholder="https://github.com/..."
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">LinkedIn URL</label>
+                    <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">LinkedIn URL (Optional)</label>
                     <input
                       type="url"
                       value={editFormData.linkedinUrl}
                       onChange={(e) => setEditFormData({ ...editFormData, linkedinUrl: e.target.value })}
                       className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
+                      placeholder="https://linkedin.com/in/..."
                     />
                   </div>
-                </div>
-                <div>
-                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">Portfolio Website URL</label>
-                  <input
-                    type="url"
-                    value={editFormData.portfolioUrl}
-                    onChange={(e) => setEditFormData({ ...editFormData, portfolioUrl: e.target.value })}
-                    className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
-                  />
                 </div>
 
                 <div className="flex gap-3 pt-3">

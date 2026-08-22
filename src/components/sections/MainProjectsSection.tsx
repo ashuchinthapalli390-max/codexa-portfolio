@@ -2,12 +2,13 @@
 
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { ArrowUpRight, Github, ExternalLink, Sparkles, Layers, Cpu, ShieldCheck } from "lucide-react";
+import { ArrowUpRight, Github, ExternalLink, Sparkles, FolderCode } from "lucide-react";
 import Link from "next/link";
 import { SectionHeading } from "../ui/SectionHeading";
 import { NeonButton } from "../ui/NeonButton";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { Project } from "@/lib/data-store";
+import { CyberEmptyState, ProjectSkeleton } from "../ui/Skeletons";
 
 export function MainProjectsSection() {
   const isReduced = useReducedMotion();
@@ -42,8 +43,23 @@ export function MainProjectsSection() {
         {loading ? (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-14">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-96 rounded-2xl bg-card/40 border border-crimson/15 animate-pulse" />
+              <ProjectSkeleton key={i} />
             ))}
+          </div>
+        ) : projects.length === 0 ? (
+          <div className="mt-14 max-w-md mx-auto">
+            <CyberEmptyState
+              title="No Flagship Projects Published"
+              description="Our engineers are currently refining flagship builds. Check back soon or browse our full showcase."
+              icon={<FolderCode className="w-6 h-6 text-bright-red" />}
+              action={
+                <Link href="/projects">
+                  <NeonButton variant="outline" size="sm">
+                    Browse All Projects
+                  </NeonButton>
+                </Link>
+              }
+            />
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-14">

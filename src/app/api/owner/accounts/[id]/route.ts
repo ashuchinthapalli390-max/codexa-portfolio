@@ -6,8 +6,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { dataStore } from "@/lib/data-store";
-import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
+import { sendPasswordChangedEmail, sendAccountStatusChangedEmail } from "@/lib/email";
 
 export const runtime = "nodejs";
 
@@ -22,6 +22,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   try {
     const body = await req.json();
     const { role, leadershipPosition, displayName, isActive, newPassword, isPublic } = body;
+
+    const profileBefore = await dataStore.getProfileById(id);
+    if (!profileBefore) {
+      return NextResponse.json({ error: "Account not found." }, { status: 404 });
+    }
 
     const updates: any = {};
     if (role && ["OWNER", "ADMIN", "TEAM_MEMBER"].includes(role)) {
@@ -41,39 +46,41 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
 
     // Handle password reset if provided
-    if (newPassword && newPassword.length >= 6) {
-      try {
-        const passwordHash = await bcrypt.hash(newPassword, 10);
-        await db.user.updateMany({
-          where: { OR: [{ id }, { username: id }] },
-          data: { passwordHash },
-        });
-      } catch {}
+    if (newPassword && newPassword.length >= 8) {
+      updates.passwordHash = await bcrypt.hash(newPassword, 12);
+      updates.mustChangePassword = true;
     }
-
-    // Attempt DB user update
-    try {
-      await db.user.updateMany({
-        where: { OR: [{ id }, { username: id }] },
-        data: {
-          ...(updates.role ? { role: updates.role } : {}),
-          ...(updates.isActive !== undefined ? { isActive: updates.isActive } : {}),
-        },
-      });
-    } catch {}
 
     const updatedProfile = await dataStore.updateProfile(id, updates);
     if (!updatedProfile) {
       return NextResponse.json({ error: "Account not found." }, { status: 404 });
     }
 
+    // If status changed, notify the member
+    if (isActive !== undefined && profileBefore.isActive !== Boolean(isActive) && updatedProfile.email) {
+      sendAccountStatusChangedEmail({
+        email: updatedProfile.email,
+        name: updatedProfile.displayName,
+        isActive: Boolean(isActive),
+      }).catch((e) => console.error("[Account Status Email Error]", e));
+    }
+
+    // If password was reset by owner, notify the member
+    if (newPassword && updatedProfile.email) {
+      sendPasswordChangedEmail({
+        email: updatedProfile.email,
+        name: updatedProfile.displayName,
+      }).catch((e) => console.error("[Password Changed Email Error]", e));
+    }
+
     // Audit log
-    await dataStore.logAudit(
-      newPassword ? "PASSWORD_RESET" : updates.role ? "ROLE_CHANGED" : "ACCOUNT_UPDATED",
-      currentUser.id,
-      `Owner modified account @${updatedProfile.username}. Updates: ${JSON.stringify(updates)} ${newPassword ? "(Password Reset)" : ""}`,
-      req.headers.get("x-forwarded-for") || "127.0.0.1"
-    );
+    await dataStore.logAudit({
+      action: newPassword ? "PASSWORD_RESET" : updates.role ? "ROLE_CHANGED" : "ACCOUNT_UPDATED",
+      actorId: currentUser.id,
+      targetId: updatedProfile.id,
+      details: `Owner modified account @${updatedProfile.username}. Updates: ${JSON.stringify(updates)} ${newPassword ? "(Password Reset)" : ""}`,
+      ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
+    });
 
     return NextResponse.json({ success: true, account: updatedProfile });
   } catch (err: any) {
@@ -98,23 +105,17 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   try {
     const profile = await dataStore.getProfileById(id);
 
-    try {
-      await db.user.deleteMany({
-        where: { OR: [{ id }, { username: id }] },
-      });
-    } catch {}
-
     const deleted = await dataStore.deleteProfile(id);
     if (!deleted) {
       return NextResponse.json({ error: "Account not found." }, { status: 404 });
     }
 
-    await dataStore.logAudit(
-      "ACCOUNT_DELETED",
-      currentUser.id,
-      `Owner permanently removed account @${profile?.username || id}`,
-      req.headers.get("x-forwarded-for") || "127.0.0.1"
-    );
+    await dataStore.logAudit({
+      action: "ACCOUNT_DELETED",
+      actorId: currentUser.id,
+      details: `Owner permanently removed account @${profile?.username || id}`,
+      ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
+    });
 
     return NextResponse.json({ success: true, message: "Account deleted successfully." });
   } catch (err: any) {

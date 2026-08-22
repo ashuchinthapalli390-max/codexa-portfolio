@@ -27,34 +27,7 @@ interface StoredKey {
 
 const g = globalThis as unknown as { __cxa_access_keys?: StoredKey[] };
 if (!g.__cxa_access_keys) {
-  g.__cxa_access_keys = [
-    {
-      id: "key-owner-primary",
-      userId: "profile-ashu-001",
-      label: "Owner Primary API Key",
-      role: "OWNER",
-      isActive: true,
-      maxUses: null,
-      useCount: 42,
-      expiresAt: null,
-      lastUsedAt: new Date().toISOString(),
-      createdAt: new Date(Date.now() - 86400000 * 30).toISOString(),
-      keyHash: "cxa_sha_mock_owner_001",
-    },
-    {
-      id: "key-team-webhook",
-      userId: "profile-deepak-002",
-      label: "Dev Webhook Key",
-      role: "TEAM_MEMBER",
-      isActive: true,
-      maxUses: 1000,
-      useCount: 128,
-      expiresAt: null,
-      lastUsedAt: new Date().toISOString(),
-      createdAt: new Date(Date.now() - 86400000 * 7).toISOString(),
-      keyHash: "cxa_sha_mock_team_002",
-    },
-  ];
+  g.__cxa_access_keys = [];
 }
 
 function requireOwner(user: Awaited<ReturnType<typeof getCurrentUser>>) {

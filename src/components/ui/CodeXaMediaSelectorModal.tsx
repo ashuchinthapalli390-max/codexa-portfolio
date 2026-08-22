@@ -198,8 +198,8 @@ export function CodeXaMediaSelectorModal({
     setErrorMessage(null);
     setSelectedSourceType("SUPABASE_STORAGE");
     setSelectedImageUrl(item.publicUrl);
-    setSelectedStoragePath(item.storagePath);
-    setSelectedMimeType(item.mimeType);
+    setSelectedStoragePath(item.storagePath || null);
+    setSelectedMimeType(item.mimeType || "image/jpeg");
     setUploadFile(null);
     setZoom(1);
     setPositionX(50);

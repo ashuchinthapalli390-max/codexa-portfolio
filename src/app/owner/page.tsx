@@ -1326,6 +1326,7 @@ function OwnerDashboardContent() {
                       <th className="pb-3">User</th>
                       <th className="pb-3">Email</th>
                       <th className="pb-3">Role</th>
+                      <th className="pb-3">2FA Security</th>
                       <th className="pb-3">Status</th>
                       <th className="pb-3">Created Date</th>
                       <th className="pb-3 text-right">Actions</th>
@@ -1359,6 +1360,13 @@ function OwnerDashboardContent() {
                               <option value="ADMIN">ADMIN</option>
                             </select>
                           )}
+                        </td>
+                        <td className="py-3">
+                          <span className={`px-2 py-0.5 rounded text-[8px] font-orbitron font-bold uppercase ${
+                            acc.twoFactorEnabled ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-[#161616] text-[#777] border border-white/10"
+                          }`}>
+                            {acc.twoFactorEnabled ? "2FA ON" : "2FA OFF"}
+                          </span>
                         </td>
                         <td className="py-3">
                           <span className={`px-2 py-0.5 rounded text-[8px] font-orbitron font-bold uppercase ${

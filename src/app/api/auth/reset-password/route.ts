@@ -1,42 +1,114 @@
 import { NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
 import { dataStore } from "@/lib/data-store";
+import { sendPasswordChangedEmail } from "@/lib/email";
 
 export async function POST(req: Request) {
   try {
-    const { email, otp, newPassword } = await req.json();
+    const {
+      resetToken,
+      challengeId,
+      totpCode,
+      backupCode,
+      newPassword,
+    } = await req.json();
 
-    if (!email || !otp || !newPassword) {
+    if (!newPassword) {
       return NextResponse.json(
-        { success: false, error: "Email, OTP, and new password are required." },
+        { success: false, error: "New password is required." },
         { status: 400 }
       );
     }
 
-    if (newPassword.length < 6) {
+    if (newPassword.length < 8) {
       return NextResponse.json(
-        { success: false, error: "Password must be at least 6 characters long." },
+        { success: false, error: "Password must be at least 8 characters long." },
         { status: 400 }
       );
     }
 
-    // Verify password reset OTP
-    const verifyResult = await dataStore.verifyOtp(email, otp, "PASSWORD_RESET");
+    let userId: string | undefined;
 
-    if (!verifyResult.valid || !verifyResult.profile) {
+    // 1. Direct authorization token (2FA was OFF)
+    if (resetToken) {
+      const challengeResult = await dataStore.verifyPreAuthChallenge(resetToken, "PASSWORD_RESET_AUTHORIZED");
+      if (!challengeResult.valid || !challengeResult.userId) {
+        return NextResponse.json(
+          { success: false, error: challengeResult.error || "Invalid or expired recovery authorization." },
+          { status: 401 }
+        );
+      }
+      userId = challengeResult.userId;
+      await dataStore.consumePreAuthChallenge(resetToken);
+    } 
+    // 2. 2FA verification stage (2FA was ON)
+    else if (challengeId) {
+      const challengeResult = await dataStore.verifyPreAuthChallenge(challengeId, "PASSWORD_RESET_2FA");
+      if (!challengeResult.valid || !challengeResult.userId) {
+        return NextResponse.json(
+          { success: false, error: challengeResult.error || "Invalid or expired recovery challenge." },
+          { status: 401 }
+        );
+      }
+
+      const targetUserId = challengeResult.userId;
+      let isSecondFactorValid = false;
+
+      if (totpCode) {
+        isSecondFactorValid = await dataStore.verifyTwoFactorTotp(targetUserId, totpCode);
+      }
+      if (!isSecondFactorValid && backupCode) {
+        const backupResult = await dataStore.verifyAndConsumeBackupCode(targetUserId, backupCode);
+        isSecondFactorValid = backupResult.valid;
+      }
+
+      if (!isSecondFactorValid) {
+        return NextResponse.json(
+          { success: false, error: "Invalid authenticator code or backup code." },
+          { status: 401 }
+        );
+      }
+
+      userId = targetUserId;
+      await dataStore.consumePreAuthChallenge(challengeId);
+    } else {
       return NextResponse.json(
-        { success: false, error: verifyResult.error || "Invalid or expired recovery code." },
-        { status: 401 }
+        { success: false, error: "Authorization credentials missing." },
+        { status: 400 }
       );
     }
 
-    const profile = verifyResult.profile;
+    const profile = await dataStore.getProfileById(userId);
+    if (!profile) {
+      return NextResponse.json(
+        { success: false, error: "Account not found." },
+        { status: 404 }
+      );
+    }
 
-    // Update password
+    // Hash password with bcrypt (12 rounds)
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+
+    // Update password hash and mark mustChangePassword = false
     await dataStore.updateProfile(profile.id, {
+      passwordHash,
+      mustChangePassword: false,
       updatedAt: new Date().toISOString(),
     });
 
-    await dataStore.logAudit("PASSWORD_UPDATED", profile.id, `Password reset successfully for @${profile.username}`);
+    await dataStore.logAudit({
+      action: "PASSWORD_RESET_COMPLETED",
+      actorId: profile.id,
+      details: `Password reset successfully for @${profile.username}`,
+    });
+
+    // Dispatch security alert email to user
+    if (profile.email) {
+      sendPasswordChangedEmail({
+        email: profile.email,
+        name: profile.displayName,
+      }).catch((e) => console.error("[Password Reset Completed Email Error]", e));
+    }
 
     return NextResponse.json({
       success: true,

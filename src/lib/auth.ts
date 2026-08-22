@@ -1,5 +1,5 @@
 /**
- * Database & Memory-backed Session Authentication Utilities for CodeXa
+ * Database-backed Session Authentication Utilities for CodeXa
  * Uses crypto-secure tokens, SHA-256 hashes, and HTTP-only cookies.
  */
 import crypto from "crypto";
@@ -21,13 +21,6 @@ export interface AuthenticatedUser {
   mediaUrl: string | null;
 }
 
-// In-memory token lookup map for fallback environments
-const fallbackSessions: Map<string, { userId: string; expiresAt: number }> =
-  (globalThis as any).__codexa_fallback_sessions || new Map();
-if (process.env.NODE_ENV !== "production") {
-  (globalThis as any).__codexa_fallback_sessions = fallbackSessions;
-}
-
 export function generateSessionToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
@@ -36,30 +29,23 @@ export function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-export async function createSession(userId: string, rememberDevice: boolean): Promise<string> {
+export async function createSession(userId: string, rememberDevice: boolean = true): Promise<string> {
   const token = generateSessionToken();
   const hash = hashToken(token);
   
   const maxAge = rememberDevice ? SESSION_MAX_AGE_REMEMBER : SESSION_MAX_AGE_DEFAULT;
   const expiresAt = new Date(Date.now() + maxAge * 1000);
 
-  // Store in fallback map
-  fallbackSessions.set(hash, { userId, expiresAt: expiresAt.getTime() });
+  // Store in PostgreSQL database
+  await db.session.create({
+    data: {
+      userId,
+      sessionTokenHash: hash,
+      expiresAt,
+    },
+  });
 
-  // Attempt DB write
-  try {
-    await db.session.create({
-      data: {
-        userId,
-        sessionTokenHash: hash,
-        expiresAt,
-      },
-    });
-  } catch (err) {
-    // DB offline fallback
-  }
-
-  // Write cookie
+  // Write secure HTTP-only cookie
   const cookieStore = cookies();
   cookieStore.set(COOKIE_NAME, token, {
     httpOnly: true,
@@ -74,10 +60,9 @@ export async function createSession(userId: string, rememberDevice: boolean): Pr
 
 export async function destroySession(token: string): Promise<void> {
   const hash = hashToken(token);
-  fallbackSessions.delete(hash);
 
   try {
-    await db.session.delete({
+    await db.session.deleteMany({
       where: { sessionTokenHash: hash },
     });
   } catch {
@@ -103,7 +88,7 @@ export async function validateSession(rawToken: string): Promise<AuthenticatedUs
     token = decodeURIComponent(rawToken);
   } catch {}
 
-  // 0. Support JSON-encoded session cookie from 2-Stage OTP verification
+  // Support JSON-encoded session cookie from 2-Stage OTP verification
   if (token.startsWith("{") && token.endsWith("}")) {
     try {
       const parsed = JSON.parse(token);
@@ -128,62 +113,38 @@ export async function validateSession(rawToken: string): Promise<AuthenticatedUs
 
   const hash = hashToken(token);
 
-  // 1. Try DB validation if DATABASE_URL is configured
-  if (process.env.DATABASE_URL) {
-    try {
-      const session = await db.session.findUnique({
-        where: { sessionTokenHash: hash },
-        include: {
-          user: {
-            include: {
-              profile: true,
-            },
+  // Validate from PostgreSQL DB
+  try {
+    const session = await db.session.findUnique({
+      where: { sessionTokenHash: hash },
+      include: {
+        user: {
+          include: {
+            profile: true,
           },
         },
-      });
+      },
+    });
 
-      if (session) {
-        if (new Date() > session.expiresAt) {
-          await db.session.delete({ where: { id: session.id } }).catch(() => {});
-          return null;
-        }
-        if (!session.user.isActive) return null;
-
-        return {
-          id: session.user.id,
-          username: session.user.username ?? null,
-          email: session.user.email ?? null,
-          role: session.user.role,
-          isActive: session.user.isActive,
-          displayName: session.user.profile?.displayName ?? session.user.username ?? session.user.email ?? session.user.id,
-          mediaUrl: session.user.profile?.mediaUrl ?? null,
-        };
+    if (session) {
+      if (new Date() > session.expiresAt) {
+        await db.session.delete({ where: { id: session.id } }).catch(() => {});
+        return null;
       }
-    } catch {
-      // DB offline fallback
+      if (!session.user.isActive) return null;
+
+      return {
+        id: session.user.id,
+        username: session.user.username ?? null,
+        email: session.user.email ?? null,
+        role: session.user.role,
+        isActive: session.user.isActive,
+        displayName: session.user.profile?.displayName ?? session.user.username ?? session.user.email ?? session.user.id,
+        mediaUrl: session.user.profile?.mediaUrl ?? null,
+      };
     }
-  }
-
-  // 2. Try in-memory fallback session
-  const fallback = fallbackSessions.get(hash);
-  if (fallback) {
-    if (Date.now() > fallback.expiresAt) {
-      fallbackSessions.delete(hash);
-      return null;
-    }
-
-    const profile = await dataStore.getProfileById(fallback.userId);
-    if (!profile || !profile.isActive) return null;
-
-    return {
-      id: profile.id,
-      username: profile.username,
-      email: profile.email,
-      role: profile.role,
-      isActive: profile.isActive,
-      displayName: profile.displayName,
-      mediaUrl: profile.mediaUrl ?? null,
-    };
+  } catch (err) {
+    console.error("[validateSession Error]", err);
   }
 
   return null;
@@ -202,21 +163,10 @@ export async function logProfileAction(
   action: string,
   details: string
 ): Promise<void> {
-  try {
-    await db.auditLog.create({
-      data: {
-        actorId: actorUserId,
-        targetId: targetUserId,
-        action,
-        details,
-      },
-    });
-  } catch {
-    await dataStore.logAudit({
-      actorId: actorUserId || undefined,
-      targetId: targetUserId || undefined,
-      action,
-      details,
-    });
-  }
+  await dataStore.logAudit({
+    actorId: actorUserId || undefined,
+    targetId: targetUserId || undefined,
+    action,
+    details,
+  });
 }

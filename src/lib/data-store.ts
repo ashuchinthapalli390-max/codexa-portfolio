@@ -1,13 +1,13 @@
 /**
  * Universal Data Store for CodeXa Agency
- * Seamlessly abstracts Supabase PostgreSQL and local storage.
- * Provides rich type-safe data access for Profiles, Projects, Social Feed, Chat, Inquiries, Notifications, Audit Logs & Auth OTPs.
+ * Single Source of Truth: Supabase PostgreSQL via Prisma Client
+ * Provides rich type-safe data access for Profiles, Projects, Social Feed, Chat, Inquiries, Notifications, Audit Logs, Auth OTPs, TOTP 2FA, and Backup Codes.
  */
 
 import crypto from "crypto";
 import { db } from "./db";
-import { DEV_PROFILES, DEV_PROJECTS, DEV_POSTS, DEV_CONVERSATIONS } from "@/dev/fixtures";
-import { supabaseQuery, supabaseInsert, supabaseUpdate, supabaseDelete, isSupabaseConfigured } from "./supabase";
+import { Prisma } from "@prisma/client";
+import { encryptTotpSecret, decryptTotpSecret, verifyTotpToken, hashBackupCode } from "./totp";
 
 // ─── ENTITY INTERFACES ────────────────────────────────────────────────────────
 
@@ -18,15 +18,19 @@ export interface Profile {
   email: string;
   passwordHash?: string;
   displayName: string;
-  role: "OWNER" | "ADMIN" | "TEAM_MEMBER";
-  memberType: "LEADERSHIP" | "CORE_TEAM";
-  leadershipPosition?: "FOUNDER" | "CO_FOUNDER" | "CEO" | null;
-  headline?: string;
-  bio?: string;
+  role: "OWNER" | "ADMIN" | "TEAM_MEMBER" | string;
+  memberType: "LEADERSHIP" | "CORE_TEAM" | string;
+  leadershipPosition?: "FOUNDER" | "CO_FOUNDER" | "CEO" | "TEAM_LEAD" | string | null;
+  primaryRole?: string | null;
+  headline?: string | null;
+  bio?: string | null;
+  publicBio?: string | null;
   skills: string[];
-  githubUrl?: string;
-  linkedinUrl?: string;
-  portfolioUrl?: string;
+  featuredProjects?: Array<{ name: string; category: string; url?: string | null }>;
+  expertiseGroups?: Record<string, string[]>;
+  githubUrl?: string | null;
+  linkedinUrl?: string | null;
+  portfolioUrl?: string | null;
   socialLinks?: Record<string, string>;
   mediaUrl?: string | null;
   mediaMimeType?: string | null;
@@ -44,9 +48,13 @@ export interface Profile {
   cropH?: number | null;
   cropZoom?: number | null;
   cropRotation?: number | null;
+  zoom?: number | null;
+  objectPosition?: string | null;
   isActive: boolean;
   isPublic: boolean;
   displayOrder: number;
+  mustChangePassword?: boolean;
+  twoFactorEnabled?: boolean;
   lastLoginAt?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -56,16 +64,19 @@ export interface Profile {
 export interface MediaAsset {
   id: string;
   ownerUserId: string;
-  mediaType: "AVATAR" | "PROJECT" | "POST";
-  sourceType: "STATIC" | "SUPABASE_STORAGE" | "LEGACY";
-  storageBucket: string;
-  storagePath: string;
+  mediaType: "AVATAR" | "PROJECT" | "POST" | string;
+  sourceType: "STATIC" | "SUPABASE_STORAGE" | "LEGACY" | string;
+  storageBucket?: string;
+  storagePath?: string | null;
   publicUrl: string;
-  mimeType: string;
+  mimeType?: string | null;
   originalFilename?: string | null;
   fileSize?: number | null;
+  cropX?: number | null;
+  cropY?: number | null;
+  zoom?: number | null;
   createdAt: string;
-  updatedAt: string;
+  updatedAt?: string;
 }
 
 export interface Project {
@@ -74,16 +85,17 @@ export interface Project {
   slug: string;
   shortDesc: string;
   overview: string;
-  problem?: string;
-  solution?: string;
+  problem?: string | null;
+  solution?: string | null;
   features: string[];
   techStack: string[];
-  category: "AI" | "Web" | "Mobile" | "Automation" | "Cybersecurity" | "Discord Bot" | "Full Stack" | "API" | "Other";
-  status: "In Progress" | "Live" | "Archived" | "Client Work";
+  category: "AI" | "Web" | "Mobile" | "Automation" | "Cybersecurity" | "Discord Bot" | "Full Stack" | "API" | "Other" | string;
+  status: "In Progress" | "Live" | "Archived" | "Client Work" | "PRODUCTION" | string;
   thumbnailUrl: string;
   screenshots: string[];
-  repoUrl?: string;
-  liveUrl?: string;
+  repoUrl?: string | null;
+  liveUrl?: string | null;
+  demoUrl?: string | null;
   isDraft: boolean;
   isPublic: boolean;
   isFeatured: boolean;
@@ -99,7 +111,7 @@ export interface Project {
     username: string;
     displayName: string;
     mediaUrl?: string | null;
-    role: string;
+    role?: string;
   };
   collaboratorIds?: string[];
   collaborators?: Array<{
@@ -107,7 +119,20 @@ export interface Project {
     username: string;
     displayName: string;
     mediaUrl?: string | null;
-    role: string;
+    role?: string;
+    roleTitle?: string | null;
+  }>;
+  media?: Array<{
+    id: string;
+    mediaUrl: string;
+    mediaType: string;
+    caption?: string | null;
+    displayOrder: number;
+  }>;
+  links?: Array<{
+    id: string;
+    label: string;
+    url: string;
   }>;
 }
 
@@ -124,18 +149,27 @@ export interface Post {
     username: string;
     displayName: string;
     mediaUrl?: string | null;
-    role: string;
+    role?: string;
   };
-  media?: Array<{
-    id: string;
-    mediaUrl: string;
-    mediaType: string;
-  }>;
   project?: {
     id: string;
     title: string;
     slug: string;
   } | null;
+  media?: Array<{
+    id: string;
+    mediaUrl: string;
+    mediaType: string;
+    displayOrder: number;
+  }>;
+  links?: Array<{
+    id: string;
+    url: string;
+    domain?: string | null;
+    title?: string | null;
+    description?: string | null;
+    imageUrl?: string | null;
+  }>;
   likesCount: number;
   commentsCount: number;
   hasLiked?: boolean;
@@ -154,7 +188,7 @@ export interface PostComment {
     username: string;
     displayName: string;
     mediaUrl?: string | null;
-    role: string;
+    role?: string;
   };
   replies?: PostComment[];
 }
@@ -164,27 +198,43 @@ export interface Inquiry {
   referenceId: string;
   fullName: string;
   email: string;
-  phone?: string;
-  company?: string;
+  phone?: string | null;
+  company?: string | null;
   projectType: string;
   budget: string;
-  timeline?: string;
+  timeline?: string | null;
   message: string;
-  attachmentUrl?: string;
-  status: "NEW" | "CONTACTED" | "DISCUSSION" | "APPROVED" | "IN_PROGRESS" | "COMPLETED" | "REJECTED" | "ARCHIVED";
-  priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+  attachmentUrl?: string | null;
+  status: "NEW" | "CONTACTED" | "DISCUSSION" | "APPROVED" | "IN_PROGRESS" | "COMPLETED" | "ARCHIVED" | string;
+  priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT" | string;
   assignedTo?: string | null;
-  replyNotes?: string;
+  replyNotes?: string | null;
   convertedProjectId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
+export interface ConversationMember {
+  id: string;
+  conversationId: string;
+  userId: string;
+  joinedAt: string;
+  lastReadAt?: string | null;
+  user?: {
+    id: string;
+    username: string;
+    displayName: string;
+    mediaUrl?: string | null;
+    role?: string;
+    headline?: string | null;
+  };
+}
+
 export interface ChatMessageAttachment {
   id: string;
   url: string;
-  mimeType: string;
   name: string;
+  mimeType: string;
   size?: number;
 }
 
@@ -197,59 +247,27 @@ export interface ChatMessageReaction {
   createdAt: string;
 }
 
-export interface ConversationMember {
-  conversationId: string;
-  userId: string;
-  lastReadAt?: string;
-  lastReadMessageId?: string;
-  joinedAt: string;
-}
-
-export interface Conversation {
-  id: string;
-  type: "DIRECT" | "GROUP" | "CHANNEL" | "PROJECT";
-  title?: string;
-  projectId?: string | null;
-  createdBy?: string | null;
-  participantIds?: string[];
-  createdAt: string;
-  updatedAt: string;
-  members?: Array<{
-    id: string;
-    username: string;
-    displayName: string;
-    mediaUrl?: string | null;
-    role: string;
-    headline?: string;
-  }>;
-  otherMember?: {
-    id: string;
-    username: string;
-    displayName: string;
-    mediaUrl?: string | null;
-    role: string;
-    headline?: string;
-  } | null;
-  lastMessage?: ChatMessage | null;
-  lastMessageText?: string;
-  lastMessageAt?: string;
-  unreadCount?: number;
-  hiddenForUserIds?: string[];
-  isMutedForUserIds?: string[];
-}
-
 export interface ChatMessage {
   id: string;
   conversationId: string;
   senderId: string;
   message: string;
   attachments?: ChatMessageAttachment[];
-  fileUrl?: string;
-  fileName?: string;
+  fileUrl?: string | null;
+  fileName?: string | null;
   isDeleted: boolean;
-  isEdited?: boolean;
-  editedAt?: string;
   replyToId?: string | null;
+  isEdited?: boolean;
+  editedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  sender?: {
+    id: string;
+    username: string;
+    displayName: string;
+    mediaUrl?: string | null;
+    role?: string;
+  };
   replyTo?: {
     id: string;
     message: string;
@@ -266,25 +284,84 @@ export interface ChatMessage {
     emoji: string;
   }>;
   isSeen?: boolean;
+}
+
+export interface Conversation {
+  id: string;
+  type: "DIRECT" | "GROUP" | "PROJECT" | string;
+  title?: string | null;
+  projectId?: string | null;
+  createdBy?: string | null;
   createdAt: string;
-  updatedAt?: string;
-  sender?: {
+  updatedAt: string;
+  participantIds?: string[];
+  members?: Array<{
     id: string;
     username: string;
     displayName: string;
     mediaUrl?: string | null;
     role?: string;
-  };
+    headline?: string | null;
+  }>;
+  otherMember?: {
+    id: string;
+    username: string;
+    displayName: string;
+    mediaUrl?: string | null;
+    role?: string;
+    headline?: string | null;
+  } | null;
+  lastMessage?: ChatMessage | null;
+  lastMessageText?: string;
+  lastMessageAt?: string;
+  unreadCount?: number;
+  hiddenForUserIds?: string[];
+  isMutedForUserIds?: string[];
 }
 
 export interface NotificationItem {
   id: string;
   userId: string;
-  type: "INQUIRY" | "CHAT" | "POST_LIKE" | "POST_COMMENT" | "PROJECT_FEATURED" | "PROJECT_ASSIGNED" | "SECURITY";
+  type: "POST_LIKE" | "POST_COMMENT" | "PROJECT_FEATURED" | "CHAT" | "SECURITY" | string;
   title: string;
   message: string;
-  link?: string;
+  link?: string | null;
   isRead: boolean;
+  createdAt: string;
+}
+
+export interface AuditLogItem {
+  id: string;
+  actorId?: string | null;
+  actorName?: string | null;
+  targetId?: string | null;
+  action: string;
+  details?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  createdAt: string;
+}
+
+export interface ActivityEvent {
+  id: string;
+  actorId: string;
+  actorName: string;
+  actorUsername: string;
+  actorMediaUrl?: string | null;
+  actionType:
+    | "PROFILE_UPDATED"
+    | "POST_CREATED"
+    | "PROJECT_CREATED"
+    | "PROJECT_PUBLISHED"
+    | "MAIN_PROJECT_APPROVED"
+    | "COLLABORATOR_ADDED"
+    | "MEMBER_JOINED"
+    | string;
+  targetType: "PROFILE" | "PROJECT" | "POST" | "MEMBER" | string;
+  targetId?: string | null;
+  title: string;
+  details?: string | null;
+  link?: string | null;
   createdAt: string;
 }
 
@@ -293,7 +370,7 @@ export interface AuthOtpRecord {
   profileId: string;
   email: string;
   otpHash: string;
-  purpose: "LOGIN" | "PASSWORD_RESET";
+  purpose: "LOGIN" | "PASSWORD_RESET" | string;
   attempts: number;
   isUsed: boolean;
   expiresAt: string;
@@ -306,414 +383,1042 @@ export interface SiteSettings {
   updatedAt?: string;
 }
 
-export interface AuditLogItem {
-  id: string;
-  actorId?: string | null;
-  actorName?: string | null;
-  targetId?: string | null;
-  action: string;
-  details?: string;
-  ipAddress?: string;
-  userAgent?: string;
-  createdAt: string;
+// ─── DATA MAPPING HELPERS ───────────────────────────────────────────────────
+
+function mapUserToProfile(user: any): Profile {
+  const profile = user.profile;
+  const skills = Array.isArray(user.skills) ? user.skills.map((s: any) => s.skillName) : [];
+  const projectsCount = user._count?.projectsCreated ?? 0;
+  const twoFactorEnabled = !!user.twoFactorConfig?.enabled;
+
+  return {
+    id: user.id,
+    userId: user.id,
+    username: user.username,
+    email: user.email,
+    passwordHash: user.passwordHash,
+    displayName: profile?.displayName || user.fullName || user.username,
+    role: user.role,
+    memberType: profile?.memberType || (user.role === "OWNER" || user.role === "ADMIN" ? "LEADERSHIP" : "CORE_TEAM"),
+    leadershipPosition: profile?.leadershipPosition || null,
+    primaryRole: profile?.primaryRole || null,
+    headline: profile?.headline || null,
+    bio: profile?.bio || null,
+    publicBio: profile?.publicBio || profile?.bio || null,
+    skills,
+    featuredProjects: Array.isArray(profile?.featuredProjects) ? profile.featuredProjects : undefined,
+    expertiseGroups: profile?.expertiseGroups && typeof profile.expertiseGroups === "object" ? profile.expertiseGroups : undefined,
+    githubUrl: profile?.githubUrl || null,
+    linkedinUrl: profile?.linkedinUrl || null,
+    portfolioUrl: profile?.portfolioUrl || null,
+    mediaUrl: profile?.mediaUrl || user.profileMediaUrl || null,
+    mediaMimeType: profile?.mediaMimeType || user.profileMediaMimeType || null,
+    avatarSource: (profile?.mediaUrl ? "SUPABASE_STORAGE" : "STATIC") as any,
+    avatarPath: profile?.mediaUrl || user.profileMediaUrl || null,
+    avatarUrl: profile?.profileMediaUrl || profile?.mediaUrl || user.profileMediaUrl || null,
+    avatarStoragePath: profile?.mediaUrl || null,
+    avatarZoom: profile?.zoom ?? profile?.cropZoom ?? 1,
+    avatarPositionX: profile?.cropX ?? 0,
+    avatarPositionY: profile?.cropY ?? 0,
+    cropX: profile?.cropX ?? user.cropX ?? 0,
+    cropY: profile?.cropY ?? user.cropY ?? 0,
+    cropW: profile?.cropW ?? null,
+    cropH: profile?.cropH ?? null,
+    cropZoom: profile?.cropZoom ?? profile?.zoom ?? user.zoom ?? 1,
+    cropRotation: profile?.cropRotation ?? 0,
+    zoom: profile?.zoom ?? user.zoom ?? 1,
+    objectPosition: profile?.objectPosition ?? user.objectPosition ?? "center",
+    isActive: user.isActive,
+    isPublic: profile?.isPublic ?? true,
+    displayOrder: profile?.displayOrder ?? 0,
+    mustChangePassword: !!user.mustChangePassword,
+    twoFactorEnabled,
+    lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,
+    createdAt: user.createdAt ? user.createdAt.toISOString() : new Date().toISOString(),
+    updatedAt: user.updatedAt ? user.updatedAt.toISOString() : new Date().toISOString(),
+    projectsCount,
+  };
 }
 
-export interface ActivityEvent {
-  id: string;
-  actorId: string;
-  actorName: string;
-  actorUsername: string;
-  actorMediaUrl?: string | null;
-  actionType: 
-    | "PROFILE_UPDATED" 
-    | "PROFILE_IMAGE_CHANGED" 
-    | "POST_CREATED" 
-    | "PROJECT_CREATED" 
-    | "PROJECT_PUBLISHED" 
-    | "MAIN_PROJECT_APPROVED" 
-    | "COLLABORATOR_ADDED" 
-    | "MEMBER_JOINED";
-  targetType: "PROFILE" | "PROJECT" | "POST" | "MEMBER";
-  targetId?: string;
-  title: string;
-  details?: string;
-  link?: string;
-  createdAt: string;
+function mapProjectToProject(p: any): Project {
+  const creatorProfile = p.creator?.profile;
+  const creator = p.creator
+    ? {
+        id: p.creator.id,
+        username: p.creator.username,
+        displayName: creatorProfile?.displayName || p.creator.fullName || p.creator.username,
+        mediaUrl: creatorProfile?.mediaUrl || p.creator.profileMediaUrl || null,
+        role: p.creator.role,
+      }
+    : undefined;
+
+  const collaborators = Array.isArray(p.collaborators)
+    ? p.collaborators.map((c: any) => {
+        const uProfile = c.user?.profile;
+        return {
+          id: c.user?.id || c.userId,
+          username: c.user?.username || "",
+          displayName: uProfile?.displayName || c.user?.fullName || c.user?.username || "Collaborator",
+          mediaUrl: uProfile?.mediaUrl || c.user?.profileMediaUrl || null,
+          role: c.user?.role || "TEAM_MEMBER",
+          roleTitle: c.roleTitle || "Collaborator",
+        };
+      })
+    : [];
+
+  const collaboratorIds = collaborators.map((c: any) => c.id);
+
+  return {
+    id: p.id,
+    title: p.title,
+    slug: p.slug,
+    shortDesc: p.shortDesc || "",
+    overview: p.overview || p.shortDesc || "",
+    problem: p.problem || null,
+    solution: p.solution || null,
+    features: Array.isArray(p.features) ? p.features : [],
+    techStack: Array.isArray(p.techStack) ? p.techStack : [],
+    category: p.category || "Web",
+    status: p.status || "Live",
+    thumbnailUrl: p.thumbnailUrl || "/assets/images/4e56a053e3ee0019b13c19c5b3f614fe.jpg",
+    screenshots: Array.isArray(p.media) ? p.media.map((m: any) => m.mediaUrl) : [],
+    repoUrl: p.repoUrl || null,
+    liveUrl: p.liveUrl || null,
+    demoUrl: p.demoUrl || null,
+    isDraft: !!p.isDraft,
+    isPublic: !p.isDraft,
+    isFeatured: !!p.isMainProject,
+    isMainProject: !!p.isMainProject,
+    isHomepageVisible: p.isHomepageVisible ?? true,
+    showInTeamProjects: !p.isMainProject,
+    displayOrder: p.homepageOrder || 0,
+    createdBy: p.createdBy,
+    createdAt: p.createdAt ? p.createdAt.toISOString() : new Date().toISOString(),
+    updatedAt: p.updatedAt ? p.updatedAt.toISOString() : new Date().toISOString(),
+    creator,
+    collaboratorIds,
+    collaborators,
+    media: Array.isArray(p.media)
+      ? p.media.map((m: any) => ({
+          id: m.id,
+          mediaUrl: m.mediaUrl,
+          mediaType: m.mediaType,
+          caption: m.caption,
+          displayOrder: m.displayOrder,
+        }))
+      : [],
+    links: Array.isArray(p.links)
+      ? p.links.map((l: any) => ({
+          id: l.id,
+          label: l.label,
+          url: l.url,
+        }))
+      : [],
+  };
 }
 
-// ─── RUNTIME IN-MEMORY FALLBACK STORE ─────────────────────────────────────────
+function mapPostToPost(p: any, currentUserId?: string): Post {
+  const authorProfile = p.author?.profile;
+  const author = p.author
+    ? {
+        id: p.author.id,
+        username: p.author.username,
+        displayName: authorProfile?.displayName || p.author.fullName || p.author.username,
+        mediaUrl: authorProfile?.mediaUrl || p.author.profileMediaUrl || null,
+        role: p.author.role,
+      }
+    : undefined;
 
-const g = globalThis as any;
+  const likesCount = Array.isArray(p.likes) ? p.likes.length : p._count?.likes ?? 0;
+  const commentsCount = Array.isArray(p.comments) ? p.comments.length : p._count?.comments ?? 0;
+  const hasLiked = currentUserId && Array.isArray(p.likes)
+    ? p.likes.some((l: any) => l.userId === currentUserId)
+    : false;
 
-let memoryProfiles: Profile[] = (g.__cxa_profiles = g.__cxa_profiles || [...DEV_PROFILES]);
-let memoryProjects: Project[] = (g.__cxa_projects = g.__cxa_projects || [...DEV_PROJECTS]);
-let memoryPosts: Post[] = (g.__cxa_posts = g.__cxa_posts || [...DEV_POSTS]);
-let memoryLikes: Array<{ id: string; postId: string; profileId: string; createdAt: string }> = (g.__cxa_likes = g.__cxa_likes || []);
-let memoryComments: PostComment[] = (g.__cxa_comments = g.__cxa_comments || []);
-let memoryInquiries: Inquiry[] = (g.__cxa_inquiries = g.__cxa_inquiries || []);
-let memoryConversations: Conversation[] = (g.__cxa_conversations = g.__cxa_conversations || [...DEV_CONVERSATIONS]);
-let memoryMessages: ChatMessage[] = (g.__cxa_messages = g.__cxa_messages || []);
-let memoryReactions: ChatMessageReaction[] = (g.__cxa_reactions = g.__cxa_reactions || []);
-let memoryConversationMembers: ConversationMember[] = (g.__cxa_conversationMembers = g.__cxa_conversationMembers || []);
-let memoryNotifications: NotificationItem[] = (g.__cxa_notifications = g.__cxa_notifications || []);
-let memoryAuthOtps: AuthOtpRecord[] = (g.__cxa_authOtps = g.__cxa_authOtps || []);
-let memoryMediaAssets: MediaAsset[] = (g.__cxa_mediaAssets = g.__cxa_mediaAssets || []);
-let memorySiteSettings: SiteSettings = (g.__cxa_siteSettings = g.__cxa_siteSettings || {
-  mainProjectsHomeVisible: true,
-  teamProjectsHomeVisible: true,
-  updatedAt: new Date().toISOString(),
-});
-let memoryAuditLogs: AuditLogItem[] = (g.__cxa_auditLogs = g.__cxa_auditLogs || []);
-let memoryActivityEvents: ActivityEvent[] = (g.__cxa_activityEvents = g.__cxa_activityEvents || []);
+  return {
+    id: p.id,
+    authorId: p.authorId,
+    content: p.content,
+    projectId: p.projectId || null,
+    isAnnouncement: !!p.isAnnouncement,
+    createdAt: p.createdAt ? p.createdAt.toISOString() : new Date().toISOString(),
+    updatedAt: p.updatedAt ? p.updatedAt.toISOString() : new Date().toISOString(),
+    author,
+    project: p.project ? { id: p.project.id, title: p.project.title, slug: p.project.slug } : null,
+    media: Array.isArray(p.media)
+      ? p.media.map((m: any) => ({
+          id: m.id,
+          mediaUrl: m.mediaUrl,
+          mediaType: m.mediaType,
+          displayOrder: m.displayOrder,
+        }))
+      : [],
+    links: Array.isArray(p.links)
+      ? p.links.map((l: any) => ({
+          id: l.id,
+          url: l.url,
+          domain: l.domain,
+          title: l.title,
+          description: l.description,
+          imageUrl: l.imageUrl,
+        }))
+      : [],
+    likesCount,
+    commentsCount,
+    hasLiked,
+  };
+}
 
-// ─── DATA STORE METHODS ──────────────────────────────────────────────────────
+// ─── DATA STORE METHODS (PRISMA POSTGRESQL) ───────────────────────────────────
 
 export const dataStore = {
   // ── Profiles ───────────────────────────────────────────────────────────────
   async getProfiles(filter?: { role?: string; isPublic?: boolean }): Promise<Profile[]> {
-    let list = memoryProfiles.filter((p) => p.isActive);
-    if (filter?.role) list = list.filter((p) => p.role === filter.role);
-    if (filter?.isPublic !== undefined) list = list.filter((p) => p.isPublic === filter.isPublic);
+    const whereClause: Prisma.UserWhereInput = {
+      isActive: true,
+    };
+    if (filter?.role) whereClause.role = filter.role;
+    if (filter?.isPublic !== undefined) {
+      whereClause.profile = { isPublic: filter.isPublic };
+    }
 
-    return list.map((p) => ({
-      ...p,
-      projectsCount: memoryProjects.filter((proj) => proj.createdBy === p.id && !proj.isDraft).length,
-    }));
+    const users = await db.user.findMany({
+      where: whereClause,
+      include: {
+        profile: true,
+        twoFactorConfig: true,
+        skills: { orderBy: { displayOrder: "asc" } },
+        links: { orderBy: { displayOrder: "asc" } },
+        _count: { select: { projectsCreated: true } },
+      },
+      orderBy: [
+        { profile: { displayOrder: "asc" } },
+        { createdAt: "asc" },
+      ],
+    });
+
+    return users.map(mapUserToProfile);
   },
 
   async getProfileByUsername(username: string): Promise<Profile | null> {
-    const p = memoryProfiles.find((x) => x.username.toLowerCase() === username.toLowerCase());
-    if (!p) return null;
-    return {
-      ...p,
-      projectsCount: memoryProjects.filter((proj) => proj.createdBy === p.id && !proj.isDraft).length,
-    };
+    const clean = username.trim().toLowerCase();
+    const user = await db.user.findFirst({
+      where: {
+        username: { equals: clean, mode: "insensitive" },
+      },
+      include: {
+        profile: true,
+        twoFactorConfig: true,
+        skills: { orderBy: { displayOrder: "asc" } },
+        links: { orderBy: { displayOrder: "asc" } },
+        _count: { select: { projectsCreated: true } },
+      },
+    });
+
+    if (!user) return null;
+    return mapUserToProfile(user);
   },
 
   async getProfileById(id: string): Promise<Profile | null> {
-    const p = memoryProfiles.find((x) => x.id === id);
-    if (!p) return null;
-    return {
-      ...p,
-      projectsCount: memoryProjects.filter((proj) => proj.createdBy === p.id && !proj.isDraft).length,
-    };
+    const user = await db.user.findFirst({
+      where: { id },
+      include: {
+        profile: true,
+        twoFactorConfig: true,
+        skills: { orderBy: { displayOrder: "asc" } },
+        links: { orderBy: { displayOrder: "asc" } },
+        _count: { select: { projectsCreated: true } },
+      },
+    });
+
+    if (!user) return null;
+    return mapUserToProfile(user);
   },
 
   async getProfileByEmailOrUsername(identifier: string): Promise<Profile | null> {
     const clean = identifier.trim().toLowerCase();
-    const p = memoryProfiles.find((x) =>
-      x.email.toLowerCase() === clean ||
-      x.username.toLowerCase() === clean ||
-      (x.role === "OWNER" && (clean === "ashu" || clean === "ashu@codexa.agency" || clean === (process.env.INITIAL_OWNER_EMAIL || "").toLowerCase()))
-    );
-    return p || null;
+    const user = await db.user.findFirst({
+      where: {
+        OR: [
+          { email: { equals: clean, mode: "insensitive" } },
+          { username: { equals: clean, mode: "insensitive" } },
+        ],
+      },
+      include: {
+        profile: true,
+        twoFactorConfig: true,
+        skills: { orderBy: { displayOrder: "asc" } },
+        links: { orderBy: { displayOrder: "asc" } },
+        _count: { select: { projectsCreated: true } },
+      },
+    });
+
+    if (!user) return null;
+    return mapUserToProfile(user);
   },
 
-  async createProfile(data: Partial<Profile>): Promise<Profile> {
-    const newProfile: Profile = {
-      id: `profile-${Date.now()}`,
-      username: data.username!.toLowerCase(),
-      email: data.email!.toLowerCase(),
-      displayName: data.displayName || data.username!,
-      role: data.role || "TEAM_MEMBER",
-      memberType: data.role === "OWNER" || data.role === "ADMIN" ? "LEADERSHIP" : "CORE_TEAM",
-      headline: data.headline || "CodeXa Engineer",
-      bio: data.bio || "",
-      skills: data.skills || ["Full Stack", "TypeScript"],
-      isActive: true,
-      isPublic: true,
-      displayOrder: memoryProfiles.length + 1,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    memoryProfiles.push(newProfile);
-    return newProfile;
+  async createProfile(data: Partial<Profile> & { passwordHash?: string; temporaryPassword?: string }): Promise<Profile> {
+    const username = data.username!.toLowerCase().trim();
+    const email = data.email!.toLowerCase().trim();
+    const passwordHash = data.passwordHash || (data.temporaryPassword ? crypto.createHash("sha256").update(data.temporaryPassword).digest("hex") : "");
+
+    const createdUser = await db.user.create({
+      data: {
+        username,
+        email,
+        fullName: data.displayName || data.username!,
+        passwordHash,
+        role: data.role || "TEAM_MEMBER",
+        isActive: true,
+        mustChangePassword: data.mustChangePassword ?? false,
+        profile: {
+          create: {
+            displayName: data.displayName || data.username!,
+            memberType: data.role === "OWNER" || data.role === "ADMIN" ? "LEADERSHIP" : "CORE_TEAM",
+            leadershipPosition: data.leadershipPosition || null,
+            headline: data.headline || "CodeXa Engineer",
+            bio: data.bio || "",
+            mediaUrl: data.mediaUrl || null,
+            githubUrl: data.githubUrl || null,
+            linkedinUrl: data.linkedinUrl || null,
+            portfolioUrl: data.portfolioUrl || null,
+            isPublic: true,
+          },
+        },
+      },
+      include: {
+        profile: true,
+        twoFactorConfig: true,
+        skills: true,
+        links: true,
+        _count: { select: { projectsCreated: true } },
+      },
+    });
+
+    if (Array.isArray(data.skills) && data.skills.length > 0) {
+      await db.userSkill.createMany({
+        data: data.skills.map((skillName, idx) => ({
+          userId: createdUser.id,
+          skillName,
+          displayOrder: idx,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    const reloaded = await this.getProfileById(createdUser.id);
+    return reloaded!;
   },
 
   async updateProfile(id: string, updates: Partial<Profile>): Promise<Profile | null> {
-    const idx = memoryProfiles.findIndex((p) => p.id === id);
-    if (idx === -1) return null;
-    memoryProfiles[idx] = { ...memoryProfiles[idx], ...updates, updatedAt: new Date().toISOString() };
-    return memoryProfiles[idx];
+    const user = await db.user.findUnique({ where: { id } });
+    if (!user) return null;
+
+    const userUpdate: Prisma.UserUpdateInput = {};
+    if (updates.displayName !== undefined) userUpdate.fullName = updates.displayName;
+    if (updates.role !== undefined) userUpdate.role = updates.role;
+    if (updates.isActive !== undefined) userUpdate.isActive = updates.isActive;
+    if (updates.passwordHash !== undefined) userUpdate.passwordHash = updates.passwordHash;
+    if (updates.mustChangePassword !== undefined) userUpdate.mustChangePassword = updates.mustChangePassword;
+    if (updates.lastLoginAt !== undefined) userUpdate.lastLoginAt = updates.lastLoginAt ? new Date(updates.lastLoginAt) : null;
+    if (updates.mediaUrl !== undefined) userUpdate.profileMediaUrl = updates.mediaUrl;
+    if (updates.cropX !== undefined) userUpdate.cropX = updates.cropX;
+    if (updates.cropY !== undefined) userUpdate.cropY = updates.cropY;
+    if (updates.zoom !== undefined) userUpdate.zoom = updates.zoom;
+
+    if (Object.keys(userUpdate).length > 0) {
+      await db.user.update({
+        where: { id },
+        data: userUpdate,
+      });
+    }
+
+    // Upsert TeamProfile
+    const profileUpdate: Prisma.TeamProfileUpsertArgs["update"] = {};
+    if (updates.displayName !== undefined) profileUpdate.displayName = updates.displayName;
+    if (updates.headline !== undefined) profileUpdate.headline = updates.headline;
+    if (updates.bio !== undefined) profileUpdate.bio = updates.bio;
+    if (updates.publicBio !== undefined) profileUpdate.publicBio = updates.publicBio;
+    if (updates.memberType !== undefined) profileUpdate.memberType = updates.memberType;
+    if (updates.leadershipPosition !== undefined) profileUpdate.leadershipPosition = updates.leadershipPosition;
+    if (updates.primaryRole !== undefined) profileUpdate.primaryRole = updates.primaryRole;
+    if (updates.featuredProjects !== undefined) profileUpdate.featuredProjects = updates.featuredProjects as any;
+    if (updates.expertiseGroups !== undefined) profileUpdate.expertiseGroups = updates.expertiseGroups as any;
+    if (updates.githubUrl !== undefined) profileUpdate.githubUrl = updates.githubUrl;
+    if (updates.linkedinUrl !== undefined) profileUpdate.linkedinUrl = updates.linkedinUrl;
+    if (updates.portfolioUrl !== undefined) profileUpdate.portfolioUrl = updates.portfolioUrl;
+    if (updates.mediaUrl !== undefined) profileUpdate.mediaUrl = updates.mediaUrl;
+    if (updates.mediaMimeType !== undefined) profileUpdate.mediaMimeType = updates.mediaMimeType;
+    if (updates.cropX !== undefined) profileUpdate.cropX = updates.cropX;
+    if (updates.cropY !== undefined) profileUpdate.cropY = updates.cropY;
+    if (updates.cropW !== undefined) profileUpdate.cropW = updates.cropW;
+    if (updates.cropH !== undefined) profileUpdate.cropH = updates.cropH;
+    if (updates.cropZoom !== undefined) profileUpdate.cropZoom = updates.cropZoom;
+    if (updates.cropRotation !== undefined) profileUpdate.cropRotation = updates.cropRotation;
+    if (updates.zoom !== undefined) profileUpdate.zoom = updates.zoom;
+    if (updates.objectPosition !== undefined) profileUpdate.objectPosition = updates.objectPosition;
+    if (updates.isPublic !== undefined) profileUpdate.isPublic = updates.isPublic;
+    if (updates.displayOrder !== undefined) profileUpdate.displayOrder = updates.displayOrder;
+
+    await db.teamProfile.upsert({
+      where: { userId: id },
+      create: {
+        userId: id,
+        displayName: updates.displayName || user.fullName || user.username,
+        headline: updates.headline || null,
+        bio: updates.bio || null,
+        publicBio: updates.publicBio || null,
+        memberType: updates.memberType || "CORE_TEAM",
+        leadershipPosition: updates.leadershipPosition || null,
+        primaryRole: updates.primaryRole || null,
+        featuredProjects: (updates.featuredProjects as any) || undefined,
+        expertiseGroups: (updates.expertiseGroups as any) || undefined,
+        githubUrl: updates.githubUrl || null,
+        linkedinUrl: updates.linkedinUrl || null,
+        portfolioUrl: updates.portfolioUrl || null,
+        mediaUrl: updates.mediaUrl || null,
+        isPublic: updates.isPublic ?? true,
+      },
+      update: profileUpdate,
+    });
+
+    // Update Skills if provided
+    if (Array.isArray(updates.skills)) {
+      await db.userSkill.deleteMany({ where: { userId: id } });
+      if (updates.skills.length > 0) {
+        await db.userSkill.createMany({
+          data: updates.skills.map((skillName, idx) => ({
+            userId: id,
+            skillName,
+            displayOrder: idx,
+          })),
+          skipDuplicates: true,
+        });
+      }
+    }
+
+    return this.getProfileById(id);
   },
 
   async deleteProfile(id: string): Promise<boolean> {
-    const initialLen = memoryProfiles.length;
-    memoryProfiles = memoryProfiles.filter((p) => p.id !== id);
-    return memoryProfiles.length < initialLen;
+    try {
+      await db.user.delete({ where: { id } });
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  // ── Two-Factor Authentication & Pre-Auth Challenges ────────────────────────
+  async getUserTwoFactorConfig(userId: string): Promise<{ enabled: boolean; verifiedAt: string | null; remainingBackupCodes: number }> {
+    const config = await db.twoFactorConfig.findUnique({ where: { userId } });
+    const remainingBackupCodes = await db.backupCode.count({
+      where: { userId, usedAt: null },
+    });
+    return {
+      enabled: !!config?.enabled,
+      verifiedAt: config?.verifiedAt ? config.verifiedAt.toISOString() : null,
+      remainingBackupCodes,
+    };
+  },
+
+  async createPreAuthChallenge(userId: string, purpose: string = "LOGIN_2FA"): Promise<string> {
+    const token = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+    await db.preAuthChallenge.deleteMany({ where: { userId } }).catch(() => {});
+
+    await db.preAuthChallenge.create({
+      data: {
+        userId,
+        tokenHash,
+        purpose,
+        expiresAt,
+      },
+    });
+
+    return token;
+  },
+
+  async verifyPreAuthChallenge(token: string, purpose: string = "LOGIN_2FA"): Promise<{ valid: boolean; userId?: string; error?: string }> {
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const challenge = await db.preAuthChallenge.findUnique({ where: { tokenHash } });
+
+    if (!challenge || challenge.purpose !== purpose) {
+      return { valid: false, error: "Invalid or expired authorization challenge." };
+    }
+
+    if (new Date() > challenge.expiresAt) {
+      await db.preAuthChallenge.delete({ where: { id: challenge.id } }).catch(() => {});
+      return { valid: false, error: "Authorization challenge expired. Please re-enter your credentials." };
+    }
+
+    return { valid: true, userId: challenge.userId };
+  },
+
+  async consumePreAuthChallenge(token: string): Promise<void> {
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    await db.preAuthChallenge.deleteMany({ where: { tokenHash } }).catch(() => {});
+  },
+
+  async enableTwoFactor(userId: string, secret: string, hashedBackupCodes: string[]): Promise<boolean> {
+    const secretEncrypted = encryptTotpSecret(secret);
+
+    await db.twoFactorConfig.upsert({
+      where: { userId },
+      create: {
+        userId,
+        enabled: true,
+        secretEncrypted,
+        verifiedAt: new Date(),
+      },
+      update: {
+        enabled: true,
+        secretEncrypted,
+        verifiedAt: new Date(),
+      },
+    });
+
+    // Delete old backup codes and create new
+    await db.backupCode.deleteMany({ where: { userId } });
+    if (hashedBackupCodes.length > 0) {
+      await db.backupCode.createMany({
+        data: hashedBackupCodes.map((codeHash) => ({
+          userId,
+          codeHash,
+        })),
+      });
+    }
+
+    return true;
+  },
+
+  async disableTwoFactor(userId: string): Promise<boolean> {
+    await db.twoFactorConfig.deleteMany({ where: { userId } });
+    await db.backupCode.deleteMany({ where: { userId } });
+    return true;
+  },
+
+  async verifyTwoFactorTotp(userId: string, token: string): Promise<boolean> {
+    const config = await db.twoFactorConfig.findUnique({ where: { userId } });
+    if (!config || !config.enabled) return false;
+
+    const secret = decryptTotpSecret(config.secretEncrypted);
+    return verifyTotpToken(token, secret);
+  },
+
+  async verifyAndConsumeBackupCode(userId: string, rawCode: string): Promise<{ valid: boolean; remainingCount: number }> {
+    const codeHash = hashBackupCode(rawCode);
+    const record = await db.backupCode.findFirst({
+      where: {
+        userId,
+        codeHash,
+        usedAt: null,
+      },
+    });
+
+    if (!record) {
+      const remaining = await db.backupCode.count({ where: { userId, usedAt: null } });
+      return { valid: false, remainingCount: remaining };
+    }
+
+    await db.backupCode.update({
+      where: { id: record.id },
+      data: { usedAt: new Date() },
+    });
+
+    const remainingCount = await db.backupCode.count({ where: { userId, usedAt: null } });
+    return { valid: true, remainingCount };
+  },
+
+  async regenerateBackupCodes(userId: string, hashedCodes: string[]): Promise<boolean> {
+    await db.backupCode.deleteMany({ where: { userId } });
+    await db.backupCode.createMany({
+      data: hashedCodes.map((codeHash) => ({
+        userId,
+        codeHash,
+      })),
+    });
+    return true;
+  },
+
+  // ── Notification Preferences ───────────────────────────────────────────────
+  async getNotificationPreferences(userId: string) {
+    const pref = await db.notificationPreference.findUnique({ where: { userId } });
+    if (pref) return pref;
+    return {
+      userId,
+      directMessages: true,
+      projectUpdates: true,
+      mentions: true,
+      feedActivity: true,
+      announcements: true,
+    };
+  },
+
+  async updateNotificationPreferences(userId: string, prefs: any) {
+    return db.notificationPreference.upsert({
+      where: { userId },
+      create: {
+        userId,
+        directMessages: prefs.directMessages ?? true,
+        projectUpdates: prefs.projectUpdates ?? true,
+        mentions: prefs.mentions ?? true,
+        feedActivity: prefs.feedActivity ?? true,
+        announcements: prefs.announcements ?? true,
+      },
+      update: prefs,
+    });
   },
 
   // ── Projects ───────────────────────────────────────────────────────────────
   async getProjects(filter?: { publicOnly?: boolean; isMain?: boolean; developerId?: string }): Promise<Project[]> {
-    let list = [...memoryProjects];
-    if (filter?.publicOnly) list = list.filter((p) => p.isPublic && !p.isDraft);
-    if (filter?.isMain !== undefined) list = list.filter((p) => p.isMainProject === filter.isMain);
-    if (filter?.developerId) list = list.filter((p) => p.createdBy === filter.developerId);
+    const where: Prisma.ProjectWhereInput = {
+      isArchived: false,
+    };
+    if (filter?.publicOnly) where.isDraft = false;
+    if (filter?.isMain !== undefined) where.isMainProject = filter.isMain;
+    if (filter?.developerId) where.createdBy = filter.developerId;
 
-    return list.map((p) => {
-      const creator = memoryProfiles.find((m) => m.id === p.createdBy);
-      return {
-        ...p,
-        creator: creator ? { id: creator.id, username: creator.username, displayName: creator.displayName, mediaUrl: creator.mediaUrl, role: creator.role } : undefined,
-      };
+    const list = await db.project.findMany({
+      where,
+      include: {
+        creator: { include: { profile: true } },
+        collaborators: { include: { user: { include: { profile: true } } } },
+        media: { orderBy: { displayOrder: "asc" } },
+        links: true,
+      },
+      orderBy: [
+        { homepageOrder: "asc" },
+        { createdAt: "desc" },
+      ],
     });
+
+    return list.map(mapProjectToProject);
   },
 
   async getProjectBySlug(slug: string): Promise<Project | null> {
-    const p = memoryProjects.find((x) => x.slug === slug);
+    const p = await db.project.findUnique({
+      where: { slug },
+      include: {
+        creator: { include: { profile: true } },
+        collaborators: { include: { user: { include: { profile: true } } } },
+        media: { orderBy: { displayOrder: "asc" } },
+        links: true,
+      },
+    });
+
     if (!p) return null;
-    const creator = memoryProfiles.find((m) => m.id === p.createdBy);
-    return {
-      ...p,
-      creator: creator ? { id: creator.id, username: creator.username, displayName: creator.displayName, mediaUrl: creator.mediaUrl, role: creator.role } : undefined,
-    };
+    return mapProjectToProject(p);
+  },
+
+  async getProjectById(id: string): Promise<Project | null> {
+    const p = await db.project.findUnique({
+      where: { id },
+      include: {
+        creator: { include: { profile: true } },
+        collaborators: { include: { user: { include: { profile: true } } } },
+        media: { orderBy: { displayOrder: "asc" } },
+        links: true,
+      },
+    });
+
+    if (!p) return null;
+    return mapProjectToProject(p);
   },
 
   async createProject(data: Partial<Project>): Promise<Project> {
-    const slug = data.slug || data.title!.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const slug = (data.slug || data.title!.toLowerCase().replace(/[^a-z0-9]+/g, "-")).replace(/^-|-$/g, "");
     const collaboratorIds = data.collaboratorIds || [];
-    const collaborators = collaboratorIds.map((cid) => {
-      const mem = memoryProfiles.find((p) => p.id === cid || p.username === cid);
-      return mem ? { id: mem.id, username: mem.username, displayName: mem.displayName, mediaUrl: mem.mediaUrl, role: mem.role } : null;
-    }).filter(Boolean) as any[];
 
-    const newProj: Project = {
-      id: `proj-${Date.now()}`,
-      title: data.title!,
-      slug,
-      shortDesc: data.shortDesc || "",
-      overview: data.overview || data.shortDesc || "",
-      problem: data.problem,
-      solution: data.solution,
-      features: data.features || [],
-      techStack: data.techStack || [],
-      category: data.category || "Web",
-      status: data.status || "Live",
-      thumbnailUrl: data.thumbnailUrl || "/assets/images/4e56a053e3ee0019b13c19c5b3f614fe.jpg",
-      screenshots: data.screenshots || [],
-      repoUrl: data.repoUrl,
-      liveUrl: data.liveUrl,
-      isDraft: !!data.isDraft,
-      isPublic: data.isPublic ?? !data.isDraft,
-      isFeatured: !!data.isFeatured,
-      isMainProject: !!data.isMainProject,
-      isHomepageVisible: data.isHomepageVisible ?? true,
-      showInTeamProjects: data.showInTeamProjects ?? true,
-      displayOrder: memoryProjects.length + 1,
-      createdBy: data.createdBy || "profile-ashu-001",
-      collaboratorIds,
-      collaborators,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    memoryProjects.unshift(newProj);
-    return newProj;
+    const created = await db.project.create({
+      data: {
+        title: data.title!,
+        slug,
+        shortDesc: data.shortDesc || "",
+        overview: data.overview || data.shortDesc || "",
+        problem: data.problem || null,
+        solution: data.solution || null,
+        features: data.features || [],
+        techStack: data.techStack || [],
+        category: data.category || "Web",
+        status: data.status || "Live",
+        thumbnailUrl: data.thumbnailUrl || "/assets/images/4e56a053e3ee0019b13c19c5b3f614fe.jpg",
+        repoUrl: data.repoUrl || null,
+        liveUrl: data.liveUrl || null,
+        demoUrl: data.demoUrl || null,
+        isDraft: !!data.isDraft,
+        isMainProject: !!data.isMainProject,
+        isHomepageVisible: data.isHomepageVisible ?? true,
+        isArchived: false,
+        createdBy: data.createdBy!,
+        collaborators: {
+          create: collaboratorIds.map((userId) => ({
+            userId,
+            roleTitle: "Collaborator",
+          })),
+        },
+      },
+      include: {
+        creator: { include: { profile: true } },
+        collaborators: { include: { user: { include: { profile: true } } } },
+        media: true,
+        links: true,
+      },
+    });
+
+    return mapProjectToProject(created);
   },
 
   async updateProject(id: string, updates: Partial<Project>): Promise<Project | null> {
-    const idx = memoryProjects.findIndex((p) => p.id === id);
-    if (idx === -1) return null;
-    memoryProjects[idx] = { ...memoryProjects[idx], ...updates, updatedAt: new Date().toISOString() };
-    return memoryProjects[idx];
+    const projectUpdate: Prisma.ProjectUpdateInput = {};
+    if (updates.title !== undefined) projectUpdate.title = updates.title;
+    if (updates.slug !== undefined) projectUpdate.slug = updates.slug;
+    if (updates.shortDesc !== undefined) projectUpdate.shortDesc = updates.shortDesc;
+    if (updates.overview !== undefined) projectUpdate.overview = updates.overview;
+    if (updates.problem !== undefined) projectUpdate.problem = updates.problem;
+    if (updates.solution !== undefined) projectUpdate.solution = updates.solution;
+    if (updates.features !== undefined) projectUpdate.features = updates.features;
+    if (updates.techStack !== undefined) projectUpdate.techStack = updates.techStack;
+    if (updates.category !== undefined) projectUpdate.category = updates.category;
+    if (updates.status !== undefined) projectUpdate.status = updates.status;
+    if (updates.thumbnailUrl !== undefined) projectUpdate.thumbnailUrl = updates.thumbnailUrl;
+    if (updates.repoUrl !== undefined) projectUpdate.repoUrl = updates.repoUrl;
+    if (updates.liveUrl !== undefined) projectUpdate.liveUrl = updates.liveUrl;
+    if (updates.demoUrl !== undefined) projectUpdate.demoUrl = updates.demoUrl;
+    if (updates.isDraft !== undefined) projectUpdate.isDraft = updates.isDraft;
+    if (updates.isMainProject !== undefined) projectUpdate.isMainProject = updates.isMainProject;
+    if (updates.isHomepageVisible !== undefined) projectUpdate.isHomepageVisible = updates.isHomepageVisible;
+    if (updates.displayOrder !== undefined) projectUpdate.homepageOrder = updates.displayOrder;
+
+    const updated = await db.project.update({
+      where: { id },
+      data: projectUpdate,
+      include: {
+        creator: { include: { profile: true } },
+        collaborators: { include: { user: { include: { profile: true } } } },
+        media: true,
+        links: true,
+      },
+    });
+
+    return mapProjectToProject(updated);
   },
 
   async deleteProject(id: string): Promise<boolean> {
-    const initialLen = memoryProjects.length;
-    memoryProjects = memoryProjects.filter((p) => p.id !== id);
-    return memoryProjects.length < initialLen;
+    try {
+      await db.project.delete({ where: { id } });
+      return true;
+    } catch {
+      return false;
+    }
   },
 
-  // ── Social Feed (Posts, Likes, Comments) ──────────────────────────────────
+  // ── Social Feed ─────────────────────────────────────────────────────────────
   async getPosts(currentUserId?: string): Promise<Post[]> {
-    return memoryPosts.map((post) => {
-      const author = memoryProfiles.find((p) => p.id === post.authorId);
-      const project = post.projectId ? memoryProjects.find((p) => p.id === post.projectId) : null;
-      const likesCount = memoryLikes.filter((l) => l.postId === post.id).length;
-      const commentsCount = memoryComments.filter((c) => c.postId === post.id).length;
-      const hasLiked = currentUserId ? memoryLikes.some((l) => l.postId === post.id && l.profileId === currentUserId) : false;
+    const list = await db.post.findMany({
+      where: { isDeleted: false },
+      include: {
+        author: { include: { profile: true } },
+        project: true,
+        media: { orderBy: { displayOrder: "asc" } },
+        links: true,
+        likes: true,
+        comments: { where: { isDeleted: false } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
 
-      return {
-        ...post,
-        author: author ? { id: author.id, username: author.username, displayName: author.displayName, mediaUrl: author.mediaUrl, role: author.role } : undefined,
-        project: project ? { id: project.id, title: project.title, slug: project.slug } : null,
-        likesCount,
-        commentsCount,
-        hasLiked,
-      };
-    }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return list.map((p) => mapPostToPost(p, currentUserId));
   },
 
   async createPost(data: { authorId: string; content: string; projectId?: string; isAnnouncement?: boolean }): Promise<Post> {
-    const newPost: Post = {
-      id: `post-${Date.now()}`,
-      authorId: data.authorId,
-      content: data.content,
-      projectId: data.projectId,
-      isAnnouncement: !!data.isAnnouncement,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      likesCount: 0,
-      commentsCount: 0,
-      hasLiked: false,
-    };
-    memoryPosts.unshift(newPost);
-    return newPost;
+    const post = await db.post.create({
+      data: {
+        authorId: data.authorId,
+        content: data.content,
+        projectId: data.projectId || null,
+        isAnnouncement: !!data.isAnnouncement,
+      },
+      include: {
+        author: { include: { profile: true } },
+        project: true,
+        media: true,
+        links: true,
+        likes: true,
+        comments: true,
+      },
+    });
+
+    return mapPostToPost(post);
   },
 
   async deletePost(id: string, userId?: string): Promise<boolean> {
-    const idx = memoryPosts.findIndex((p) => p.id === id);
-    if (idx === -1) return false;
-    memoryPosts.splice(idx, 1);
-    memoryLikes = memoryLikes.filter((l) => l.postId !== id);
-    memoryComments = memoryComments.filter((c) => c.postId !== id);
-    return true;
+    try {
+      await db.post.update({
+        where: { id },
+        data: { isDeleted: true },
+      });
+      return true;
+    } catch {
+      return false;
+    }
   },
 
   async togglePostLike(postId: string, profileId: string): Promise<{ liked: boolean; totalLikes: number }> {
-    const existingIndex = memoryLikes.findIndex((l) => l.postId === postId && l.profileId === profileId);
+    const existing = await db.postLike.findUnique({
+      where: {
+        postId_userId: {
+          postId,
+          userId: profileId,
+        },
+      },
+    });
+
     let liked = false;
-    if (existingIndex > -1) {
-      memoryLikes.splice(existingIndex, 1);
+    if (existing) {
+      await db.postLike.delete({
+        where: { id: existing.id },
+      });
       liked = false;
     } else {
-      memoryLikes.push({
-        id: `like-${Date.now()}`,
-        postId,
-        profileId,
-        createdAt: new Date().toISOString(),
+      await db.postLike.create({
+        data: {
+          postId,
+          userId: profileId,
+        },
       });
       liked = true;
     }
-    const totalLikes = memoryLikes.filter((l) => l.postId === postId).length;
+
+    const totalLikes = await db.postLike.count({ where: { postId } });
     return { liked, totalLikes };
   },
 
   async getPostComments(postId: string): Promise<PostComment[]> {
-    const comments = memoryComments.filter((c) => c.postId === postId);
-    return comments.map((c) => {
-      const author = memoryProfiles.find((p) => p.id === c.profileId);
-      return {
-        ...c,
-        author: author ? { id: author.id, username: author.username, displayName: author.displayName, mediaUrl: author.mediaUrl, role: author.role } : undefined,
-      };
-    }).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    const comments = await db.comment.findMany({
+      where: { postId, isDeleted: false },
+      include: {
+        user: { include: { profile: true } },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    return comments.map((c) => ({
+      id: c.id,
+      postId: c.postId,
+      profileId: c.userId,
+      parentCommentId: c.parentCommentId,
+      content: c.content,
+      createdAt: c.createdAt.toISOString(),
+      updatedAt: c.updatedAt.toISOString(),
+      author: c.user
+        ? {
+            id: c.user.id,
+            username: c.user.username,
+            displayName: c.user.profile?.displayName || c.user.fullName || c.user.username,
+            mediaUrl: c.user.profile?.mediaUrl || c.user.profileMediaUrl || null,
+            role: c.user.role,
+          }
+        : undefined,
+    }));
   },
 
   async createPostComment(data: { postId: string; profileId: string; content: string; parentCommentId?: string }): Promise<PostComment> {
-    const newComment: PostComment = {
-      id: `comm-${Date.now()}`,
-      postId: data.postId,
-      profileId: data.profileId,
-      parentCommentId: data.parentCommentId,
-      content: data.content,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    memoryComments.push(newComment);
-    const author = memoryProfiles.find((p) => p.id === data.profileId);
+    const comment = await db.comment.create({
+      data: {
+        postId: data.postId,
+        userId: data.profileId,
+        content: data.content,
+        parentCommentId: data.parentCommentId || null,
+      },
+      include: {
+        user: { include: { profile: true } },
+      },
+    });
+
     return {
-      ...newComment,
-      author: author ? { id: author.id, username: author.username, displayName: author.displayName, mediaUrl: author.mediaUrl, role: author.role } : undefined,
+      id: comment.id,
+      postId: comment.postId,
+      profileId: comment.userId,
+      parentCommentId: comment.parentCommentId,
+      content: comment.content,
+      createdAt: comment.createdAt.toISOString(),
+      updatedAt: comment.updatedAt.toISOString(),
+      author: comment.user
+        ? {
+            id: comment.user.id,
+            username: comment.user.username,
+            displayName: comment.user.profile?.displayName || comment.user.fullName || comment.user.username,
+            mediaUrl: comment.user.profile?.mediaUrl || comment.user.profileMediaUrl || null,
+            role: comment.user.role,
+          }
+        : undefined,
     };
   },
 
   async deletePostComment(commentId: string, profileId: string): Promise<boolean> {
-    const idx = memoryComments.findIndex((c) => c.id === commentId && (c.profileId === profileId || memoryProfiles.find((p) => p.id === profileId)?.role === "OWNER"));
-    if (idx === -1) return false;
-    memoryComments.splice(idx, 1);
-    return true;
+    try {
+      await db.comment.update({
+        where: { id: commentId },
+        data: { isDeleted: true },
+      });
+      return true;
+    } catch {
+      return false;
+    }
   },
 
-  // ── 2-Stage OTP Verification ───────────────────────────────────────────────
-  async createOtp(email: string, profileId: string, purpose: "LOGIN" | "PASSWORD_RESET" = "LOGIN"): Promise<string> {
-    // Generate cryptographically secure 6-digit OTP
+  // ── Recovery Email OTP Verification ─────────────────────────────────────────
+  async createOtp(email: string, profileId: string, purpose: "LOGIN" | "PASSWORD_RESET" | string = "PASSWORD_RESET"): Promise<string> {
+    const cleanEmail = email.toLowerCase().trim();
     const otp = crypto.randomInt(100000, 999999).toString();
     const otpHash = crypto.createHash("sha256").update(otp).digest("hex");
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 mins
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
-    // Invalidate previous unused OTPs for this email/purpose
-    memoryAuthOtps = memoryAuthOtps.filter((o) => !(o.email.toLowerCase() === email.toLowerCase() && o.purpose === purpose && !o.isUsed));
+    await db.authOtp.updateMany({
+      where: {
+        email: cleanEmail,
+        purpose,
+        isUsed: false,
+      },
+      data: {
+        isUsed: true,
+      },
+    });
 
-    memoryAuthOtps.push({
-      id: `otp-${Date.now()}`,
-      profileId,
-      email: email.toLowerCase(),
-      otpHash,
-      purpose,
-      attempts: 0,
-      isUsed: false,
-      expiresAt,
-      createdAt: new Date().toISOString(),
+    await db.authOtp.create({
+      data: {
+        userId: profileId,
+        email: cleanEmail,
+        otpHash,
+        purpose,
+        attempts: 0,
+        isUsed: false,
+        expiresAt,
+      },
     });
 
     return otp;
   },
 
-  async verifyOtp(email: string, otp: string, purpose: "LOGIN" | "PASSWORD_RESET" = "LOGIN"): Promise<{ valid: boolean; profile?: Profile; error?: string }> {
+  async verifyOtp(email: string, otp: string, purpose: "LOGIN" | "PASSWORD_RESET" | string = "PASSWORD_RESET"): Promise<{ valid: boolean; profile?: Profile; error?: string }> {
     const cleanEmail = email.trim().toLowerCase();
     const otpHash = crypto.createHash("sha256").update(otp.trim()).digest("hex");
 
-    const record = memoryAuthOtps.find(
-      (o) => o.email === cleanEmail && o.purpose === purpose && !o.isUsed
-    );
+    const record = await db.authOtp.findFirst({
+      where: {
+        email: cleanEmail,
+        purpose,
+        isUsed: false,
+      },
+      orderBy: { createdAt: "desc" },
+    });
 
     if (!record) {
       return { valid: false, error: "No active verification code found. Please request a new one." };
     }
 
     if (new Date(record.expiresAt).getTime() < Date.now()) {
-      record.isUsed = true;
+      await db.authOtp.update({ where: { id: record.id }, data: { isUsed: true } });
       return { valid: false, error: "Verification code has expired. Please request a new code." };
     }
 
-    record.attempts += 1;
-    if (record.attempts > 5) {
-      record.isUsed = true;
+    if (record.attempts >= 5) {
+      await db.authOtp.update({ where: { id: record.id }, data: { isUsed: true } });
       return { valid: false, error: "Too many failed attempts. Code invalidated." };
     }
 
     if (record.otpHash !== otpHash) {
+      await db.authOtp.update({ where: { id: record.id }, data: { attempts: { increment: 1 } } });
       return { valid: false, error: "Invalid verification code. Please check and try again." };
     }
 
-    // Success -> Mark used
-    record.isUsed = true;
-    const profile = memoryProfiles.find((p) => p.id === record.profileId);
-    return { valid: true, profile };
+    await db.authOtp.update({ where: { id: record.id }, data: { isUsed: true } });
+    const profile = await this.getProfileById(record.userId);
+    return { valid: true, profile: profile || undefined };
   },
 
   // ── Site Settings ──────────────────────────────────────────────────────────
   async getSiteSettings(): Promise<SiteSettings> {
-    return memorySiteSettings;
+    try {
+      const setting = await db.siteSetting.findUnique({ where: { key: "homepage_visibility" } });
+      if (setting) {
+        return JSON.parse(setting.value);
+      }
+    } catch {}
+
+    return {
+      mainProjectsHomeVisible: true,
+      teamProjectsHomeVisible: true,
+      updatedAt: new Date().toISOString(),
+    };
   },
 
   async updateSiteSettings(settings: Partial<SiteSettings>): Promise<SiteSettings> {
-    memorySiteSettings = {
-      ...memorySiteSettings,
+    const current = await this.getSiteSettings();
+    const updated: SiteSettings = {
+      ...current,
       ...settings,
       updatedAt: new Date().toISOString(),
     };
-    return memorySiteSettings;
+
+    try {
+      await db.siteSetting.upsert({
+        where: { key: "homepage_visibility" },
+        create: {
+          key: "homepage_visibility",
+          value: JSON.stringify(updated),
+        },
+        update: {
+          value: JSON.stringify(updated),
+        },
+      });
+    } catch {}
+
+    return updated;
   },
 
   // ── Inquiries ──────────────────────────────────────────────────────────────
   async getInquiries(filters?: { status?: string | null; priority?: string | null; search?: string | null }): Promise<Inquiry[]> {
-    let list = [...memoryInquiries];
-    if (filters?.status && filters.status !== "ALL") {
-      list = list.filter((i) => i.status === filters.status);
-    }
-    if (filters?.priority && filters.priority !== "ALL") {
-      list = list.filter((i) => i.priority === filters.priority);
-    }
+    const where: Prisma.InquiryWhereInput = {};
+    if (filters?.status && filters.status !== "ALL") where.status = filters.status;
+    if (filters?.priority && filters.priority !== "ALL") where.priority = filters.priority;
     if (filters?.search) {
-      const q = filters.search.toLowerCase();
-      list = list.filter((i) =>
-        i.fullName.toLowerCase().includes(q) ||
-        i.email.toLowerCase().includes(q) ||
-        i.referenceId.toLowerCase().includes(q)
-      );
+      const q = filters.search;
+      where.OR = [
+        { fullName: { contains: q, mode: "insensitive" } },
+        { email: { contains: q, mode: "insensitive" } },
+        { referenceId: { contains: q, mode: "insensitive" } },
+      ];
     }
-    return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    const list = await db.inquiry.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+    });
+
+    return list.map((i) => ({
+      id: i.id,
+      referenceId: i.referenceId,
+      fullName: i.fullName,
+      email: i.email,
+      phone: i.phone,
+      company: i.company,
+      projectType: i.projectType,
+      budget: i.budget,
+      timeline: i.timeline,
+      message: i.message,
+      attachmentUrl: i.attachmentUrl,
+      status: i.status,
+      priority: i.priority,
+      assignedTo: i.assignedTo,
+      replyNotes: i.replyNotes,
+      convertedProjectId: i.convertedProjectId,
+      createdAt: i.createdAt.toISOString(),
+      updatedAt: i.updatedAt.toISOString(),
+    }));
   },
 
   async createInquiry(data: Partial<Inquiry>): Promise<Inquiry> {
@@ -721,234 +1426,291 @@ export const dataStore = {
     const randomHex = Math.floor(1000 + Math.random() * 9000);
     const referenceId = `CXA-${yearMonth}-${randomHex}`;
 
-    const newInq: Inquiry = {
-      id: `inq-${Date.now()}`,
-      referenceId,
-      fullName: data.fullName!,
-      email: data.email!,
-      phone: data.phone,
-      company: data.company,
-      projectType: data.projectType || "web-dev",
-      budget: data.budget || "$1,000 - $5,000",
-      timeline: data.timeline || "1 - 2 Months",
-      message: data.message!,
-      status: "NEW",
-      priority: "MEDIUM",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    const created = await db.inquiry.create({
+      data: {
+        referenceId,
+        fullName: data.fullName!,
+        email: data.email!,
+        phone: data.phone || null,
+        company: data.company || null,
+        projectType: data.projectType || "web-dev",
+        budget: data.budget || "$1,000 - $5,000",
+        timeline: data.timeline || "1 - 2 Months",
+        message: data.message!,
+        attachmentUrl: data.attachmentUrl || null,
+        status: "NEW",
+        priority: "MEDIUM",
+      },
+    });
 
-    memoryInquiries.unshift(newInq);
-    return newInq;
+    return {
+      id: created.id,
+      referenceId: created.referenceId,
+      fullName: created.fullName,
+      email: created.email,
+      phone: created.phone,
+      company: created.company,
+      projectType: created.projectType,
+      budget: created.budget,
+      timeline: created.timeline,
+      message: created.message,
+      attachmentUrl: created.attachmentUrl,
+      status: created.status,
+      priority: created.priority,
+      assignedTo: created.assignedTo,
+      replyNotes: created.replyNotes,
+      convertedProjectId: created.convertedProjectId,
+      createdAt: created.createdAt.toISOString(),
+      updatedAt: created.updatedAt.toISOString(),
+    };
   },
 
   async updateInquiry(id: string, updates: Partial<Inquiry>): Promise<Inquiry | null> {
-    const idx = memoryInquiries.findIndex((i) => i.id === id);
-    if (idx === -1) return null;
-    memoryInquiries[idx] = { ...memoryInquiries[idx], ...updates, updatedAt: new Date().toISOString() };
-    return memoryInquiries[idx];
+    const updatePayload: Prisma.InquiryUpdateInput = {};
+    if (updates.status !== undefined) updatePayload.status = updates.status;
+    if (updates.priority !== undefined) updatePayload.priority = updates.priority;
+    if (updates.assignedTo !== undefined) updatePayload.assignedTo = updates.assignedTo;
+    if (updates.replyNotes !== undefined) updatePayload.replyNotes = updates.replyNotes;
+
+    const updated = await db.inquiry.update({
+      where: { id },
+      data: updatePayload,
+    });
+
+    return {
+      id: updated.id,
+      referenceId: updated.referenceId,
+      fullName: updated.fullName,
+      email: updated.email,
+      phone: updated.phone,
+      company: updated.company,
+      projectType: updated.projectType,
+      budget: updated.budget,
+      timeline: updated.timeline,
+      message: updated.message,
+      attachmentUrl: updated.attachmentUrl,
+      status: updated.status,
+      priority: updated.priority,
+      assignedTo: updated.assignedTo,
+      replyNotes: updated.replyNotes,
+      convertedProjectId: updated.convertedProjectId,
+      createdAt: updated.createdAt.toISOString(),
+      updatedAt: updated.updatedAt.toISOString(),
+    };
   },
 
   // ── Chat & Direct Messaging ────────────────────────────────────────────────
   async getConversations(userId?: string): Promise<Conversation[]> {
-    const list = memoryConversations.filter((conv) => {
-      if (userId && conv.hiddenForUserIds?.includes(userId)) return false;
-      if (conv.type !== "DIRECT") return true;
-      if (!userId) return true;
-      return (
-        conv.participantIds?.includes(userId) ||
-        conv.members?.some((m) => m.id === userId || m.username === userId)
-      );
+    const where: Prisma.ConversationWhereInput = {};
+    if (userId) {
+      where.members = {
+        some: { userId },
+      };
+    }
+
+    const list = await db.conversation.findMany({
+      where,
+      include: {
+        members: {
+          include: {
+            user: { include: { profile: true } },
+          },
+        },
+        messages: {
+          where: { isDeleted: false },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          include: {
+            sender: { include: { profile: true } },
+          },
+        },
+      },
+      orderBy: { updatedAt: "desc" },
     });
 
-    return list
-      .map((conv) => {
-        const messages = memoryMessages.filter((m) => m.conversationId === conv.id);
-        const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+    return list.map((conv) => {
+      const lastMsg = conv.messages[0];
+      let otherMember = null;
+      let title = conv.title || "Conversation";
 
-        let otherMember = null;
-        let title = conv.title || "Conversation";
-
-        if (conv.type === "DIRECT" && userId) {
-          const otherId = conv.participantIds?.find((id) => id !== userId);
-          otherMember = otherId
-            ? memoryProfiles.find((p) => p.id === otherId || p.username === otherId) || null
-            : conv.members?.find((m) => m.id !== userId) || null;
-          if (otherMember) {
-            title = otherMember.displayName;
-          }
-        }
-
-        // Calculate unread count for this user
-        let unreadCount = 0;
-        if (userId) {
-          const memberRecord = memoryConversationMembers.find(
-            (m) => m.conversationId === conv.id && m.userId === userId
-          );
-          const lastReadTime = memberRecord?.lastReadAt ? new Date(memberRecord.lastReadAt).getTime() : 0;
-          unreadCount = messages.filter(
-            (m) => !m.isDeleted && m.senderId !== userId && new Date(m.createdAt).getTime() > lastReadTime
-          ).length;
-        }
-
+      const membersList = conv.members.map((m) => {
+        const uProf = m.user.profile;
         return {
-          ...conv,
-          title,
-          otherMember,
-          unreadCount,
-          lastMessage: lastMessage ? {
-            ...lastMessage,
-            sender: memoryProfiles.find((p) => p.id === lastMessage.senderId),
-          } : null,
-          lastMessageText: lastMessage?.isDeleted ? "Message unsent" : lastMessage?.message || (lastMessage?.attachments && lastMessage.attachments.length > 0 ? "📷 Photo" : undefined),
-          lastMessageAt: lastMessage?.createdAt || conv.updatedAt,
+          id: m.user.id,
+          username: m.user.username,
+          displayName: uProf?.displayName || m.user.fullName || m.user.username,
+          mediaUrl: uProf?.mediaUrl || m.user.profileMediaUrl || null,
+          role: m.user.role,
+          headline: uProf?.headline || null,
         };
-      })
-      .sort((a, b) => {
-        const timeA = new Date(a.lastMessageAt || a.updatedAt).getTime();
-        const timeB = new Date(b.lastMessageAt || b.updatedAt).getTime();
-        return timeB - timeA;
       });
+
+      if (conv.type === "DIRECT" && userId) {
+        const other = membersList.find((m) => m.id !== userId);
+        if (other) {
+          otherMember = other;
+          title = other.displayName;
+        }
+      }
+
+      return {
+        id: conv.id,
+        type: conv.type,
+        title,
+        projectId: conv.projectId,
+        createdBy: conv.createdBy,
+        createdAt: conv.createdAt.toISOString(),
+        updatedAt: conv.updatedAt.toISOString(),
+        participantIds: conv.members.map((m) => m.userId),
+        members: membersList,
+        otherMember,
+        lastMessage: lastMsg
+          ? {
+              id: lastMsg.id,
+              conversationId: lastMsg.conversationId,
+              senderId: lastMsg.senderId,
+              message: lastMsg.message,
+              fileUrl: lastMsg.fileUrl,
+              fileName: lastMsg.fileName,
+              isDeleted: lastMsg.isDeleted,
+              createdAt: lastMsg.createdAt.toISOString(),
+              updatedAt: lastMsg.updatedAt.toISOString(),
+            }
+          : null,
+        lastMessageText: lastMsg ? (lastMsg.fileUrl ? "📷 Photo" : lastMsg.message) : "",
+        lastMessageAt: lastMsg ? lastMsg.createdAt.toISOString() : conv.updatedAt.toISOString(),
+        unreadCount: 0,
+      };
+    });
   },
 
   async getConversationById(convId: string, userId?: string): Promise<Conversation | null> {
-    const conv = memoryConversations.find((c) => c.id === convId);
+    const conv = await db.conversation.findUnique({
+      where: { id: convId },
+      include: {
+        members: {
+          include: {
+            user: { include: { profile: true } },
+          },
+        },
+      },
+    });
+
     if (!conv) return null;
 
     let otherMember = null;
     let title = conv.title || "Conversation";
 
+    const membersList = conv.members.map((m) => {
+      const uProf = m.user.profile;
+      return {
+        id: m.user.id,
+        username: m.user.username,
+        displayName: uProf?.displayName || m.user.fullName || m.user.username,
+        mediaUrl: uProf?.mediaUrl || m.user.profileMediaUrl || null,
+        role: m.user.role,
+        headline: uProf?.headline || null,
+      };
+    });
+
     if (conv.type === "DIRECT" && userId) {
-      const otherId = conv.participantIds?.find((id) => id !== userId);
-      otherMember = otherId
-        ? memoryProfiles.find((p) => p.id === otherId || p.username === otherId) || null
-        : conv.members?.find((m) => m.id !== userId) || null;
-      if (otherMember) {
-        title = otherMember.displayName;
+      const other = membersList.find((m) => m.id !== userId);
+      if (other) {
+        otherMember = other;
+        title = other.displayName;
       }
     }
 
     return {
-      ...conv,
+      id: conv.id,
+      type: conv.type,
       title,
+      projectId: conv.projectId,
+      createdBy: conv.createdBy,
+      createdAt: conv.createdAt.toISOString(),
+      updatedAt: conv.updatedAt.toISOString(),
+      participantIds: conv.members.map((m) => m.userId),
+      members: membersList,
       otherMember,
     };
   },
 
   async getOrCreateDirectConversation(user1Id: string, user2Id: string): Promise<Conversation> {
-    const u1 = memoryProfiles.find((p) => p.id === user1Id || p.username === user1Id);
-    const u2 = memoryProfiles.find((p) => p.id === user2Id || p.username === user2Id);
-
-    const id1 = u1?.id || user1Id;
-    const id2 = u2?.id || user2Id;
-
-    // Check if direct conversation already exists between these 2 users (canonical key match)
-    const existing = memoryConversations.find(
-      (c) =>
-        c.type === "DIRECT" &&
-        c.participantIds &&
-        c.participantIds.includes(id1) &&
-        c.participantIds.includes(id2)
-    );
+    const existing = await db.conversation.findFirst({
+      where: {
+        type: "DIRECT",
+        AND: [
+          { members: { some: { userId: user1Id } } },
+          { members: { some: { userId: user2Id } } },
+        ],
+      },
+      include: {
+        members: {
+          include: {
+            user: { include: { profile: true } },
+          },
+        },
+      },
+    });
 
     if (existing) {
-      const other = id1 === user1Id ? u2 : u1;
-      return {
-        ...existing,
-        title: other?.displayName || existing.title,
-        otherMember: other ? { id: other.id, username: other.username, displayName: other.displayName, mediaUrl: other.mediaUrl, role: other.role, headline: other.headline } : null,
-      };
+      return this.getConversationById(existing.id, user1Id) as Promise<Conversation>;
     }
 
-    const sortedIds = [id1, id2].sort();
-    const newConv: Conversation = {
-      id: `conv-direct-${sortedIds[0]}-${sortedIds[1]}`,
-      type: "DIRECT",
-      title: u2?.displayName || "Direct Message",
-      participantIds: [id1, id2],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      members: [
-        u1 ? { id: u1.id, username: u1.username, displayName: u1.displayName, mediaUrl: u1.mediaUrl, role: u1.role, headline: u1.headline } : ({} as any),
-        u2 ? { id: u2.id, username: u2.username, displayName: u2.displayName, mediaUrl: u2.mediaUrl, role: u2.role, headline: u2.headline } : ({} as any),
-      ],
-      otherMember: u2 ? { id: u2.id, username: u2.username, displayName: u2.displayName, mediaUrl: u2.mediaUrl, role: u2.role, headline: u2.headline } : null,
-    };
+    const created = await db.conversation.create({
+      data: {
+        type: "DIRECT",
+        members: {
+          create: [
+            { userId: user1Id },
+            { userId: user2Id },
+          ],
+        },
+      },
+      include: {
+        members: {
+          include: {
+            user: { include: { profile: true } },
+          },
+        },
+      },
+    });
 
-    memoryConversations.unshift(newConv);
-    return newConv;
+    return this.getConversationById(created.id, user1Id) as Promise<Conversation>;
   },
 
   async getMessages(conversationId: string, userId?: string): Promise<ChatMessage[]> {
-    const msgs = memoryMessages.filter((m) => m.conversationId === conversationId);
+    const list = await db.message.findMany({
+      where: { conversationId },
+      include: {
+        sender: { include: { profile: true } },
+      },
+      orderBy: { createdAt: "asc" },
+    });
 
-    return msgs
-      .map((m) => {
-        const sender = memoryProfiles.find((p) => p.id === m.senderId);
-        let replyTo = null;
-        if (m.replyToId) {
-          const orig = memoryMessages.find((origMsg) => origMsg.id === m.replyToId);
-          if (orig) {
-            const origSender = memoryProfiles.find((p) => p.id === orig.senderId);
-            replyTo = {
-              id: orig.id,
-              message: orig.isDeleted ? "Message unsent" : orig.message,
-              senderName: origSender?.displayName || "Member",
-            };
-          }
-        }
-
-        // Aggregate reactions
-        const msgReactions = memoryReactions.filter((r) => r.messageId === m.id);
-        const reactionMap = new Map<string, { count: number; userIds: string[]; userNames: string[] }>();
-        msgReactions.forEach((r) => {
-          if (!reactionMap.has(r.emoji)) {
-            reactionMap.set(r.emoji, { count: 0, userIds: [], userNames: [] });
-          }
-          const item = reactionMap.get(r.emoji)!;
-          item.count += 1;
-          item.userIds.push(r.userId);
-          item.userNames.push(r.userName);
-        });
-
-        const reactions = Array.from(reactionMap.entries()).map(([emoji, data]) => ({
-          emoji,
-          count: data.count,
-          userIds: data.userIds,
-          userNames: data.userNames,
-        }));
-
-        const userReactions = msgReactions
-          .filter((r) => !userId || r.userId === userId)
-          .map((r) => ({ userId: r.userId, emoji: r.emoji }));
-
-        // Calculate read status (Seen)
-        let isSeen = false;
-        if (userId && m.senderId === userId) {
-          const conv = memoryConversations.find((c) => c.id === conversationId);
-          if (conv && conv.type === "DIRECT") {
-            const otherParticipantId = conv.participantIds?.find((id) => id !== userId);
-            if (otherParticipantId) {
-              const otherMemberRecord = memoryConversationMembers.find(
-                (rec) => rec.conversationId === conversationId && rec.userId === otherParticipantId
-              );
-              if (otherMemberRecord?.lastReadAt) {
-                isSeen = new Date(otherMemberRecord.lastReadAt).getTime() >= new Date(m.createdAt).getTime();
-              }
-            }
-          }
-        }
-
-        return {
-          ...m,
-          sender,
-          replyTo,
-          reactions,
-          userReactions,
-          isSeen,
-        };
-      })
-      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    return list.map((m) => {
+      const senderProfile = m.sender.profile;
+      return {
+        id: m.id,
+        conversationId: m.conversationId,
+        senderId: m.senderId,
+        message: m.isDeleted ? "Message unsent" : m.message,
+        fileUrl: m.fileUrl,
+        fileName: m.fileName,
+        isDeleted: m.isDeleted,
+        replyToId: m.replyToId,
+        createdAt: m.createdAt.toISOString(),
+        updatedAt: m.updatedAt.toISOString(),
+        sender: {
+          id: m.sender.id,
+          username: m.sender.username,
+          displayName: senderProfile?.displayName || m.sender.fullName || m.sender.username,
+          mediaUrl: senderProfile?.mediaUrl || m.sender.profileMediaUrl || null,
+          role: m.sender.role,
+        },
+        reactions: [],
+      };
+    });
   },
 
   async sendMessage(data: {
@@ -960,255 +1722,251 @@ export const dataStore = {
     fileName?: string;
     replyToId?: string | null;
   }): Promise<ChatMessage> {
-    const newMsg: ChatMessage = {
-      id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      conversationId: data.conversationId,
-      senderId: data.senderId,
-      message: data.message || "",
-      attachments: data.attachments || (data.fileUrl ? [{ id: `att-${Date.now()}`, url: data.fileUrl, name: data.fileName || "Image", mimeType: "image/jpeg" }] : []),
-      fileUrl: data.fileUrl,
-      fileName: data.fileName,
-      replyToId: data.replyToId || null,
-      isDeleted: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+    const created = await db.message.create({
+      data: {
+        conversationId: data.conversationId,
+        senderId: data.senderId,
+        message: data.message || "",
+        fileUrl: data.fileUrl || (data.attachments && data.attachments[0] ? data.attachments[0].url : null),
+        fileName: data.fileName || (data.attachments && data.attachments[0] ? data.attachments[0].name : null),
+        replyToId: data.replyToId || null,
+      },
+      include: {
+        sender: { include: { profile: true } },
+      },
+    });
+
+    await db.conversation.update({
+      where: { id: data.conversationId },
+      data: { updatedAt: new Date() },
+    });
+
+    const senderProfile = created.sender.profile;
+    return {
+      id: created.id,
+      conversationId: created.conversationId,
+      senderId: created.senderId,
+      message: created.message,
+      fileUrl: created.fileUrl,
+      fileName: created.fileName,
+      isDeleted: created.isDeleted,
+      replyToId: created.replyToId,
+      createdAt: created.createdAt.toISOString(),
+      updatedAt: created.updatedAt.toISOString(),
+      sender: {
+        id: created.sender.id,
+        username: created.sender.username,
+        displayName: senderProfile?.displayName || created.sender.fullName || created.sender.username,
+        mediaUrl: senderProfile?.mediaUrl || created.sender.profileMediaUrl || null,
+        role: created.sender.role,
+      },
+      reactions: [],
     };
-
-    memoryMessages.push(newMsg);
-
-    // Update conversation timestamp
-    const convIdx = memoryConversations.findIndex((c) => c.id === data.conversationId);
-    if (convIdx !== -1) {
-      memoryConversations[convIdx].updatedAt = new Date().toISOString();
-      memoryConversations[convIdx].lastMessageText = data.message || (newMsg.attachments && newMsg.attachments.length > 0 ? "📷 Photo" : "");
-      memoryConversations[convIdx].lastMessageAt = newMsg.createdAt;
-    }
-
-    const sender = memoryProfiles.find((p) => p.id === data.senderId);
-
-    // Create notification for other participant if direct conversation
-    if (convIdx !== -1 && memoryConversations[convIdx].type === "DIRECT") {
-      const recipientId = memoryConversations[convIdx].participantIds?.find((id) => id !== data.senderId);
-      if (recipientId) {
-        memoryNotifications.unshift({
-          id: `notif-${Date.now()}`,
-          userId: recipientId,
-          type: "CHAT",
-          title: `New message from ${sender?.displayName || "Teammate"}`,
-          message: data.message ? (data.message.length > 60 ? `${data.message.slice(0, 60)}...` : data.message) : "Sent a photo",
-          link: `/dashboard/messages?conversation=${data.conversationId}`,
-          isRead: false,
-          createdAt: new Date().toISOString(),
-        });
-      }
-    }
-
-    return { ...newMsg, sender, reactions: [] };
   },
 
   async editMessage(messageId: string, senderId: string, newMessage: string): Promise<ChatMessage | null> {
-    const msg = memoryMessages.find((m) => m.id === messageId);
-    if (!msg || msg.isDeleted) return null;
+    const msg = await db.message.findUnique({ where: { id: messageId } });
+    if (!msg || msg.senderId !== senderId || msg.isDeleted) return null;
 
-    const sender = memoryProfiles.find((p) => p.id === senderId || p.username === senderId);
-    const isSender = msg.senderId === senderId || (sender && msg.senderId === sender.id);
-    if (!isSender) return null;
+    const updated = await db.message.update({
+      where: { id: messageId },
+      data: { message: newMessage.trim() },
+      include: { sender: { include: { profile: true } } },
+    });
 
-    msg.message = newMessage.trim();
-    msg.isEdited = true;
-    msg.editedAt = new Date().toISOString();
-    msg.updatedAt = new Date().toISOString();
-
-    const senderProfile = memoryProfiles.find((p) => p.id === msg.senderId);
-    return { ...msg, sender: senderProfile };
+    const senderProfile = updated.sender.profile;
+    return {
+      id: updated.id,
+      conversationId: updated.conversationId,
+      senderId: updated.senderId,
+      message: updated.message,
+      fileUrl: updated.fileUrl,
+      fileName: updated.fileName,
+      isDeleted: updated.isDeleted,
+      createdAt: updated.createdAt.toISOString(),
+      updatedAt: updated.updatedAt.toISOString(),
+      sender: {
+        id: updated.sender.id,
+        username: updated.sender.username,
+        displayName: senderProfile?.displayName || updated.sender.fullName || updated.sender.username,
+        mediaUrl: senderProfile?.mediaUrl || updated.sender.profileMediaUrl || null,
+        role: updated.sender.role,
+      },
+    };
   },
 
   async deleteMessage(messageId: string, senderId: string): Promise<boolean> {
-    const msg = memoryMessages.find((m) => m.id === messageId);
-    if (!msg) return false;
+    const msg = await db.message.findUnique({ where: { id: messageId } });
+    if (!msg || msg.senderId !== senderId) return false;
 
-    const sender = memoryProfiles.find((p) => p.id === senderId || p.username === senderId);
-    const isSender = msg.senderId === senderId || (sender && msg.senderId === sender.id);
-    if (!isSender) return false;
+    await db.message.update({
+      where: { id: messageId },
+      data: { isDeleted: true, message: "" },
+    });
+    return true;
+  },
 
-    msg.isDeleted = true;
-    msg.message = "";
-    msg.updatedAt = new Date().toISOString();
+  async markConversationRead(conversationId: string, userId: string): Promise<boolean> {
+    try {
+      await db.conversationMember.updateMany({
+        where: { conversationId, userId },
+        data: { lastReadAt: new Date() },
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  async hideConversation(conversationId: string, userId: string): Promise<boolean> {
     return true;
   },
 
   async toggleReaction(messageId: string, userId: string, emoji: string): Promise<{ reactions: Array<{ emoji: string; count: number; userIds: string[]; userNames: string[] }> }> {
-    const user = memoryProfiles.find((p) => p.id === userId);
-    const userName = user?.displayName || "Member";
-
-    const existingIdx = memoryReactions.findIndex((r) => r.messageId === messageId && r.userId === userId);
-    if (existingIdx !== -1) {
-      if (memoryReactions[existingIdx].emoji === emoji) {
-        // Remove reaction
-        memoryReactions.splice(existingIdx, 1);
-      } else {
-        // Change reaction emoji
-        memoryReactions[existingIdx].emoji = emoji;
-        memoryReactions[existingIdx].userName = userName;
-      }
-    } else {
-      // Add new reaction
-      memoryReactions.push({
-        id: `react-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        messageId,
-        userId,
-        userName,
-        emoji,
-        createdAt: new Date().toISOString(),
-      });
-    }
-
-    // Return aggregated reactions for this message
-    const msgReactions = memoryReactions.filter((r) => r.messageId === messageId);
-    const reactionMap = new Map<string, { count: number; userIds: string[]; userNames: string[] }>();
-    msgReactions.forEach((r) => {
-      if (!reactionMap.has(r.emoji)) {
-        reactionMap.set(r.emoji, { count: 0, userIds: [], userNames: [] });
-      }
-      const item = reactionMap.get(r.emoji)!;
-      item.count += 1;
-      item.userIds.push(r.userId);
-      item.userNames.push(r.userName);
-    });
-
-    const reactions = Array.from(reactionMap.entries()).map(([em, data]) => ({
-      emoji: em,
-      count: data.count,
-      userIds: data.userIds,
-      userNames: data.userNames,
-    }));
-
-    return { reactions };
-  },
-
-  async markConversationRead(conversationId: string, userId: string): Promise<boolean> {
-    const existingIdx = memoryConversationMembers.findIndex(
-      (m) => m.conversationId === conversationId && m.userId === userId
-    );
-
-    const now = new Date().toISOString();
-    if (existingIdx !== -1) {
-      memoryConversationMembers[existingIdx].lastReadAt = now;
-    } else {
-      memoryConversationMembers.push({
-        conversationId,
-        userId,
-        lastReadAt: now,
-        joinedAt: now,
-      });
-    }
-    return true;
-  },
-
-  async hideConversation(conversationId: string, userId: string): Promise<boolean> {
-    const conv = memoryConversations.find((c) => c.id === conversationId);
-    if (!conv) return false;
-    if (!conv.hiddenForUserIds) conv.hiddenForUserIds = [];
-    if (!conv.hiddenForUserIds.includes(userId)) {
-      conv.hiddenForUserIds.push(userId);
-    }
-    return true;
-  },
-
-  async toggleMuteConversation(conversationId: string, userId: string): Promise<{ isMuted: boolean }> {
-    const conv = memoryConversations.find((c) => c.id === conversationId);
-    if (!conv) return { isMuted: false };
-    if (!conv.isMutedForUserIds) conv.isMutedForUserIds = [];
-    const idx = conv.isMutedForUserIds.indexOf(userId);
-    if (idx !== -1) {
-      conv.isMutedForUserIds.splice(idx, 1);
-      return { isMuted: false };
-    } else {
-      conv.isMutedForUserIds.push(userId);
-      return { isMuted: true };
-    }
+    return { reactions: [] };
   },
 
   // ── Notifications ──────────────────────────────────────────────────────────
   async getNotifications(userId?: string): Promise<{ notifications: NotificationItem[]; unreadCount: number }> {
-    const list = memoryNotifications.filter((n) => !userId || n.userId === userId);
+    const where: Prisma.NotificationWhereInput = {};
+    if (userId) where.userId = userId;
+
+    const list = await db.notification.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+    });
+
     const unreadCount = list.filter((n) => !n.isRead).length;
-    return { notifications: list, unreadCount };
+
+    return {
+      notifications: list.map((n) => ({
+        id: n.id,
+        userId: n.userId,
+        type: n.type,
+        title: n.title,
+        message: n.message,
+        link: n.link,
+        isRead: n.isRead,
+        createdAt: n.createdAt.toISOString(),
+      })),
+      unreadCount,
+    };
   },
 
   async markNotificationRead(notificationId: string): Promise<boolean> {
-    const idx = memoryNotifications.findIndex((n) => n.id === notificationId);
-    if (idx !== -1) {
-      memoryNotifications[idx].isRead = true;
+    try {
+      await db.notification.update({
+        where: { id: notificationId },
+        data: { isRead: true },
+      });
       return true;
+    } catch {
+      return false;
     }
-    return false;
-  },
-
-  async markNotificationsRead(userId?: string): Promise<boolean> {
-    memoryNotifications = memoryNotifications.map((n) => (!userId || n.userId === userId ? { ...n, isRead: true } : n));
-    return true;
   },
 
   async markAllNotificationsRead(userId?: string): Promise<boolean> {
-    memoryNotifications = memoryNotifications.map((n) => (!userId || n.userId === userId ? { ...n, isRead: true } : n));
-    return true;
+    try {
+      const where: Prisma.NotificationWhereInput = {};
+      if (userId) where.userId = userId;
+      await db.notification.updateMany({
+        where,
+        data: { isRead: true },
+      });
+      return true;
+    } catch {
+      return false;
+    }
   },
 
   // ── Media Assets & Gallery ────────────────────────────────────────────────
-  async getMediaAssets(userId: string, mediaType: "AVATAR" | "PROJECT" | "POST" = "AVATAR"): Promise<MediaAsset[]> {
-    if (isSupabaseConfigured()) {
-      const { data } = await supabaseQuery<MediaAsset>(
-        "media_assets",
-        `owner_user_id=eq.${userId}&media_type=eq.${mediaType}&order=created_at.desc`
-      );
-      if (data && data.length > 0) return data;
-    }
-    return memoryMediaAssets
-      .filter((m) => m.ownerUserId === userId && m.mediaType === mediaType)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  async getMediaAssets(userId: string, mediaType: "AVATAR" | "PROJECT" | "POST" | string = "AVATAR"): Promise<MediaAsset[]> {
+    const list = await db.mediaAsset.findMany({
+      where: {
+        userId,
+        mediaType,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return list.map((m) => ({
+      id: m.id,
+      ownerUserId: m.userId,
+      mediaType: m.mediaType,
+      sourceType: "SUPABASE_STORAGE",
+      storagePath: m.storagePath,
+      publicUrl: m.publicUrl,
+      mimeType: m.mimeType,
+      originalFilename: m.fileName,
+      fileSize: m.fileSize,
+      cropX: m.cropX,
+      cropY: m.cropY,
+      zoom: m.zoom,
+      createdAt: m.createdAt.toISOString(),
+    }));
   },
 
-  async createMediaAsset(data: Omit<MediaAsset, "id" | "createdAt" | "updatedAt">): Promise<MediaAsset> {
-    const newAsset: MediaAsset = {
-      id: `media-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      ...data,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+  async createMediaAsset(data: {
+    ownerUserId: string;
+    mediaType?: string;
+    storageBucket?: string;
+    sourceType?: string;
+    storagePath?: string | null;
+    publicUrl: string;
+    mimeType?: string | null;
+    originalFilename?: string | null;
+    fileSize?: number | null;
+    cropX?: number | null;
+    cropY?: number | null;
+    zoom?: number | null;
+  }): Promise<MediaAsset> {
+    const created = await db.mediaAsset.create({
+      data: {
+        userId: data.ownerUserId,
+        mediaType: data.mediaType || "AVATAR",
+        storagePath: data.storagePath || null,
+        publicUrl: data.publicUrl,
+        mimeType: data.mimeType || null,
+        fileName: data.originalFilename || null,
+        fileSize: data.fileSize || null,
+        cropX: data.cropX ?? 0,
+        cropY: data.cropY ?? 0,
+        zoom: data.zoom ?? 1,
+      },
+    });
+
+    return {
+      id: created.id,
+      ownerUserId: created.userId,
+      mediaType: created.mediaType,
+      sourceType: "SUPABASE_STORAGE",
+      storagePath: created.storagePath,
+      publicUrl: created.publicUrl,
+      mimeType: created.mimeType,
+      originalFilename: created.fileName,
+      fileSize: created.fileSize,
+      cropX: created.cropX,
+      cropY: created.cropY,
+      zoom: created.zoom,
+      createdAt: created.createdAt.toISOString(),
     };
-
-    if (isSupabaseConfigured()) {
-      const { data: inserted } = await supabaseInsert<MediaAsset>("media_assets", {
-        owner_user_id: data.ownerUserId,
-        media_type: data.mediaType,
-        source_type: data.sourceType,
-        storage_bucket: data.storageBucket,
-        storage_path: data.storagePath,
-        public_url: data.publicUrl,
-        mime_type: data.mimeType,
-        original_filename: data.originalFilename,
-        file_size: data.fileSize,
-      });
-      if (inserted && inserted[0]) return inserted[0];
-    }
-
-    memoryMediaAssets.unshift(newAsset);
-    return newAsset;
   },
 
   async deleteMediaAsset(id: string, userId: string): Promise<boolean> {
-    if (isSupabaseConfigured()) {
-      await supabaseDelete("media_assets", `id=eq.${id}&owner_user_id=eq.${userId}`);
+    try {
+      await db.mediaAsset.deleteMany({
+        where: { id, userId },
+      });
+      return true;
+    } catch {
+      return false;
     }
-    const initialLen = memoryMediaAssets.length;
-    memoryMediaAssets = memoryMediaAssets.filter((m) => !(m.id === id && m.ownerUserId === userId));
-    return memoryMediaAssets.length < initialLen;
   },
 
   async updateProfileAvatar(
     userId: string,
     avatarData: {
-      avatarSource: "STATIC" | "SUPABASE_STORAGE" | "LEGACY";
+      avatarSource?: string;
       avatarPath: string;
       avatarUrl?: string;
       avatarStoragePath?: string;
@@ -1218,58 +1976,93 @@ export const dataStore = {
       avatarPositionY?: number;
     }
   ): Promise<Profile | null> {
-    const updatedAt = new Date().toISOString();
-    const patchPayload = {
-      mediaUrl: avatarData.avatarPath,
-      avatarSource: avatarData.avatarSource,
-      avatarPath: avatarData.avatarPath,
-      avatarUrl: avatarData.avatarUrl || avatarData.avatarPath,
-      avatarStoragePath: avatarData.avatarStoragePath || null,
-      avatarMimeType: avatarData.avatarMimeType || "image/jpeg",
-      avatarZoom: avatarData.avatarZoom ?? 1,
-      avatarPositionX: avatarData.avatarPositionX ?? 50,
-      avatarPositionY: avatarData.avatarPositionY ?? 50,
-      cropZoom: avatarData.avatarZoom ?? 1,
-      cropX: avatarData.avatarPositionX ?? 50,
-      cropY: avatarData.avatarPositionY ?? 50,
-      avatarUpdatedAt: updatedAt,
-      updatedAt,
-    };
+    await db.user.update({
+      where: { id: userId },
+      data: {
+        profileMediaUrl: avatarData.avatarPath,
+        cropX: avatarData.avatarPositionX ?? 0,
+        cropY: avatarData.avatarPositionY ?? 0,
+        zoom: avatarData.avatarZoom ?? 1,
+      },
+    });
 
-    if (isSupabaseConfigured()) {
-      const { data } = await supabaseUpdate<Profile>("profiles", `id=eq.${userId}`, patchPayload);
-      if (data && data[0]) return data[0];
-    }
+    await db.teamProfile.upsert({
+      where: { userId },
+      create: {
+        userId,
+        displayName: "User",
+        mediaUrl: avatarData.avatarPath,
+        cropX: avatarData.avatarPositionX ?? 0,
+        cropY: avatarData.avatarPositionY ?? 0,
+        zoom: avatarData.avatarZoom ?? 1,
+      },
+      update: {
+        mediaUrl: avatarData.avatarPath,
+        cropX: avatarData.avatarPositionX ?? 0,
+        cropY: avatarData.avatarPositionY ?? 0,
+        zoom: avatarData.avatarZoom ?? 1,
+      },
+    });
 
-    const index = memoryProfiles.findIndex((p) => p.id === userId || p.username === userId);
-    if (index !== -1) {
-      memoryProfiles[index] = {
-        ...memoryProfiles[index],
-        ...patchPayload,
-      };
-      return memoryProfiles[index];
-    }
-    return null;
+    return this.getProfileById(userId);
   },
 
-  // ── Activity Events ───────────────────────────────────────────────────────
+  // ── Activity Events ─────────────────────────────────────────────────────────
   async getActivityEvents(limit: number = 20): Promise<ActivityEvent[]> {
-    return [...memoryActivityEvents]
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, limit);
+    const list = await db.activityEvent.findMany({
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
+
+    return list.map((ev) => ({
+      id: ev.id,
+      actorId: ev.actorId,
+      actorName: ev.actorName,
+      actorUsername: ev.actorUsername,
+      actorMediaUrl: ev.actorMediaUrl,
+      actionType: ev.actionType,
+      targetType: ev.targetType,
+      targetId: ev.targetId,
+      title: ev.title,
+      details: ev.details,
+      link: ev.link,
+      createdAt: ev.createdAt.toISOString(),
+    }));
   },
 
   async createActivityEvent(data: Omit<ActivityEvent, "id" | "createdAt">): Promise<ActivityEvent> {
-    const newEvent: ActivityEvent = {
-      id: `act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      ...data,
-      createdAt: new Date().toISOString(),
+    const created = await db.activityEvent.create({
+      data: {
+        actorId: data.actorId,
+        actorName: data.actorName,
+        actorUsername: data.actorUsername,
+        actorMediaUrl: data.actorMediaUrl || null,
+        actionType: data.actionType,
+        targetType: data.targetType,
+        targetId: data.targetId || null,
+        title: data.title,
+        details: data.details || null,
+        link: data.link || null,
+      },
+    });
+
+    return {
+      id: created.id,
+      actorId: created.actorId,
+      actorName: created.actorName,
+      actorUsername: created.actorUsername,
+      actorMediaUrl: created.actorMediaUrl,
+      actionType: created.actionType,
+      targetType: created.targetType,
+      targetId: created.targetId,
+      title: created.title,
+      details: created.details,
+      link: created.link,
+      createdAt: created.createdAt.toISOString(),
     };
-    memoryActivityEvents.unshift(newEvent);
-    return newEvent;
   },
 
-  // ── Public Profile Data & Social Matrix ───────────────────────────────────
+  // ── Public Profile Data & Social Matrix ─────────────────────────────────────
   async getPublicProfileWithData(username: string): Promise<{
     profile: Profile | null;
     stats: { projectsCount: number; postsCount: number; collabCount: number };
@@ -1277,22 +2070,47 @@ export const dataStore = {
     collabProjects: Project[];
     posts: Post[];
   } | null> {
-    const cleanUser = username.trim().toLowerCase();
-    const profile = memoryProfiles.find((p) => p.username.toLowerCase() === cleanUser || p.id.toLowerCase() === cleanUser);
+    const profile = await this.getProfileByUsername(username);
     if (!profile) return null;
 
-    const createdProjects = memoryProjects.filter((p) => (p.createdBy === profile.id || p.creator?.username?.toLowerCase() === cleanUser) && !p.isDraft);
-    const collabProjects = memoryProjects.filter((p) => p.collaborators?.some((c) => c.id === profile.id || c.username.toLowerCase() === cleanUser) && !p.isDraft);
-    const posts = memoryPosts.filter((p) => p.authorId === profile.id).map((p) => ({
-      ...p,
-      author: {
-        id: profile.id,
-        username: profile.username,
-        displayName: profile.displayName,
-        mediaUrl: profile.mediaUrl,
-        role: profile.role,
-      }
-    })).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const createdProjects = await db.project.findMany({
+      where: { createdBy: profile.id, isDraft: false, isArchived: false },
+      include: {
+        creator: { include: { profile: true } },
+        collaborators: { include: { user: { include: { profile: true } } } },
+        media: true,
+        links: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const collabProjects = await db.project.findMany({
+      where: {
+        collaborators: { some: { userId: profile.id } },
+        isDraft: false,
+        isArchived: false,
+      },
+      include: {
+        creator: { include: { profile: true } },
+        collaborators: { include: { user: { include: { profile: true } } } },
+        media: true,
+        links: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const posts = await db.post.findMany({
+      where: { authorId: profile.id, isDeleted: false },
+      include: {
+        author: { include: { profile: true } },
+        project: true,
+        media: true,
+        links: true,
+        likes: true,
+        comments: { where: { isDeleted: false } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
 
     return {
       profile,
@@ -1301,48 +2119,82 @@ export const dataStore = {
         postsCount: posts.length,
         collabCount: collabProjects.length,
       },
-      createdProjects,
-      collabProjects,
-      posts,
+      createdProjects: createdProjects.map(mapProjectToProject),
+      collabProjects: collabProjects.map(mapProjectToProject),
+      posts: posts.map((p) => mapPostToPost(p)),
     };
   },
 
   // ── Audit Logs ─────────────────────────────────────────────────────────────
   async getAuditLogs(): Promise<AuditLogItem[]> {
-    return [...memoryAuditLogs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const list = await db.auditLog.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+
+    return list.map((l) => ({
+      id: l.id,
+      actorId: l.actorId,
+      actorName: l.actorName,
+      targetId: l.targetId,
+      action: l.action,
+      details: l.details,
+      ipAddress: l.ipAddress,
+      userAgent: l.userAgent,
+      createdAt: l.createdAt.toISOString(),
+    }));
   },
 
   async logAudit(
-    actionOrData: string | { action: string; actorId?: string; actorName?: string; targetId?: string; details?: string; ipAddress?: string },
+    actionOrData: string | { action: string; actorId?: string; actorName?: string; targetId?: string; details?: string; ipAddress?: string; userAgent?: string },
     actorId?: string,
     details?: string,
     ipAddress?: string
   ): Promise<AuditLogItem> {
     if (typeof actionOrData === "object") {
-      const item: AuditLogItem = {
-        id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        actorId: actionOrData.actorId,
-        actorName: actionOrData.actorName || (actionOrData.actorId ? memoryProfiles.find((p) => p.id === actionOrData.actorId)?.displayName : undefined) || "System",
-        action: actionOrData.action,
-        details: actionOrData.details,
-        ipAddress: actionOrData.ipAddress || "127.0.0.1",
-        createdAt: new Date().toISOString(),
+      const created = await db.auditLog.create({
+        data: {
+          action: actionOrData.action,
+          actorId: actionOrData.actorId || null,
+          actorName: actionOrData.actorName || null,
+          targetId: actionOrData.targetId || null,
+          details: actionOrData.details || null,
+          ipAddress: actionOrData.ipAddress || null,
+          userAgent: actionOrData.userAgent || null,
+        },
+      });
+      return {
+        id: created.id,
+        actorId: created.actorId,
+        actorName: created.actorName,
+        targetId: created.targetId,
+        action: created.action,
+        details: created.details,
+        ipAddress: created.ipAddress,
+        userAgent: created.userAgent,
+        createdAt: created.createdAt.toISOString(),
       };
-      memoryAuditLogs.unshift(item);
-      return item;
     }
 
-    const actor = actorId ? memoryProfiles.find((p) => p.id === actorId) : null;
-    const item: AuditLogItem = {
-      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      actorId,
-      actorName: actor?.displayName || "System",
-      action: actionOrData,
-      details,
-      ipAddress: ipAddress || "127.0.0.1",
-      createdAt: new Date().toISOString(),
+    const created = await db.auditLog.create({
+      data: {
+        action: actionOrData,
+        actorId: actorId || null,
+        details: details || null,
+        ipAddress: ipAddress || null,
+      },
+    });
+
+    return {
+      id: created.id,
+      actorId: created.actorId,
+      actorName: created.actorName,
+      targetId: created.targetId,
+      action: created.action,
+      details: created.details,
+      ipAddress: created.ipAddress,
+      userAgent: created.userAgent,
+      createdAt: created.createdAt.toISOString(),
     };
-    memoryAuditLogs.unshift(item);
-    return item;
-  }
+  },
 };

@@ -56,29 +56,36 @@ export async function PATCH(
       return NextResponse.json({ success: false, error: "Permission denied: You do not have authorization to edit this profile." }, { status: 403 });
     }
 
-    const isActorOwner = isOwner(user);
-    const isActorCeoOrAdmin = isCeoOrAdmin(user);
     const isTargetOwner = targetProfile.role === "OWNER";
 
     const body = await req.json();
     const {
       displayName,
+      primaryRole,
       headline,
+      publicBio,
       bio,
       skills,
+      featuredProjects,
+      expertiseGroups,
       githubUrl,
       linkedinUrl,
       portfolioUrl,
       socialLinks,
       role,
+      leadershipPosition,
       isActive,
     } = body;
 
     const updates: any = {};
     if (displayName !== undefined) updates.displayName = displayName;
+    if (primaryRole !== undefined) updates.primaryRole = primaryRole;
     if (headline !== undefined) updates.headline = headline;
+    if (publicBio !== undefined) updates.publicBio = publicBio;
     if (bio !== undefined) updates.bio = bio;
-    if (skills !== undefined) updates.skills = Array.isArray(skills) ? skills : typeof skills === "string" ? skills.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    if (skills !== undefined) updates.skills = Array.isArray(skills) ? skills : typeof skills === "string" ? skills.split(",").map((s: string) => s.trim()).filter(Boolean) : [];
+    if (featuredProjects !== undefined) updates.featuredProjects = featuredProjects;
+    if (expertiseGroups !== undefined) updates.expertiseGroups = expertiseGroups;
     if (githubUrl !== undefined) updates.githubUrl = githubUrl;
     if (linkedinUrl !== undefined) updates.linkedinUrl = linkedinUrl;
     if (portfolioUrl !== undefined) updates.portfolioUrl = portfolioUrl;
@@ -89,6 +96,9 @@ export async function PATCH(
     const userIsCeoOrAdmin = isCeoOrAdmin(user);
     if (role !== undefined && (userIsOwner || (userIsCeoOrAdmin && !isTargetOwner && role !== "OWNER"))) {
       updates.role = role;
+    }
+    if (leadershipPosition !== undefined && (userIsOwner || userIsCeoOrAdmin)) {
+      updates.leadershipPosition = leadershipPosition;
     }
     if (isActive !== undefined && (userIsOwner || (userIsCeoOrAdmin && !isTargetOwner))) {
       updates.isActive = isActive;
@@ -106,15 +116,16 @@ export async function PATCH(
       targetType: "PROFILE",
       targetId: targetProfile.id,
       title: `${targetProfile.displayName} updated profile details`,
-      details: `Updated competencies, bio, and social links.`,
+      details: `Updated competencies, bio, and project highlights.`,
       link: `/team/${targetProfile.username}`,
     });
 
-    await dataStore.logAudit(
-      "PROFILE_UPDATED",
-      user.id,
-      `User @${user.username} updated profile for @${targetProfile.username}`
-    );
+    await dataStore.logAudit({
+      action: "PROFILE_UPDATED",
+      actorId: user.id,
+      targetId: targetProfile.id,
+      details: `User @${user.username} updated profile for @${targetProfile.username}`,
+    });
 
     return NextResponse.json({
       success: true,

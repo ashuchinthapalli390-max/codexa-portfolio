@@ -73,8 +73,8 @@ export function ContactSection() {
 
       const data = await res.json();
 
-      if (res.ok && data.success) {
-        setReferenceId(data.referenceId || "CXA-2026-LIVE");
+      if (res.ok && data.success && data.referenceId) {
+        setReferenceId(data.referenceId);
         setUiState("success");
         setFormData({
           fullName: "",

@@ -1,14 +1,12 @@
 /**
  * /api/owner/accounts
  * OWNER-ONLY Account Creation & User Management.
- * Public users cannot self-register.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { dataStore } from "@/lib/data-store";
-import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
-import { supabaseAdminCreateUser, isSupabaseConfigured } from "@/lib/supabase";
+import { sendAccountCreatedEmail } from "@/lib/email";
 
 export const runtime = "nodejs";
 
@@ -47,8 +45,8 @@ export async function POST(req: NextRequest) {
     if (!email || !email.trim() || !/\S+@\S+\.\S+/.test(email)) {
       return NextResponse.json({ error: "Valid Email is required." }, { status: 400 });
     }
-    if (!temporaryPassword || temporaryPassword.length < 6) {
-      return NextResponse.json({ error: "Temporary password must be at least 6 characters." }, { status: 400 });
+    if (!temporaryPassword || temporaryPassword.length < 8) {
+      return NextResponse.json({ error: "Temporary password must be at least 8 characters." }, { status: 400 });
     }
 
     const cleanUsername = username.toLowerCase().trim().replace(/[^a-z0-9_]/g, "");
@@ -61,45 +59,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "An account with this username or email already exists." }, { status: 409 });
     }
 
-    // 1. Try Supabase Auth creation if configured
-    if (isSupabaseConfigured()) {
-      await supabaseAdminCreateUser({
-        email: cleanEmail,
-        password: temporaryPassword,
-        user_metadata: { displayName: fullName, username: cleanUsername, role: accountRole },
-      }).catch(() => {});
-    }
+    const passwordHash = await bcrypt.hash(temporaryPassword, 12);
 
-    // 2. Try Prisma DB creation if connected
-    try {
-      const passwordHash = await bcrypt.hash(temporaryPassword, 10);
-      await db.user.create({
-        data: {
-          username: cleanUsername,
-          email: cleanEmail,
-          fullName: fullName.trim(),
-          passwordHash,
-          role: accountRole,
-          isActive: true,
-          profile: {
-            create: {
-              displayName: fullName.trim(),
-              memberType: "CORE_TEAM",
-              publicBio: bio || "",
-              isPublic: true,
-            },
-          },
-        },
-      });
-    } catch {
-      // DataStore fallback handles it
-    }
-
-    // 3. Create profile in unified dataStore
+    // Create profile in database
     const newProfile = await dataStore.createProfile({
       username: cleanUsername,
       email: cleanEmail,
       displayName: fullName.trim(),
+      passwordHash,
       role: accountRole,
       memberType: "CORE_TEAM",
       headline: headline || `${accountRole.replace("_", " ")} at CodeXa`,
@@ -108,9 +75,17 @@ export async function POST(req: NextRequest) {
       mediaUrl: "/assets/images/logo.jpeg",
       isActive: true,
       isPublic: true,
+      mustChangePassword: true,
     });
 
-    // 4. Log audit entry
+    // Send Welcome email to the newly created member's email address
+    sendAccountCreatedEmail({
+      email: cleanEmail,
+      name: fullName.trim(),
+      username: cleanUsername,
+    }).catch((e) => console.error("[Account Created Email Error]", e));
+
+    // Log audit entry
     await dataStore.logAudit({
       actorId: currentUser.id,
       actorName: currentUser.displayName,

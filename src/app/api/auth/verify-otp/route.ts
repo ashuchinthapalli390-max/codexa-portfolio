@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { dataStore } from "@/lib/data-store";
+import { createSession } from "@/lib/auth";
 
 export async function POST(req: Request) {
   try {
-    const { email, otp, purpose = "LOGIN" } = await req.json();
+    const { email, otp, purpose = "PASSWORD_RESET" } = await req.json();
 
     if (!email || !otp) {
       return NextResponse.json(
@@ -13,11 +13,14 @@ export async function POST(req: Request) {
       );
     }
 
-    // Verify OTP against secure store
+    // Verify OTP against secure DB store
     const result = await dataStore.verifyOtp(email, otp, purpose);
 
     if (!result.valid || !result.profile) {
-      await dataStore.logAudit("LOGIN_OTP_FAILED", undefined, `Failed OTP attempt for ${email}`);
+      await dataStore.logAudit({
+        action: "OTP_VERIFY_FAILED",
+        details: `Failed OTP attempt for ${email}`,
+      });
       return NextResponse.json(
         { success: false, error: result.error || "Invalid or expired verification code." },
         { status: 401 }
@@ -27,7 +30,9 @@ export async function POST(req: Request) {
     const profile = result.profile;
 
     if (purpose === "LOGIN") {
-      // Create authenticated session
+      // Create authenticated DB session + cookie
+      await createSession(profile.id, true);
+
       const sessionData = {
         id: profile.id,
         username: profile.username,
@@ -37,18 +42,12 @@ export async function POST(req: Request) {
         createdAt: Date.now(),
       };
 
-      const cookieStore = cookies();
-      cookieStore.set("cxa_session", JSON.stringify(sessionData), {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        path: "/",
-        maxAge: 60 * 60 * 24 * 7, // 7 days
-      });
-
-      // Update last login timestamp
       await dataStore.updateProfile(profile.id, { lastLoginAt: new Date().toISOString() });
-      await dataStore.logAudit("LOGIN_SUCCESS", profile.id, `User @${profile.username} authenticated successfully.`);
+      await dataStore.logAudit({
+        action: "LOGIN_SUCCESS",
+        actorId: profile.id,
+        details: `User @${profile.username} authenticated successfully with OTP.`,
+      });
 
       const redirectUrl = profile.role === "OWNER" ? "/owner" : profile.role === "ADMIN" ? "/admin" : "/dashboard";
 
@@ -60,11 +59,29 @@ export async function POST(req: Request) {
       });
     }
 
-    // Password reset purpose
+    // Password reset purpose -> Check if user has 2FA enabled
+    const twoFactorConfig = await dataStore.getUserTwoFactorConfig(profile.id);
+
+    if (twoFactorConfig.enabled) {
+      // 2FA is active -> Issue a challenge for 2nd factor verification
+      const challengeId = await dataStore.createPreAuthChallenge(profile.id, "PASSWORD_RESET_2FA");
+
+      return NextResponse.json({
+        success: true,
+        requiresTwoFactor: true,
+        challengeId,
+        message: "Email ownership verified. Authenticator App or Backup Code verification required.",
+      });
+    }
+
+    // 2FA is OFF -> Issue authorization reset token directly
+    const resetToken = await dataStore.createPreAuthChallenge(profile.id, "PASSWORD_RESET_AUTHORIZED");
+
     return NextResponse.json({
       success: true,
+      requiresTwoFactor: false,
+      resetToken,
       message: "Verification code verified successfully. You may now set a new password.",
-      profileId: profile.id,
     });
 
   } catch (error: any) {

@@ -204,6 +204,14 @@ export const buttonHoverVariants: Variants = {
   },
 };
 
+export const buttonPressVariants: Variants = {
+  initial: { scale: 1 },
+  tap: {
+    scale: 0.95,
+    transition: { duration: 0.08, ease: "easeIn" },
+  },
+};
+
 // ─── MODAL & DIALOG ANIMATIONS ───────────────────────────────────────────────
 
 export const modalBackdropVariants: Variants = {
@@ -356,3 +364,50 @@ export const reactionPopVariants: Variants = {
     },
   },
 };
+
+// ─── TAB & CHIP TRANSITIONS ──────────────────────────────────────────────────
+
+export const tabTransitionVariants: Variants = {
+  hidden: {
+    opacity: 0,
+    y: 8,
+    filter: "blur(2px)",
+  },
+  visible: {
+    opacity: 1,
+    y: 0,
+    filter: "blur(0px)",
+    transition: {
+      duration: 0.25,
+      ease: [0.16, 1, 0.3, 1],
+    },
+  },
+  exit: {
+    opacity: 0,
+    y: -6,
+    filter: "blur(2px)",
+    transition: {
+      duration: 0.18,
+      ease: "easeIn",
+    },
+  },
+};
+
+export const chipHoverVariants: Variants = {
+  initial: { scale: 1, y: 0 },
+  hover: {
+    scale: 1.03,
+    y: -2,
+    transition: { duration: 0.15, ease: "easeOut" },
+  },
+  tap: {
+    scale: 0.97,
+    transition: { duration: 0.08 },
+  },
+};
+
+// ─── ALIASES FOR COMPONENT CONSISTENCY ────────────────────────────────────────
+
+export const staggerContainerVariants = staggerContainer;
+export const staggerItemVariants = staggerItem;
+

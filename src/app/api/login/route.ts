@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { dataStore } from "@/lib/data-store";
-import { sendLoginOtpEmail } from "@/lib/email";
+import { createSession } from "@/lib/auth";
 
 // Helper to mask email e.g. "a******@codexa.agency"
 function maskEmail(email: string): string {
   const [local, domain] = email.split("@");
   if (!domain) return email;
   if (local.length <= 2) return `${local[0]}*@${domain}`;
-  return `${local[0]}${"*".repeat(local.length - 2)}${local[local.length - 1]}@${domain}`;
+  return `${local[0]}${"*".repeat(Math.max(1, local.length - 2))}${local[local.length - 1]}@${domain}`;
 }
 
 export async function POST(req: Request) {
@@ -43,7 +43,8 @@ export async function POST(req: Request) {
     if (profile.passwordHash) {
       isValidPassword = await bcrypt.compare(password, profile.passwordHash).catch(() => false);
     }
-    // Check environment initial/seed passwords
+
+    // Check environment password matching if passwordHash hasn't been set yet
     if (!isValidPassword && profile.role === "OWNER" && process.env.OWNER_PASSWORD && password === process.env.OWNER_PASSWORD) {
       isValidPassword = true;
     }
@@ -53,43 +54,76 @@ export async function POST(req: Request) {
     if (!isValidPassword && profile.role === "TEAM_MEMBER" && process.env.TEAM_PASSWORD && password === process.env.TEAM_PASSWORD) {
       isValidPassword = true;
     }
-    // Local development fallback
-    if (!isValidPassword && process.env.NODE_ENV !== "production" && password === "CxA!R5oTugApqKkvvNa5QDBk2UrA") {
-      isValidPassword = true;
-    }
 
     if (!isValidPassword) {
-      await dataStore.logAudit("LOGIN_FAILED", profile.id, `Failed password attempt for @${profile.username}`);
+      await dataStore.logAudit({
+        action: "LOGIN_FAILED",
+        targetId: profile.id,
+        details: `Failed password attempt for @${profile.username}`,
+      });
       return NextResponse.json(
         { success: false, error: "Invalid credentials. Access denied." },
         { status: 401 }
       );
     }
 
-    // STAGE 1 PASSED -> GENERATE STAGE 2 OTP
-    const otp = await dataStore.createOtp(profile.email, profile.id, "LOGIN");
+    // Check if user has Two-Factor Authentication enabled
+    const twoFactorStatus = await dataStore.getUserTwoFactorConfig(profile.id);
 
-    // Send OTP via Resend
-    await sendLoginOtpEmail({
-      email: profile.email,
-      name: profile.displayName,
-      otp,
-      ipAddress: "127.0.0.1",
+    if (twoFactorStatus.enabled) {
+      // 2FA IS ENABLED -> Issue a secure short-lived pre-auth challenge
+      const challengeId = await dataStore.createPreAuthChallenge(profile.id, "LOGIN_2FA");
+
+      await dataStore.logAudit({
+        action: "LOGIN_2FA_CHALLENGE",
+        actorId: profile.id,
+        details: `Two-factor authentication challenge issued for @${profile.username}`,
+      });
+
+      return NextResponse.json({
+        success: true,
+        authenticated: false,
+        requiresTwoFactor: true,
+        challengeId,
+        maskedEmail: maskEmail(profile.email),
+        message: "Credentials verified. Two-Factor Authentication required.",
+      });
+    }
+
+    // 2FA IS OFF -> INSTANT ACCESS (No email OTP required!)
+    await createSession(profile.id, true);
+
+    await dataStore.updateProfile(profile.id, {
+      lastLoginAt: new Date().toISOString(),
     });
 
-    await dataStore.logAudit("LOGIN_OTP_DISPATCHED", profile.id, `Login OTP sent to ${profile.email}`);
+    await dataStore.logAudit({
+      action: "LOGIN_SUCCESS",
+      actorId: profile.id,
+      details: `User @${profile.username} logged in successfully (Single-Factor).`,
+    });
 
-    // Return Stage 2 OTP requirement (NO session cookie issued yet!)
+    const redirectUrl = profile.role === "OWNER" ? "/owner" : profile.role === "ADMIN" ? "/admin" : "/dashboard";
+
     return NextResponse.json({
       success: true,
-      requireOtp: true,
-      email: profile.email,
-      maskedEmail: maskEmail(profile.email),
-      message: "Credentials verified. Please enter the 6-digit verification code sent to your email.",
+      authenticated: true,
+      requiresTwoFactor: false,
+      mustChangePassword: profile.mustChangePassword ?? false,
+      redirectUrl,
+      user: {
+        id: profile.id,
+        username: profile.username,
+        email: profile.email,
+        displayName: profile.displayName,
+        role: profile.role,
+        createdAt: Date.now(),
+      },
+      message: "Identity verified. Access authorized.",
     });
 
   } catch (error: any) {
-    console.error("Login Stage 1 error:", error);
+    console.error("Login Error:", error);
     return NextResponse.json(
       { success: false, error: "An unexpected error occurred during authentication." },
       { status: 500 }

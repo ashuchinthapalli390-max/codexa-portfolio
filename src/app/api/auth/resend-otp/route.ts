@@ -23,23 +23,38 @@ export async function POST(req: Request) {
 
     const newOtp = await dataStore.createOtp(profile.email, profile.id, purpose);
 
+    let emailResult: { success: boolean; error?: string } = { success: true };
+
     if (purpose === "LOGIN") {
-      await sendLoginOtpEmail({
+      const res = await sendLoginOtpEmail({
         email: profile.email,
         name: profile.displayName,
         otp: newOtp,
         ipAddress: "127.0.0.1",
       });
+      emailResult = { success: res.success, error: res.error };
     } else {
-      await sendPasswordResetOtpEmail({
+      const res = await sendPasswordResetOtpEmail({
         email: profile.email,
         name: profile.displayName,
         otp: newOtp,
         ipAddress: "127.0.0.1",
       });
+      emailResult = { success: res.success, error: res.error };
     }
 
-    await dataStore.logAudit("OTP_RESENT", profile.id, `New OTP dispatched to ${profile.email}`);
+    if (process.env.NODE_ENV === "production" && !emailResult.success) {
+      return NextResponse.json(
+        { success: false, error: "Failed to dispatch verification code email. Please try again." },
+        { status: 500 }
+      );
+    }
+
+    await dataStore.logAudit({
+      action: "OTP_RESENT",
+      actorId: profile.id,
+      details: `New OTP dispatched to ${profile.email}`,
+    });
 
     return NextResponse.json({
       success: true,

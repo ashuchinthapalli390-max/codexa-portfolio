@@ -27,32 +27,37 @@ model User {
   cropY                Float?    @default(0)
   zoom                 Float?    @default(1)
   objectPosition       String?   @default("center")
+  mustChangePassword   Boolean   @default(false)
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  profile              TeamProfile?
-  sessions             Session[]
-  skills               UserSkill[]
-  links                ProfileLink[]
-  projectsCreated      Project[]             @relation("ProjectCreator")
-  projectCollabs       ProjectCollaborator[]
-  posts                Post[]
-  postLikes            PostLike[]
-  comments             Comment[]
-  conversationMembers  ConversationMember[]
-  messages             Message[]
-  notifications        Notification[]
-  mediaAssets          MediaAsset[]
-  activityEvents       ActivityEvent[]
-  auditLogs            AuditLog[]
+  profile             TeamProfile?
+  twoFactorConfig     TwoFactorConfig?
+  backupCodes         BackupCode[]
+  notificationPref    NotificationPreference?
+  sessions            Session[]
+  skills              UserSkill[]
+  links               ProfileLink[]
+  projectsCreated     Project[]               @relation("ProjectCreator")
+  projectCollabs      ProjectCollaborator[]
+  posts               Post[]
+  postLikes           PostLike[]
+  comments            Comment[]
+  conversationMembers ConversationMember[]
+  messages            Message[]
+  notifications       Notification[]
+  mediaAssets         MediaAsset[]
+  activityEvents      ActivityEvent[]
+  auditLogs           AuditLog[]
 }
 
 // ─── TEAM PROFILES ────────────────────────────────────────────────────────────
 model TeamProfile {
-  id                   String    @id @default(cuid())
-  userId               String    @unique
-  memberType           String    @default("CORE_TEAM") // "LEADERSHIP" | "CORE_TEAM"
-  leadershipPosition   String?   // "FOUNDER" | "CO_FOUNDER" | "CEO" | null
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  memberType           String   @default("CORE_TEAM") // "LEADERSHIP" | "CORE_TEAM"
+  leadershipPosition   String? // "FOUNDER" | "CO_FOUNDER" | "CEO" | "TEAM_LEAD" | null
+  primaryRole          String?
   displayName          String
   headline             String?
   bio                  String?
@@ -61,23 +66,25 @@ model TeamProfile {
   mediaMimeType        String?
   profileMediaUrl      String?
   profileMediaMimeType String?
-  cropX                Float?    @default(0)
-  cropY                Float?    @default(0)
+  cropX                Float?   @default(0)
+  cropY                Float?   @default(0)
   cropW                Float?
   cropH                Float?
   cropZoom             Float?
   cropRotation         Float?
-  zoom                 Float?    @default(1)
-  objectPosition       String?   @default("center")
+  zoom                 Float?   @default(1)
+  objectPosition       String?  @default("center")
   githubUrl            String?
   linkedinUrl          String?
   portfolioUrl         String?
-  isPublic             Boolean   @default(true)
-  displayOrder         Int       @default(0)
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  expertiseGroups      Json?
+  featuredProjects     Json?
+  isPublic             Boolean  @default(true)
+  displayOrder         Int      @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
-  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // ─── USER SKILLS ──────────────────────────────────────────────────────────────
@@ -88,7 +95,7 @@ model UserSkill {
   displayOrder Int      @default(0)
   createdAt    DateTime @default(now())
 
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, skillName])
 }
@@ -104,7 +111,7 @@ model ProfileLink {
   isVisible    Boolean  @default(true)
   createdAt    DateTime @default(now())
 
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // ─── SESSION STORE ────────────────────────────────────────────────────────────
@@ -116,7 +123,7 @@ model Session {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // ─── AUTH OTP RECORDS ─────────────────────────────────────────────────────────
@@ -134,33 +141,35 @@ model AuthOtp {
 
 // ─── PROJECTS ─────────────────────────────────────────────────────────────────
 model Project {
-  id                 String                @id @default(cuid())
-  title              String
-  slug               String                @unique
-  shortDesc          String?
-  overview           String?
-  problem            String?
-  solution           String?
-  category           String                @default("Web")
-  status             String                @default("Live")
-  thumbnailUrl       String?
-  repoUrl            String?
-  liveUrl            String?
-  demoUrl            String?
-  isDraft            Boolean               @default(false)
-  isMainProject      Boolean               @default(false)
-  isHomepageVisible  Boolean               @default(true)
-  isArchived         Boolean               @default(false)
-  homepageOrder      Int                   @default(0)
-  createdBy          String
-  createdAt          DateTime              @default(now())
-  updatedAt          DateTime              @updatedAt
+  id                String   @id @default(cuid())
+  title             String
+  slug              String   @unique
+  shortDesc         String?
+  overview          String?
+  problem           String?
+  solution          String?
+  features          String[] @default([])
+  techStack         String[] @default([])
+  category          String   @default("Web")
+  status            String   @default("Live")
+  thumbnailUrl      String?
+  repoUrl           String?
+  liveUrl           String?
+  demoUrl           String?
+  isDraft           Boolean  @default(false)
+  isMainProject     Boolean  @default(false)
+  isHomepageVisible Boolean  @default(true)
+  isArchived        Boolean  @default(false)
+  homepageOrder     Int      @default(0)
+  createdBy         String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  creator            User                  @relation("ProjectCreator", fields: [createdBy], references: [id], onDelete: Cascade)
-  collaborators      ProjectCollaborator[]
-  media              ProjectMedia[]
-  links              ProjectLink[]
-  posts              Post[]
+  creator       User                  @relation("ProjectCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  collaborators ProjectCollaborator[]
+  media         ProjectMedia[]
+  links         ProjectLink[]
+  posts         Post[]
 }
 
 model ProjectCollaborator {
@@ -170,8 +179,8 @@ model ProjectCollaborator {
   roleTitle String?  @default("Collaborator")
   createdAt DateTime @default(now())
 
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, userId])
 }
@@ -185,7 +194,7 @@ model ProjectMedia {
   displayOrder Int      @default(0)
   createdAt    DateTime @default(now())
 
-  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model ProjectLink {
@@ -195,26 +204,26 @@ model ProjectLink {
   url       String
   createdAt DateTime @default(now())
 
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 // ─── SOCIAL FEED & POSTS ──────────────────────────────────────────────────────
 model Post {
-  id             String      @id @default(cuid())
+  id             String   @id @default(cuid())
   authorId       String
   content        String
   projectId      String?
-  isAnnouncement Boolean     @default(false)
-  isDeleted      Boolean     @default(false)
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  isAnnouncement Boolean  @default(false)
+  isDeleted      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  author         User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  project        Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  media          PostMedia[]
-  links          PostLink[]
-  likes          PostLike[]
-  comments       Comment[]
+  author   User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  project  Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  media    PostMedia[]
+  links    PostLink[]
+  likes    PostLike[]
+  comments Comment[]
 }
 
 model PostMedia {
@@ -225,7 +234,7 @@ model PostMedia {
   displayOrder Int      @default(0)
   createdAt    DateTime @default(now())
 
-  post         Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
 }
 
 model PostLink {
@@ -238,7 +247,7 @@ model PostLink {
   imageUrl    String?
   createdAt   DateTime @default(now())
 
-  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
 }
 
 model PostLike {
@@ -247,82 +256,83 @@ model PostLike {
   userId    String
   createdAt DateTime @default(now())
 
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([postId, userId])
 }
 
 model Comment {
-  id              String    @id @default(cuid())
+  id              String   @id @default(cuid())
   postId          String
   userId          String
   parentCommentId String?
   content         String
-  isDeleted       Boolean   @default(false)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  isDeleted       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  post            Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  parentComment   Comment?  @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
-  replies         Comment[] @relation("CommentReplies")
+  post          Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentComment Comment?  @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  replies       Comment[] @relation("CommentReplies")
 }
 
 // ─── CHAT & MESSAGING ─────────────────────────────────────────────────────────
 model Conversation {
-  id          String               @id @default(cuid())
-  type        String               @default("DIRECT") // "DIRECT" | "GROUP" | "PROJECT"
-  title       String?
-  projectId   String?
-  createdBy   String?
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
+  id        String   @id @default(cuid())
+  type      String   @default("DIRECT") // "DIRECT" | "GROUP" | "PROJECT"
+  title     String?
+  projectId String?
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  members     ConversationMember[]
-  messages    Message[]
+  members  ConversationMember[]
+  messages Message[]
 }
 
 model ConversationMember {
-  id             String       @id @default(cuid())
+  id             String    @id @default(cuid())
   conversationId String
   userId         String
-  joinedAt       DateTime     @default(now())
+  joinedAt       DateTime  @default(now())
+  lastReadAt     DateTime?
 
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([conversationId, userId])
 }
 
 model Message {
-  id             String       @id @default(cuid())
+  id             String   @id @default(cuid())
   conversationId String
   senderId       String
   message        String
   fileUrl        String?
   fileName       String?
-  isDeleted      Boolean      @default(false)
+  isDeleted      Boolean  @default(false)
   replyToId      String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender         User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
 }
 
 // ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
 model Notification {
   id        String   @id @default(cuid())
   userId    String
-  type      String   // "POST_LIKE" | "POST_COMMENT" | "PROJECT_FEATURED" | "CHAT" | "SECURITY"
+  type      String // "POST_LIKE" | "POST_COMMENT" | "PROJECT_FEATURED" | "CHAT" | "SECURITY"
   title     String
   message   String
   link      String?
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // ─── ACTIVITY EVENTS ──────────────────────────────────────────────────────────
@@ -332,15 +342,15 @@ model ActivityEvent {
   actorName     String
   actorUsername String
   actorMediaUrl String?
-  actionType    String   // "PROFILE_UPDATED" | "POST_CREATED" | "PROJECT_PUBLISHED" | "MAIN_PROJECT_APPROVED"
-  targetType    String   // "PROFILE" | "PROJECT" | "POST" | "MEMBER"
+  actionType    String // "PROFILE_UPDATED" | "POST_CREATED" | "PROJECT_PUBLISHED" | "MAIN_PROJECT_APPROVED"
+  targetType    String // "PROFILE" | "PROJECT" | "POST" | "MEMBER"
   targetId      String?
   title         String
   details       String?
   link          String?
   createdAt     DateTime @default(now())
 
-  actor         User     @relation(fields: [actorId], references: [id], onDelete: Cascade)
+  actor User @relation(fields: [actorId], references: [id], onDelete: Cascade)
 }
 
 // ─── INQUIRIES & LEADS ────────────────────────────────────────────────────────
@@ -380,7 +390,7 @@ model MediaAsset {
   zoom        Float?   @default(1)
   createdAt   DateTime @default(now())
 
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // ─── AUDIT LOGS ───────────────────────────────────────────────────────────────
@@ -395,5 +405,65 @@ model AuditLog {
   userAgent String?
   createdAt DateTime @default(now())
 
-  actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+}
+
+// ─── SITE SETTINGS ────────────────────────────────────────────────────────────
+model SiteSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── TWO-FACTOR AUTHENTICATION (TOTP) ─────────────────────────────────────────
+model TwoFactorConfig {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  enabled         Boolean   @default(false)
+  secretEncrypted String
+  verifiedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── BACKUP CODES ─────────────────────────────────────────────────────────────
+model BackupCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ─── NOTIFICATION PREFERENCES ─────────────────────────────────────────────────
+model NotificationPreference {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  directMessages Boolean  @default(true)
+  projectUpdates Boolean  @default(true)
+  mentions       Boolean  @default(true)
+  feedActivity   Boolean  @default(true)
+  announcements  Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── PRE-AUTH CHALLENGES (2FA / RECOVERY) ─────────────────────────────────────
+model PreAuthChallenge {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  purpose   String   @default("LOGIN_2FA") // "LOGIN_2FA" | "PASSWORD_RESET_2FA"
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 }

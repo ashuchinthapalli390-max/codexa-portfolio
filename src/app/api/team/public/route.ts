@@ -1,10 +1,10 @@
 /**
  * GET /api/team/public
- * Returns public team profiles for CodeXa Agency using universal dataStore.
+ * Returns public team profiles for CodeXa Agency using universal dataStore (PostgreSQL Source of Truth).
+ * Safe public data: no passwords, no emails (unless public), no 2FA keys, no internal auth data.
  */
 import { NextResponse } from "next/server";
 import { dataStore } from "@/lib/data-store";
-import { LEADERSHIP_DATA } from "@/config/leadershipData";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,23 +13,28 @@ export async function GET() {
   try {
     const rawProfiles = await dataStore.getProfiles({ isPublic: true });
 
-    // Override leadership text fields with locked constants from leadershipData.ts
-    const profiles = rawProfiles.map((p) => {
-      if (p.memberType === "LEADERSHIP" && p.leadershipPosition) {
-        const locked = LEADERSHIP_DATA[p.leadershipPosition as "FOUNDER" | "CO_FOUNDER" | "CEO"];
-        if (locked) {
-          return {
-            ...p,
-            displayName: locked.name,
-            publicBio: locked.quote,
-          };
-        }
-      }
-      return {
-        ...p,
-        publicBio: p.bio,
-      };
-    });
+    // Sanitize and return public profile fields only
+    const profiles = rawProfiles.map((p) => ({
+      id: p.id,
+      username: p.username,
+      displayName: p.displayName,
+      role: p.role,
+      memberType: p.memberType,
+      leadershipPosition: p.leadershipPosition || null,
+      primaryRole: p.primaryRole || null,
+      headline: p.headline || null,
+      bio: p.bio || null,
+      publicBio: p.publicBio || p.bio || null,
+      skills: p.skills || [],
+      featuredProjects: p.featuredProjects || [],
+      expertiseGroups: p.expertiseGroups || {},
+      mediaUrl: p.mediaUrl || null,
+      githubUrl: p.githubUrl || null,
+      linkedinUrl: p.linkedinUrl || null,
+      portfolioUrl: p.portfolioUrl || null,
+      displayOrder: p.displayOrder || 0,
+      createdAt: p.createdAt,
+    }));
 
     return NextResponse.json({ success: true, profiles });
   } catch (err: any) {

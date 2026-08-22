@@ -148,6 +148,7 @@ export function TeamCoreShell({
     { label: "Team Directory", href: "/team", icon: Users },
     { label: "DIRECT MESSAGES", href: "/dashboard/messages", icon: MessageSquare, badge: unreadMessagesCount || undefined },
     { label: "My Profile", href: "/dashboard/profile", icon: User },
+    { label: "Security & 2FA", href: "/dashboard/settings/security", icon: Shield },
     { label: "Notifications", href: "/dashboard/notifications", icon: Bell, badge: unreadNotifsCount || undefined },
   ];
 
