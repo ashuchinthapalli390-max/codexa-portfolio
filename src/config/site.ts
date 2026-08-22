@@ -10,7 +10,7 @@ export const siteConfig = {
     ashu: {
       name: "Ashu",
       role: "Founder & Full-Stack Developer",
-      phone: "6303762110",
+      phone: "8897901413",
       image: "/assets/images/128acbeb739b3eb8bc4d1d9ae15fcfb2.jpg",
       details: [
         "AI Workflow Engineer",
@@ -58,7 +58,7 @@ export const siteConfig = {
   },
   
   links: {
-    whatsapp: "https://wa.me/916303762110",
+    whatsapp: "https://wa.me/918897901413",
     github: "https://github.com/codexa-agency",
     privacyPolicy: "/privacy",
     termsOfService: "/terms",
