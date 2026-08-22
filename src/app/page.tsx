@@ -16,6 +16,7 @@ import { TeamSection } from "@/components/sections/TeamSection";
 import { InternshipSection } from "@/components/sections/InternshipSection";
 import { CapabilitiesSection } from "@/components/sections/CapabilitiesSection";
 import { ProcessSection } from "@/components/sections/ProcessSection";
+import { FAQSection } from "@/components/sections/FAQSection";
 import { ContactSection } from "@/components/sections/ContactSection";
 import { EndingSection } from "@/components/sections/EndingSection";
 import { Footer } from "@/components/sections/Footer";
@@ -105,6 +106,7 @@ export default function Home() {
               <InternshipSection />
               <CapabilitiesSection />
               <ProcessSection />
+              <FAQSection />
               <ContactSection />
               <EndingSection />
             </main>
