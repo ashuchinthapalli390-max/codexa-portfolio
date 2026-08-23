@@ -129,7 +129,14 @@ export function Navbar() {
           </nav>
 
           {/* Right Action buttons */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
+            <Link
+              href="/project-request"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-crimson hover:bg-bright-red border border-bright-red text-[10px] font-orbitron font-bold uppercase tracking-wider text-white transition-all shadow-neon"
+            >
+              Start Project
+            </Link>
+
             <Link
               href={getPortalLink()}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#111111] hover:bg-[#1A1A1A] border border-crimson/30 hover:border-bright-red text-[10px] font-orbitron font-bold uppercase tracking-wider text-white transition-all shadow-sm"
@@ -145,16 +152,6 @@ export function Navbar() {
                 </>
               )}
             </Link>
-
-            <NeonButton
-              variant="outline"
-              size="sm"
-              className="hidden sm:inline-flex text-xs py-1.5"
-              onClick={() => handleNavClick("contact")}
-            >
-              Hire Us
-              <ArrowRight className="w-3 h-3" />
-            </NeonButton>
 
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}

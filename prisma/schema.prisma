@@ -478,3 +478,106 @@ model PreAuthChallenge {
   expiresAt DateTime
   createdAt DateTime @default(now())
 }
+
+// ─── PROJECT APPLICATIONS & ADVANCE BOOKINGS ───────────────────────────────────
+model ProjectApplication {
+  id                  String    @id @default(cuid())
+  referenceId         String    @unique // e.g. "CXA-PRJ-2026-8F29K"
+  fullName            String
+  email               String
+  phone               String
+  company             String?
+  city                String?
+  preferredContact    String    @default("EMAIL") // "EMAIL" | "PHONE" | "WHATSAPP"
+
+  projectType         String    // "Personal Portfolio", "SaaS Platform", "AI-Powered Website / Platform", etc.
+  customProjectType   String?
+  closestCategory     String?
+
+  purposes            String[]  @default([])
+  features            String[]  @default([])
+  specificFeatures    Json?
+
+  authOption          String?   // "No Login Required", "Google Login", etc.
+  authExtras          String[]  @default([])
+  dashboardOption     String?   // "No Dashboard", "User Dashboard", "Admin Dashboard", etc.
+  dashboardFeatures   String[]  @default([])
+  databaseOption      String?   // "No", "Yes", "Not Sure"
+  databaseDataTypes   String[]  @default([])
+  integrations        String[]  @default([])
+
+  designStyles        String[]  @default([]) // ["Dark", "Futuristic", "Premium", ...]
+  animationLevel      String    @default("Standard") // "Minimal" | "Standard" | "Advanced" | "Cinematic"
+  pageRange           String    @default("2–5 Pages")
+
+  hasExistingDesign   String?   // "No — CodeXa should design everything", "Yes — Figma", etc.
+  designLinks         String?
+  existingProjectType String?   // "Build From Scratch", "Redesign Existing Website", etc.
+  existingProjectUrl  String?
+  existingTechStack   String?
+
+  timeline            String    // "Urgent", "1–2 Weeks", "2–4 Weeks", etc.
+  budgetRange         String    // "₹20,000–₹40,000", etc.
+  description         String
+
+  // Advance calculation breakdown
+  baseAdvance         Int       @default(2000)
+  featureAdvance      Int       @default(0)
+  finalAdvance        Int       @default(2000) // Capped between 2000 and 7000
+  currency            String    @default("INR")
+
+  // Internal lead quality & scoring
+  leadQuality         String    @default("STANDARD") // "HIGH" | "MEDIUM" | "STANDARD"
+  qualityScore        Int       @default(70)
+
+  // Status lifecycle
+  status              String    @default("PAYMENT_PENDING") // "DRAFT" | "PAYMENT_PENDING" | "QUALIFIED" | "UNDER_REVIEW" | "NEEDS_CLARIFICATION" | "ACCEPTED" | "IN_PROGRESS" | "COMPLETED" | "DECLINED" | "CANCELLED"
+  adminNotes          String?
+  finalQuoteAmount    Int?
+
+  termsAccepted       Boolean   @default(false)
+  termsAcceptedAt     DateTime?
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  payments            ProjectPayment[]
+
+  @@index([referenceId])
+  @@index([status, createdAt])
+  @@index([email])
+}
+
+model ProjectPayment {
+  id                   String    @id @default(cuid())
+  projectApplicationId String
+  provider             String    @default("RAZORPAY")
+  amount               Int       // in INR (e.g. 4500)
+  amountPaise          Int       // in paise (e.g. 450000)
+  currency             String    @default("INR")
+
+  razorpayOrderId      String    @unique
+  razorpayPaymentId    String?   @unique
+  razorpaySignature    String?
+
+  status               String    @default("ORDER_CREATED") // "NOT_STARTED" | "ORDER_CREATED" | "PAYMENT_PENDING" | "PAID" | "FAILED" | "REFUNDED" | "PARTIALLY_REFUNDED"
+  signatureVerified    Boolean   @default(false)
+
+  capturedAt           DateTime?
+  failedAt             DateTime?
+  refundedAt           DateTime?
+  failureReason        String?
+
+  webhookEvents        Json?
+
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  application          ProjectApplication @relation(fields: [projectApplicationId], references: [id], onDelete: Cascade)
+
+  @@index([projectApplicationId])
+  @@index([razorpayOrderId])
+  @@index([razorpayPaymentId])
+  @@index([status])
+}
+

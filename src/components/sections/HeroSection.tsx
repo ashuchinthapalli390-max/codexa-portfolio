@@ -1,8 +1,9 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowRight, CheckCircle2 } from "lucide-react";
+import { ArrowRight, CheckCircle2, Sparkles } from "lucide-react";
 import { siteConfig } from "@/config/site";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { NeonButton } from "../ui/NeonButton";
@@ -133,28 +134,29 @@ export function HeroSection() {
           {/* CTAs */}
           <motion.div 
             variants={itemVariants}
-            className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto mb-8"
+            className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3.5 w-full sm:w-auto mb-8"
           >
+            <Link
+              href="/project-request"
+              className="inline-flex items-center justify-center font-orbitron font-bold uppercase tracking-wider transition-all duration-300 rounded px-6 py-3.5 text-sm bg-gradient-to-r from-crimson to-bright-red text-white border border-bright-red hover:shadow-neon gap-2"
+            >
+              <Sparkles className="w-4 h-4" />
+              Start A Project
+            </Link>
+
             <NeonButton 
-              variant="primary" 
+              variant="secondary" 
               onClick={() => handleScrollTo("about")}
               className="group"
             >
               Explore Agency
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </NeonButton>
-            
-            <NeonButton 
-              variant="secondary" 
-              onClick={() => handleScrollTo("contact")}
-            >
-              Hire Us
-            </NeonButton>
 
             <div className="flex flex-col">
               <a
                 href={siteConfig.internshipUrl}
-                className="inline-flex items-center justify-center font-orbitron font-semibold uppercase tracking-wider transition-all duration-300 rounded px-6 py-3 text-sm bg-transparent text-white border border-crimson hover:bg-crimson/10 text-center"
+                className="inline-flex items-center justify-center font-orbitron font-semibold uppercase tracking-wider transition-all duration-300 rounded px-5 py-3 text-xs bg-transparent text-white border border-crimson/50 hover:bg-crimson/10 text-center"
               >
                 Join Internship
               </a>

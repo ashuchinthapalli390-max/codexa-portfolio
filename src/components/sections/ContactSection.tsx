@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { 
   Phone, 
   Mail, 
@@ -115,7 +116,40 @@ export function ContactSection() {
           align="center"
         />
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start mt-12">
+        {/* Priority Project Builder Direct CTA Banner */}
+        <div className="mt-8 mb-12 p-6 sm:p-8 rounded-2xl bg-gradient-to-r from-deep-red/30 via-[#0D0D0D] to-deep-red/20 border border-bright-red/40 shadow-neon flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-48 h-48 bg-bright-red/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="space-y-1.5 text-center md:text-left relative z-10">
+            <span className="inline-flex items-center gap-1.5 text-[10px] font-orbitron font-bold uppercase tracking-widest text-bright-red">
+              <Sparkles className="w-3.5 h-3.5" />
+              PRIORITY CLIENT FLOW
+            </span>
+            <h3 className="text-lg sm:text-2xl font-orbitron font-black uppercase text-white tracking-wider">
+              Have A Project In Mind?
+            </h3>
+            <p className="text-xs text-[#AAA] max-w-xl">
+              Build your project requirement, calculate your booking advance, and submit your project directly.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center gap-3 relative z-10 w-full md:w-auto">
+            <Link
+              href="/project-request"
+              className="w-full sm:w-auto px-6 py-3.5 rounded-xl font-orbitron font-bold text-xs uppercase tracking-widest text-white bg-gradient-to-r from-crimson to-bright-red hover:shadow-neon transition-all flex items-center justify-center gap-2 border border-bright-red shadow-neon"
+            >
+              Start A Project
+              <ArrowUpRight className="w-4 h-4" />
+            </Link>
+            <Link
+              href="/project-request"
+              className="w-full sm:w-auto px-5 py-3.5 rounded-xl font-orbitron font-bold text-xs uppercase tracking-widest text-[#CCC] hover:text-white bg-[#141414] hover:bg-[#202020] border border-white/10 transition-all flex items-center justify-center gap-2"
+            >
+              Build Your Project Request
+            </Link>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start mt-4">
           
           {/* Left Column: Headquarters graphic frame and direct contacts */}
           <div className="lg:col-span-5 flex flex-col gap-6">

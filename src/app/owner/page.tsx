@@ -71,6 +71,7 @@ import { useAuth } from "@/context/AuthContext";
 
 type OwnerTab = 
   | "overview" 
+  | "project-applications"
   | "my-profile"
   | "feed"
   | "team-profiles" 
@@ -108,6 +109,27 @@ function OwnerDashboardContent() {
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [inquiriesLoading, setInquiriesLoading] = useState(true);
   const [inquiriesError, setInquiriesError] = useState<string | null>(null);
+
+  // Project Applications & Advance Bookings
+  const [projectApplications, setProjectApplications] = useState<any[]>([]);
+  const [projectAppMetrics, setProjectAppMetrics] = useState({
+    totalCount: 0,
+    paidLeadsCount: 0,
+    pendingPaymentCount: 0,
+    underReviewCount: 0,
+    activeProjectsCount: 0,
+    totalAdvanceReceived: 0,
+  });
+  const [projectAppLoading, setProjectAppLoading] = useState(true);
+  const [projectAppError, setProjectAppError] = useState<string | null>(null);
+  const [projectAppStatusFilter, setProjectAppStatusFilter] = useState("ALL");
+  const [projectAppSearch, setProjectAppSearch] = useState("");
+  const [selectedProjectApp, setSelectedProjectApp] = useState<any | null>(null);
+  const [editingAppModal, setEditingAppModal] = useState<any | null>(null);
+  const [editStatusValue, setEditStatusValue] = useState("");
+  const [editQuoteValue, setEditQuoteValue] = useState("");
+  const [editNotesValue, setEditNotesValue] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
@@ -280,6 +302,31 @@ function OwnerDashboardContent() {
     }
   }, []);
 
+  const fetchProjectApplications = useCallback(async () => {
+    setProjectAppLoading(true);
+    try {
+      const res = await fetch("/api/owner/project-applications", {
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+      });
+      const data = await res.json();
+      if (res.ok && data.success && Array.isArray(data.applications)) {
+        setProjectApplications(data.applications);
+        if (data.metrics) {
+          setProjectAppMetrics(data.metrics);
+        }
+        setProjectAppError(null);
+      } else {
+        setProjectAppError(data.error || "Failed to load project applications.");
+      }
+    } catch {
+      setProjectAppError("Network error loading project applications.");
+    } finally {
+      setProjectAppLoading(false);
+    }
+  }, []);
+
   const fetchProjects = useCallback(async () => {
     setProjectsLoading(true);
     try {
@@ -448,6 +495,7 @@ function OwnerDashboardContent() {
     await Promise.allSettled([
       fetchAccounts(),
       fetchInquiries(),
+      fetchProjectApplications(),
       fetchProjects(),
       fetchPosts(),
       fetchNotifications(),
@@ -461,6 +509,7 @@ function OwnerDashboardContent() {
   }, [
     fetchAccounts,
     fetchInquiries,
+    fetchProjectApplications,
     fetchProjects,
     fetchPosts,
     fetchNotifications,
@@ -731,6 +780,60 @@ function OwnerDashboardContent() {
     } catch {}
   };
 
+  // ── Project Applications / Paid Leads Actions ──────────────────────────────
+  const handleUpdateProjectAppStatus = async (appId: string, newStatus: string) => {
+    try {
+      const res = await fetch(`/api/owner/project-applications/${appId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setProjectApplications((prev) =>
+          prev.map((a) => (a.id === appId ? { ...a, status: newStatus } : a))
+        );
+        if (selectedProjectApp && selectedProjectApp.id === appId) {
+          setSelectedProjectApp((prev: any) => (prev ? { ...prev, status: newStatus } : null));
+        }
+        fetchProjectApplications();
+      }
+    } catch (err) {
+      console.error("Error updating project app status:", err);
+    }
+  };
+
+  const handleSaveEditingApp = async () => {
+    if (!editingAppModal) return;
+    setEditSaving(true);
+    try {
+      const res = await fetch(`/api/owner/project-applications/${editingAppModal.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: editStatusValue,
+          finalQuoteAmount: editQuoteValue ? parseInt(editQuoteValue, 10) : null,
+          adminNotes: editNotesValue,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setProjectApplications((prev) =>
+          prev.map((a) => (a.id === editingAppModal.id ? data.application : a))
+        );
+        if (selectedProjectApp && selectedProjectApp.id === editingAppModal.id) {
+          setSelectedProjectApp(data.application);
+        }
+        setEditingAppModal(null);
+        fetchProjectApplications();
+      }
+    } catch (err) {
+      console.error("Error saving app edits:", err);
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   // ── Project Actions ────────────────────────────────────────────────────────
   const handleToggleMainProject = async (project: Project) => {
     const newState = !project.isMainProject;
@@ -950,21 +1053,37 @@ function OwnerDashboardContent() {
       ]
     },
     {
+      title: "CLIENT PIPELINE & ADVANCE",
+      items: [
+        {
+          id: "project-applications" as OwnerTab,
+          label: "Project Applications",
+          icon: Sparkles,
+          badge: projectAppMetrics.paidLeadsCount || projectApplications.filter((a) => ["QUALIFIED", "UNDER_REVIEW"].includes(a.status)).length || undefined,
+        },
+        {
+          id: "inquiries" as OwnerTab,
+          label: "General Inquiries",
+          icon: Inbox,
+          badge: inquiries.filter((i) => i.status === "NEW").length || undefined,
+        },
+      ],
+    },
+    {
       title: "OPERATIONS",
       items: [
         { id: "homepage" as OwnerTab, label: "Homepage Control", icon: ToggleRight },
-        { id: "inquiries" as OwnerTab, label: "Inquiries Console", icon: Inbox, badge: inquiries.filter((i) => i.status === "NEW").length },
         { id: "feed-moderation" as OwnerTab, label: "Feed Moderation", icon: Shield },
         { id: "activity" as OwnerTab, label: "Recent Activity", icon: Clock },
-      ]
+      ],
     },
     {
       title: "SYSTEM",
       items: [
         { id: "audit" as OwnerTab, label: "Audit Logs", icon: Shield },
         { id: "settings" as OwnerTab, label: "System Config", icon: Settings },
-      ]
-    }
+      ],
+    },
   ];
 
   return (
@@ -2084,6 +2203,280 @@ function OwnerDashboardContent() {
             </div>
           )}
 
+          {/* ═══ TAB: PROJECT APPLICATIONS & QUALIFIED PAID LEADS ══════════ */}
+          {activeTab === "project-applications" && (
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-crimson/20">
+                <div>
+                  <span className="text-[10px] font-orbitron text-bright-red tracking-[0.3em] uppercase font-bold">
+                    PRIORITY QUALIFIED LEADS
+                  </span>
+                  <h1 className="font-orbitron font-black text-2xl sm:text-3xl text-white uppercase mt-1">
+                    Project Applications & Bookings
+                  </h1>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => fetchProjectApplications()}
+                    className="px-3.5 py-2 rounded-xl bg-[#141414] hover:bg-[#202020] border border-white/10 text-xs font-orbitron font-bold uppercase text-[#CCC] hover:text-white transition-all flex items-center gap-1.5"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${projectAppLoading ? "animate-spin text-bright-red" : ""}`} />
+                    Refresh
+                  </button>
+                  <Link
+                    href="/project-request"
+                    target="_blank"
+                    className="px-3.5 py-2 rounded-xl bg-crimson hover:bg-bright-red border border-bright-red text-xs font-orbitron font-bold uppercase text-white transition-all flex items-center gap-1.5 shadow-neon"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Open Client Portal
+                  </Link>
+                </div>
+              </div>
+
+              {/* Top KPI Metrics Bar */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="cyber-card p-5 border-emerald-500/30">
+                  <span className="text-[10px] font-orbitron text-[#888] uppercase block">NEW PAID LEADS</span>
+                  <div className="text-3xl font-orbitron font-black text-emerald-400 mt-1">
+                    <MotionNumber value={projectAppMetrics.paidLeadsCount} duration={1} />
+                  </div>
+                  <span className="text-[10px] text-[#666] font-mono mt-1 block">Verified Razorpay Advance</span>
+                </div>
+
+                <div className="cyber-card p-5 border-bright-red/30">
+                  <span className="text-[10px] font-orbitron text-[#888] uppercase block">ADVANCE RECEIVED</span>
+                  <div className="text-2xl sm:text-3xl font-orbitron font-black text-white mt-1">
+                    ₹{projectAppMetrics.totalAdvanceReceived.toLocaleString("en-IN")}
+                  </div>
+                  <span className="text-[10px] text-bright-red font-mono mt-1 block">Booking Deposits Secured</span>
+                </div>
+
+                <div className="cyber-card p-5 border-amber-500/30">
+                  <span className="text-[10px] font-orbitron text-[#888] uppercase block">UNDER REVIEW</span>
+                  <div className="text-3xl font-orbitron font-black text-amber-400 mt-1">
+                    <MotionNumber value={projectAppMetrics.underReviewCount} duration={1} />
+                  </div>
+                  <span className="text-[10px] text-[#666] font-mono mt-1 block">Scoping Architecture</span>
+                </div>
+
+                <div className="cyber-card p-5 border-blue-500/30">
+                  <span className="text-[10px] font-orbitron text-[#888] uppercase block">ACTIVE PROJECTS</span>
+                  <div className="text-3xl font-orbitron font-black text-blue-400 mt-1">
+                    <MotionNumber value={projectAppMetrics.activeProjectsCount} duration={1} />
+                  </div>
+                  <span className="text-[10px] text-[#666] font-mono mt-1 block">In Development</span>
+                </div>
+              </div>
+
+              {/* Status Filter Tabs & Search Bar */}
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-4 rounded-2xl bg-[#090909] border border-white/5">
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { id: "ALL", label: "ALL" },
+                    { id: "PAID", label: "PAID / QUALIFIED" },
+                    { id: "PAYMENT_PENDING", label: "PENDING PAYMENT" },
+                    { id: "UNDER_REVIEW", label: "UNDER REVIEW" },
+                    { id: "ACCEPTED", label: "ACCEPTED" },
+                    { id: "IN_PROGRESS", label: "IN PROGRESS" },
+                    { id: "COMPLETED", label: "COMPLETED" },
+                    { id: "DECLINED", label: "DECLINED" },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setProjectAppStatusFilter(tab.id)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-orbitron font-bold uppercase transition-all ${
+                        projectAppStatusFilter === tab.id
+                          ? "bg-crimson text-white shadow-neon"
+                          : "bg-[#141414] text-[#888] hover:text-white"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="relative w-full lg:w-64">
+                  <Search className="w-3.5 h-3.5 text-[#666] absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={projectAppSearch}
+                    onChange={(e) => setProjectAppSearch(e.target.value)}
+                    placeholder="Search reference, client, email..."
+                    className="w-full bg-[#111] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white outline-none focus:border-crimson"
+                  />
+                </div>
+              </div>
+
+              {/* Leads Grid */}
+              {projectApplications.length === 0 ? (
+                <div className="p-12 rounded-3xl bg-[#0A0A0A] border border-white/5 text-center">
+                  <Sparkles className="w-8 h-8 text-bright-red mx-auto mb-2 opacity-50" />
+                  <h3 className="font-orbitron font-bold text-sm text-white uppercase">No Project Applications Yet</h3>
+                  <p className="text-xs text-[#777] max-w-sm mx-auto mt-1">
+                    When clients configure their build and submit their booking advance on /project-request, they will appear here instantly.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {projectApplications
+                    .filter((app) => {
+                      if (projectAppStatusFilter === "PAID" || projectAppStatusFilter === "QUALIFIED") {
+                        return ["QUALIFIED", "UNDER_REVIEW"].includes(app.status) || app.payments?.some((p: any) => p.status === "PAID");
+                      }
+                      if (projectAppStatusFilter !== "ALL") {
+                        return app.status === projectAppStatusFilter;
+                      }
+                      return true;
+                    })
+                    .filter((app) => {
+                      if (!projectAppSearch) return true;
+                      const q = projectAppSearch.toLowerCase();
+                      return (
+                        app.referenceId?.toLowerCase().includes(q) ||
+                        app.fullName?.toLowerCase().includes(q) ||
+                        app.email?.toLowerCase().includes(q) ||
+                        app.phone?.toLowerCase().includes(q) ||
+                        app.projectType?.toLowerCase().includes(q)
+                      );
+                    })
+                    .map((app) => {
+                      const isPaid = app.status === "QUALIFIED" || app.payments?.some((p: any) => p.status === "PAID");
+                      return (
+                        <div
+                          key={app.id}
+                          className={`cyber-card p-6 space-y-4 flex flex-col justify-between border ${
+                            isPaid ? "border-emerald-500/40 bg-gradient-to-b from-[#0E1512] to-[#080808]" : "border-crimson/20"
+                          }`}
+                        >
+                          <div className="space-y-3">
+                            {/* Top Badges */}
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-mono text-xs font-bold text-bright-red tracking-wider">
+                                {app.referenceId}
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                {isPaid ? (
+                                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-[9px] font-orbitron font-bold text-emerald-400 uppercase flex items-center gap-1 shadow-[0_0_10px_rgba(16,185,129,0.3)]">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                    ADVANCE PAID
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-[9px] font-orbitron font-bold text-amber-400 uppercase">
+                                    {app.status}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Client Header */}
+                            <div>
+                              <h4 className="font-orbitron font-black text-base text-white">{app.fullName}</h4>
+                              <p className="text-xs text-[#888] flex items-center gap-2 mt-0.5">
+                                <span>{app.email}</span>
+                                {app.company && <span className="text-crimson">&bull; {app.company}</span>}
+                              </p>
+                              {app.phone && <p className="text-[11px] font-mono text-[#AAA] mt-0.5">{app.phone}</p>}
+                            </div>
+
+                            {/* Key Highlights Bar */}
+                            <div className="grid grid-cols-2 gap-2 p-3 rounded-xl bg-[#050505] border border-white/5 text-xs">
+                              <div>
+                                <span className="text-[9px] font-orbitron text-[#777] uppercase block">Project Type</span>
+                                <span className="font-bold text-white text-xs">{app.projectType}</span>
+                              </div>
+                              <div>
+                                <span className="text-[9px] font-orbitron text-[#777] uppercase block">Advance Booking</span>
+                                <span className="font-mono font-bold text-emerald-400 text-xs">
+                                  ₹{app.finalAdvance?.toLocaleString("en-IN") || "—"}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-[9px] font-orbitron text-[#777] uppercase block">Client Budget</span>
+                                <span className="font-bold text-[#CCC] text-[11px]">{app.budgetRange}</span>
+                              </div>
+                              <div>
+                                <span className="text-[9px] font-orbitron text-[#777] uppercase block">Timeline</span>
+                                <span className="font-bold text-[#CCC] text-[11px]">{app.timeline}</span>
+                              </div>
+                            </div>
+
+                            {/* Features Preview */}
+                            {Array.isArray(app.features) && app.features.length > 0 && (
+                              <div>
+                                <span className="text-[9px] font-orbitron text-[#777] uppercase block mb-1">
+                                  Configured Features:
+                                </span>
+                                <div className="flex flex-wrap gap-1 max-h-16 overflow-hidden">
+                                  {app.features.slice(0, 5).map((f: string, i: number) => (
+                                    <span
+                                      key={i}
+                                      className="px-2 py-0.5 rounded bg-[#141414] border border-white/5 text-[9px] text-[#AAA]"
+                                    >
+                                      ✓ {f}
+                                    </span>
+                                  ))}
+                                  {app.features.length > 5 && (
+                                    <span className="px-2 py-0.5 rounded bg-deep-red/20 text-[9px] text-bright-red font-bold">
+                                      +{app.features.length - 5} more
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Description snippet */}
+                            <p className="text-xs text-[#BBB] line-clamp-2 bg-[#080808] p-2.5 rounded-lg border border-white/5 italic">
+                              &ldquo;{app.description}&rdquo;
+                            </p>
+                          </div>
+
+                          {/* Action Buttons */}
+                          <div className="space-y-2 pt-3 border-t border-white/5">
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="font-mono text-[#666]">
+                                {new Date(app.createdAt).toLocaleDateString()}
+                              </span>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[9px] font-orbitron font-bold uppercase ${
+                                  app.leadQuality === "HIGH"
+                                    ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                                    : "bg-[#181818] text-[#888]"
+                                }`}
+                              >
+                                Quality: {app.leadQuality || "HIGH"}
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                onClick={() => setSelectedProjectApp(app)}
+                                className="py-2 px-3 rounded-xl bg-[#151515] hover:bg-[#222] text-[10px] font-orbitron font-bold uppercase text-white border border-white/10 transition-colors"
+                              >
+                                View Specs
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingAppModal(app);
+                                  setEditStatusValue(app.status);
+                                  setEditQuoteValue(app.finalQuoteAmount ? String(app.finalQuoteAmount) : "");
+                                  setEditNotesValue(app.adminNotes || "");
+                                }}
+                                className="py-2 px-3 rounded-xl bg-crimson/20 hover:bg-crimson border border-crimson/40 text-[10px] font-orbitron font-bold uppercase text-bright-red hover:text-white transition-colors"
+                              >
+                                Manage / Quote
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ═══ TAB 10: INQUIRIES CONSOLE ══════════════════════════════════ */}
           {activeTab === "inquiries" && (
             <div className="space-y-6">
@@ -2743,6 +3136,294 @@ function OwnerDashboardContent() {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ─── MODAL: PROJECT APPLICATION FULL SPECS ──────────────────────── */}
+      <AnimatePresence>
+        {selectedProjectApp && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-2xl bg-[#0D0D0D] border border-crimson/30 rounded-3xl p-6 space-y-5 max-h-[90vh] overflow-y-auto shadow-2xl relative"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-crimson/20">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs text-bright-red font-bold">
+                      {selectedProjectApp.referenceId}
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-crimson/20 border border-crimson/30 text-[9px] font-orbitron font-bold text-bright-red uppercase">
+                      {selectedProjectApp.status}
+                    </span>
+                  </div>
+                  <h3 className="font-orbitron font-black text-base text-white mt-1">
+                    {selectedProjectApp.fullName} &bull; {selectedProjectApp.projectType}
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setSelectedProjectApp(null)}
+                  className="p-1.5 rounded-xl bg-[#1A1A1A] text-[#888] hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Deposit Banner */}
+              <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-orbitron font-bold text-emerald-400 uppercase tracking-wider block">
+                    Advance Booking Deposit
+                  </span>
+                  <span className="font-mono text-xl font-bold text-white">
+                    ₹{selectedProjectApp.finalAdvance?.toLocaleString("en-IN")} INR
+                  </span>
+                </div>
+                <div className="text-right text-[11px] text-[#AAA]">
+                  <span className="block">Budget: {selectedProjectApp.budgetRange}</span>
+                  <span className="block">Timeline: {selectedProjectApp.timeline}</span>
+                </div>
+              </div>
+
+              {/* Client & Communication */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3.5 rounded-xl bg-[#070707] border border-white/5 text-xs">
+                <div>
+                  <span className="text-[9px] font-orbitron text-[#777] uppercase block">Email</span>
+                  <span className="text-white font-medium break-all">{selectedProjectApp.email}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-orbitron text-[#777] uppercase block">Phone / WhatsApp</span>
+                  <span className="font-mono text-white">{selectedProjectApp.phone || "—"}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-orbitron text-[#777] uppercase block">Preferred Channel</span>
+                  <span className="text-white">{selectedProjectApp.preferredContact || "Email"}</span>
+                </div>
+                {selectedProjectApp.company && (
+                  <div>
+                    <span className="text-[9px] font-orbitron text-[#777] uppercase block">Company / Brand</span>
+                    <span className="text-white">{selectedProjectApp.company}</span>
+                  </div>
+                )}
+                {selectedProjectApp.city && (
+                  <div>
+                    <span className="text-[9px] font-orbitron text-[#777] uppercase block">City</span>
+                    <span className="text-white">{selectedProjectApp.city}</span>
+                  </div>
+                )}
+                <div>
+                  <span className="text-[9px] font-orbitron text-[#777] uppercase block">Submitted At</span>
+                  <span className="font-mono text-[#AAA]">
+                    {new Date(selectedProjectApp.createdAt).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              {/* Features & Architecture Matrix */}
+              <div className="space-y-2 text-xs">
+                <span className="font-orbitron font-bold text-[10px] uppercase text-[#888] tracking-wider block">
+                  Configured Specifications
+                </span>
+
+                {Array.isArray(selectedProjectApp.purposes) && selectedProjectApp.purposes.length > 0 && (
+                  <div>
+                    <span className="text-[10px] text-[#777] block mb-1">Purposes:</span>
+                    <div className="flex flex-wrap gap-1">
+                      {selectedProjectApp.purposes.map((p: string, i: number) => (
+                        <span key={i} className="px-2 py-0.5 rounded bg-[#141414] text-[10px] text-[#CCC] border border-white/5">
+                          {p}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {Array.isArray(selectedProjectApp.features) && selectedProjectApp.features.length > 0 && (
+                  <div>
+                    <span className="text-[10px] text-[#777] block mb-1">Features:</span>
+                    <div className="flex flex-wrap gap-1">
+                      {selectedProjectApp.features.map((f: string, i: number) => (
+                        <span key={i} className="px-2 py-0.5 rounded bg-deep-red/15 text-[10px] text-bright-red border border-crimson/20">
+                          ✓ {f}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px]">
+                  <div className="p-2 rounded bg-[#070707] border border-white/5">
+                    <span className="text-[9px] text-[#666] uppercase block">Auth:</span>
+                    <span className="text-white">{selectedProjectApp.authOption || "No login"}</span>
+                  </div>
+                  <div className="p-2 rounded bg-[#070707] border border-white/5">
+                    <span className="text-[9px] text-[#666] uppercase block">Dashboard:</span>
+                    <span className="text-white">{selectedProjectApp.dashboardOption || "None"}</span>
+                  </div>
+                  <div className="p-2 rounded bg-[#070707] border border-white/5">
+                    <span className="text-[9px] text-[#666] uppercase block">Database:</span>
+                    <span className="text-white">{selectedProjectApp.databaseOption || "No"}</span>
+                  </div>
+                  <div className="p-2 rounded bg-[#070707] border border-white/5">
+                    <span className="text-[9px] text-[#666] uppercase block">Animation:</span>
+                    <span className="text-white">{selectedProjectApp.animationLevel || "Standard"}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Project Description */}
+              <div>
+                <span className="font-orbitron font-bold text-[10px] uppercase text-[#888] tracking-wider block mb-1">
+                  Client Project Scope & Idea
+                </span>
+                <div className="p-3.5 rounded-xl bg-[#070707] border border-white/5 text-xs text-[#DDD] leading-relaxed whitespace-pre-line">
+                  {selectedProjectApp.description}
+                </div>
+              </div>
+
+              {/* Payment Details */}
+              {selectedProjectApp.payments && selectedProjectApp.payments.length > 0 && (
+                <div className="p-3.5 rounded-xl bg-[#080808] border border-white/5 text-xs space-y-1.5">
+                  <span className="font-orbitron font-bold text-[10px] uppercase text-emerald-400 block">
+                    Razorpay Payment Record
+                  </span>
+                  {selectedProjectApp.payments.map((p: any) => (
+                    <div key={p.id} className="flex justify-between font-mono text-[11px] text-[#AAA]">
+                      <span>Order: {p.razorpayOrderId}</span>
+                      <span className="text-emerald-400 font-bold">{p.status} (₹{p.amount})</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-2 border-t border-white/10">
+                <button
+                  onClick={() => {
+                    const app = selectedProjectApp;
+                    setSelectedProjectApp(null);
+                    setEditingAppModal(app);
+                    setEditStatusValue(app.status);
+                    setEditQuoteValue(app.finalQuoteAmount ? String(app.finalQuoteAmount) : "");
+                    setEditNotesValue(app.adminNotes || "");
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase transition-all shadow-neon"
+                >
+                  Manage Status & Quotation
+                </button>
+                <a
+                  href={`https://wa.me/${selectedProjectApp.phone?.replace(/[^0-9]/g, "")}?text=Hi%20${encodeURIComponent(selectedProjectApp.fullName)}%2C%20CodeXa%20Founder%20Ashu%20here%20regarding%20your%20project%20application%20(${selectedProjectApp.referenceId})`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="py-2.5 px-4 rounded-xl bg-[#151515] hover:bg-[#202020] text-emerald-400 border border-emerald-500/30 text-xs font-orbitron font-bold uppercase transition-colors flex items-center gap-1.5"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  WhatsApp
+                </a>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ─── MODAL: EDIT APPLICATION STATUS & QUOTE ─────────────────────── */}
+      <AnimatePresence>
+        {editingAppModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md bg-[#0D0D0D] border border-crimson/30 rounded-3xl p-6 space-y-4 shadow-2xl"
+            >
+              <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                <div>
+                  <span className="text-[10px] font-orbitron text-bright-red uppercase font-bold">
+                    {editingAppModal.referenceId}
+                  </span>
+                  <h3 className="font-orbitron font-bold text-sm text-white uppercase mt-0.5">
+                    Manage Project Application
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setEditingAppModal(null)}
+                  className="p-1 rounded bg-[#1A1A1A] text-[#888]"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">
+                    Application Status
+                  </label>
+                  <select
+                    value={editStatusValue}
+                    onChange={(e) => setEditStatusValue(e.target.value)}
+                    className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none focus:border-bright-red"
+                  >
+                    <option value="QUALIFIED">QUALIFIED (Deposit Verified)</option>
+                    <option value="UNDER_REVIEW">UNDER REVIEW</option>
+                    <option value="NEEDS_CLARIFICATION">NEEDS CLARIFICATION</option>
+                    <option value="ACCEPTED">ACCEPTED</option>
+                    <option value="IN_PROGRESS">IN PROGRESS</option>
+                    <option value="COMPLETED">COMPLETED</option>
+                    <option value="DECLINED">DECLINED</option>
+                    <option value="PAYMENT_PENDING">PAYMENT PENDING</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">
+                    Final Approved Quotation Amount (₹ INR)
+                  </label>
+                  <input
+                    type="number"
+                    value={editQuoteValue}
+                    onChange={(e) => setEditQuoteValue(e.target.value)}
+                    placeholder="e.g. 45000"
+                    className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none focus:border-bright-red font-mono"
+                  />
+                  <span className="text-[9px] text-[#666] mt-0.5 block">
+                    Advance deposit of ₹{editingAppModal.finalAdvance} is deducted from this quote.
+                  </span>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-orbitron uppercase text-[#888] font-bold block mb-1">
+                    Internal Engineering Notes
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={editNotesValue}
+                    onChange={(e) => setEditNotesValue(e.target.value)}
+                    placeholder="Architectural notes, milestone timeline agreements, or client correspondence details..."
+                    className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none focus:border-bright-red resize-none"
+                  />
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    onClick={() => setEditingAppModal(null)}
+                    className="flex-1 py-2.5 rounded-xl bg-[#141414] text-xs font-orbitron text-[#888] uppercase"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveEditingApp}
+                    disabled={editSaving}
+                    className="flex-1 py-2.5 rounded-xl bg-crimson hover:bg-bright-red text-xs font-orbitron font-bold text-white uppercase shadow-neon"
+                  >
+                    {editSaving ? "Saving..." : "Save Changes"}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
           </div>
         )}
       </AnimatePresence>
