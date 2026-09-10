@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import "./globals.css";
-import { AnimatePresence, motion } from "framer-motion";
-import { LoadingScreen } from "@/components/sections/LoadingScreen";
+import { motion } from "framer-motion";
+import { CodexaCinematicIntro } from "@/components/intro/CodexaCinematicIntro";
 import { Navbar } from "@/components/sections/Navbar";
 import { HeroSection } from "@/components/sections/HeroSection";
 import { AboutSection } from "@/components/sections/AboutSection";
@@ -23,7 +23,7 @@ import { CyberWebOverlay } from "@/components/ui/CyberWebOverlay";
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [introActive, setIntroActive] = useState(true);
   const [siteSettings, setSiteSettings] = useState({
     mainProjectsHomeVisible: true,
     teamProjectsHomeVisible: true,
@@ -31,7 +31,20 @@ export default function Home() {
 
   useEffect(() => {
     setMounted(true);
-    
+
+    // If intro was already watched this session and not forced, show homepage immediately
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const forceReplay =
+        urlParams.get("replayIntro") === "1" || urlParams.get("intro") === "force";
+      const seen = sessionStorage.getItem("codexa_intro_seen_v2");
+      if (seen === "1" && !forceReplay) {
+        setIntroActive(false);
+      }
+    } catch {
+      // ignore
+    }
+
     // Load site settings
     fetch("/api/site-settings")
       .then((r) => r.json())
@@ -43,63 +56,58 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
-  if (!mounted) {
-    return <div className="min-h-screen bg-[#070707] w-full" />;
-  }
 
   return (
-    <div className="relative min-h-screen bg-[#070707] w-full">
-      <AnimatePresence mode="wait">
-        {isLoading ? (
-          <LoadingScreen key="loading" onComplete={() => setIsLoading(false)} />
-        ) : (
-          <motion.div
-            key="content"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.8 }}
-            className="w-full relative"
-          >
-            {/* Cyber web overlay drawing strands in background */}
-            <CyberWebOverlay />
-            
-            {/* Navigation Header */}
-            <Navbar />
-            
-            {/* Main Content Layout Sections */}
-            <main className="w-full relative">
-              {/* 1. HERO */}
-              <HeroSection />
-              
-              {/* 2. ABOUT */}
-              <AboutSection />
-              
-              {/* 3. SERVICES */}
-              <ServicesSection />
-              
-              <TechDivider />
-              
-              {/* 4. PROJECTS */}
-              {siteSettings.mainProjectsHomeVisible && <MainProjectsSection />}
-              {siteSettings.teamProjectsHomeVisible && <TeamProjectsSection />}
-              
-              {/* 5. CANONICAL CODEXA LEADERSHIP */}
-              <PublicLeadershipSection />
-              
-              {/* 6. REMAINING SECTIONS */}
-              <InternshipSection />
-              <CapabilitiesSection />
-              <ProcessSection />
-              <FAQSection />
-              <ContactSection />
-              <EndingSection />
-            </main>
+    <div className="relative min-h-screen bg-[#070707] w-full overflow-x-hidden">
+      {/* 1. Cinematic Code-Based Multilingual Intro Animation Overlay */}
+      <CodexaCinematicIntro onComplete={() => setIntroActive(false)} />
 
-            {/* Footer Area */}
-            <Footer />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* 2. Homepage Content rendered behind intro and smoothly animated on reveal */}
+      <motion.div
+        key="homepage-content"
+        initial={{ opacity: introActive ? 0.2 : 1, y: introActive ? 8 : 0 }}
+        animate={{ opacity: introActive ? 0.2 : 1, y: introActive ? 8 : 0 }}
+        transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+        className="w-full relative"
+      >
+        {/* Cyber web overlay drawing strands in background */}
+        <CyberWebOverlay />
+
+        {/* Navigation Header */}
+        <Navbar />
+
+        {/* Main Content Layout Sections */}
+        <main className="w-full relative">
+          {/* 1. HERO */}
+          <HeroSection />
+
+          {/* 2. ABOUT */}
+          <AboutSection />
+
+          {/* 3. SERVICES */}
+          <ServicesSection />
+
+          <TechDivider />
+
+          {/* 4. PROJECTS */}
+          {siteSettings.mainProjectsHomeVisible && <MainProjectsSection />}
+          {siteSettings.teamProjectsHomeVisible && <TeamProjectsSection />}
+
+          {/* 5. CANONICAL CODEXA LEADERSHIP */}
+          <PublicLeadershipSection />
+
+          {/* 6. REMAINING SECTIONS */}
+          <InternshipSection />
+          <CapabilitiesSection />
+          <ProcessSection />
+          <FAQSection />
+          <ContactSection />
+          <EndingSection />
+        </main>
+
+        {/* Footer Area */}
+        <Footer />
+      </motion.div>
     </div>
   );
 }

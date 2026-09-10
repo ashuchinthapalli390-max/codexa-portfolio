@@ -8,8 +8,8 @@ import { FirebaseAnalytics } from "@/components/FirebaseAnalytics";
 export const metadata: Metadata = {
   title: "CODEXA AGENCY | Where Ideas Become Digital Reality",
   description: "High-end cinematic technology agency specializing in AI models development, custom web/mobile application architectures, and robust cybersecurity audits.",
-  keywords: ["AI Development", "Next.js", "Web Development", "Cybersecurity Agency", "Ashu", "Deepak", "Venu"],
-  authors: [{ name: "Ashu" }, { name: "Deepak" }, { name: "Venu" }],
+  keywords: ["AI Development", "Next.js", "Web Development", "Cybersecurity Agency", "Ashu", "Sanjay", "Kishore"],
+  authors: [{ name: "Ashu" }, { name: "Sanjay" }, { name: "Kishore" }],
   openGraph: {
     title: "CODEXA AGENCY | Where Ideas Become Digital Reality",
     description: "Futuristic developer agency engineering digital products & ecosystems. Learn. Build. Deploy. Grow.",

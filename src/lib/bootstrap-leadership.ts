@@ -189,20 +189,25 @@ export async function bootstrapOfficialLeadership() {
       }
     }
 
-    // ── 2. Co-Founder (Deepak) ──────────────────────────────────────────────
+    // ── 2. Co-Founder (Sanjay) ─────────────────────────────────────────────
     let coFounderUser = await db.user.findFirst({
-      where: { username: { equals: "deepak", mode: "insensitive" } },
+      where: {
+        OR: [
+          { username: { equals: "sanjay", mode: "insensitive" } },
+          { profile: { leadershipPosition: "CO_FOUNDER" } },
+        ],
+      },
     });
 
     if (!coFounderUser) {
-      const defaultPw = await bcrypt.hash("CxA!Deepak2026", 12);
+      const defaultPw = await bcrypt.hash("CxA!Sanjay2026", 12);
       coFounderUser = await db.user.create({
         data: {
-          username: "deepak",
-          email: "deepak@codexa.agency",
-          fullName: "Deepak",
+          username: "sanjay",
+          email: "sanjay@codexa.agency",
+          fullName: "Sanjay",
           passwordHash: defaultPw,
-          role: "TEAM_MEMBER",
+          role: "ADMIN",
           isActive: true,
         },
       });
@@ -218,11 +223,11 @@ export async function bootstrapOfficialLeadership() {
           userId: coFounderUser.id,
           memberType: "LEADERSHIP",
           leadershipPosition: "CO_FOUNDER",
-          primaryRole: "Co-Founder & Community Director",
-          displayName: "Deepak",
-          headline: "Co-Founder • Community & Development • Team Support",
-          publicBio: "The Co-Founder supports CodeXa's growth, team collaboration, developer community and internal operations while continuously expanding technical knowledge and development experience.",
-          bio: "Deepak coordinates community outreach, developer collaboration and operational workflows at CodeXa Agency. Dedicated to building an inclusive developer ecosystem, he focuses on team growth, peer learning and cross-functional technical initiatives.",
+          primaryRole: "Co-Founder & Operations Lead",
+          displayName: "Sanjay",
+          headline: "Co-Founder • Platform Growth & Operations",
+          publicBio: "Sanjay drives operations, cross-platform product architecture, and ecosystem expansion at CodeXa Agency.",
+          bio: "Sanjay coordinates operational workflows, team architecture, and client solution systems at CodeXa Agency, driving continuous technical expansion.",
           mediaUrl: "/assets/images/2299fdd2a1d01339a71af61a2c7e9cac.jpg",
           isPublic: true,
           displayOrder: 2,
@@ -246,18 +251,23 @@ export async function bootstrapOfficialLeadership() {
       });
     }
 
-    // ── 3. CEO (Venu) ───────────────────────────────────────────────────────
+    // ── 3. CEO (Kishore) ───────────────────────────────────────────────────
     let ceoUser = await db.user.findFirst({
-      where: { username: { equals: "venu", mode: "insensitive" } },
+      where: {
+        OR: [
+          { username: { equals: "kishore", mode: "insensitive" } },
+          { profile: { leadershipPosition: "CEO" } },
+        ],
+      },
     });
 
     if (!ceoUser) {
-      const defaultPw = await bcrypt.hash("CxA!Venu2026", 12);
+      const defaultPw = await bcrypt.hash("CxA!Kishore2026", 12);
       ceoUser = await db.user.create({
         data: {
-          username: "venu",
-          email: "venu@codexa.agency",
-          fullName: "Venu",
+          username: "kishore",
+          email: "kishore@codexa.agency",
+          fullName: "Kishore",
           passwordHash: defaultPw,
           role: "ADMIN",
           isActive: true,
@@ -276,10 +286,10 @@ export async function bootstrapOfficialLeadership() {
           memberType: "LEADERSHIP",
           leadershipPosition: "CEO",
           primaryRole: "Chief Executive Officer",
-          displayName: "Venu",
-          headline: "CEO • Strategy • Operations • Technology",
-          publicBio: "The CEO helps lead CodeXa's strategy, execution, client operations, team direction and business growth while continuing to expand technical expertise across modern development and digital systems.",
-          bio: "Venu directs executive strategy, client engagements and organizational scaling at CodeXa Agency. Combining business acumen with continuous technical expansion, he oversees product delivery, strategic roadmaps and platform growth.",
+          displayName: "Kishore",
+          headline: "CEO • Strategic Expansion & Global Deliveries",
+          publicBio: "Kishore directs executive strategy, key enterprise partnerships, and technology innovation at CodeXa Agency.",
+          bio: "Kishore directs executive strategy, client engagements, and organizational scaling at CodeXa Agency. Combining business acumen with continuous technical expansion, he oversees product delivery and platform growth.",
           mediaUrl: "/assets/images/2306fc1d8f6ea04d1ddd4ebfafd003f2.jpg",
           isPublic: true,
           displayOrder: 3,
