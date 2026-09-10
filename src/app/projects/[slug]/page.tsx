@@ -18,7 +18,8 @@ import {
   Users, 
   Code2, 
   X, 
-  Maximize2 
+  Maximize2,
+  Lock
 } from "lucide-react";
 import { CyberWebOverlay } from "@/components/ui/CyberWebOverlay";
 import { NeonButton } from "@/components/ui/NeonButton";
@@ -146,12 +147,20 @@ export default function ProjectDetailPage() {
                     </NeonButton>
                   </a>
                 )}
-                {project.repoUrl && (
+                {project.repoUrl ? (
                   <a href={project.repoUrl} target="_blank" rel="noopener noreferrer">
                     <button className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#111]/90 hover:bg-[#1A1A1A] border border-crimson/30 hover:border-bright-red text-xs font-orbitron font-bold uppercase tracking-wider text-white transition-all">
                       <Github className="w-4 h-4" /> Repo
                     </button>
                   </a>
+                ) : (
+                  <div
+                    className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-orbitron font-bold uppercase tracking-wider select-none"
+                    title="Proprietary / Closed-Source Repository"
+                  >
+                    <Lock className="w-3.5 h-3.5 text-amber-400" />
+                    Code is Private
+                  </div>
                 )}
               </div>
             </div>

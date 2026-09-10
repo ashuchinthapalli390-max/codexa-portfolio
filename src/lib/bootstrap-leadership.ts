@@ -8,14 +8,79 @@ import { db } from "./db";
 import bcrypt from "bcryptjs";
 
 export const OFFICIAL_FOUNDER_PROJECTS = [
-  { name: "CodeXa IDE", category: "Developer Platform" },
-  { name: "Nexa AI", category: "Artificial Intelligence" },
-  { name: "EDITH AI Agent", category: "AI Agent" },
-  { name: "Cyber Kivi Max", category: "Cybersecurity" },
-  { name: "Vishnu Max", category: "Application" },
-  { name: "CloudWave", category: "Cloud / Platform" },
-  { name: "NodeWave", category: "Developer System" },
-  { name: "CodeXa OS", category: "System Platform" },
+  {
+    name: "Nexa AI",
+    category: "Artificial Intelligence",
+    url: "https://nexa-ai.xyz/",
+    isPrivate: true,
+    desc: "AI intelligence suite and autonomous agent workflows.",
+  },
+  {
+    name: "Nexa IDE",
+    category: "Developer Platform",
+    url: "https://codxa-agency.online/",
+    isPrivate: true,
+    desc: "Cloud-native developer IDE with AI vibe coding.",
+  },
+  {
+    name: "CloudWave",
+    category: "Cloud Infrastructure",
+    url: "https://cloudewave.in/",
+    isPrivate: true,
+    desc: "Enterprise cloud hosting, NVMe VPS & infrastructure.",
+  },
+  {
+    name: "NEC Portal",
+    category: "Institutional Platform",
+    url: "https://nec-portal-rosy.vercel.app/",
+    isPrivate: true,
+    desc: "Autonomous college academic & research management portal.",
+  },
+  {
+    name: "NodeWave",
+    category: "Developer System",
+    url: "https://nodewave.in/",
+    isPrivate: true,
+    desc: "High-throughput Node.js microservices framework.",
+  },
+  {
+    name: "CodeAxis Apply",
+    category: "Recruitment Universe",
+    url: "https://www.codeaxisapply.xyz/",
+    isPrivate: true,
+    desc: "Developer screening & internship recruitment universe.",
+  },
+  {
+    name: "CodeXa Agency",
+    category: "Agency Platform",
+    url: "https://codxa-agency.online/",
+    isPrivate: true,
+    desc: "Flagship digital agency & enterprise software showcase.",
+  },
+  {
+    name: "EDITH AI Agent",
+    category: "AI Agent",
+    url: "https://codxa-agency.online/",
+    isPrivate: true,
+    desc: "Autonomous productivity assistant and task automation.",
+  },
+];
+
+export const OFFICIAL_CO_FOUNDER_PROJECTS = [
+  {
+    name: "StarX Live",
+    category: "Live Music & Entertainment",
+    url: "https://starx-live-official.vercel.app/",
+    isPrivate: true,
+    desc: "Official band booking & media streaming web platform.",
+  },
+  {
+    name: "TicketX",
+    category: "Ticketing & Event Platform",
+    url: "https://ticket-x-theta.vercel.app/",
+    isPrivate: true,
+    desc: "Real-time cinema & event ticket booking engine.",
+  },
 ];
 
 export const OFFICIAL_FOUNDER_EXPERTISE_GROUPS = {
@@ -235,6 +300,7 @@ export async function bootstrapOfficialLeadership() {
           cropX: 50,
           cropY: 25,
           cropZoom: 1.05,
+          featuredProjects: OFFICIAL_CO_FOUNDER_PROJECTS,
           isPublic: true,
           displayOrder: 2,
         },
@@ -255,6 +321,15 @@ export async function bootstrapOfficialLeadership() {
         })),
         skipDuplicates: true,
       });
+    } else {
+      const updateData: any = {};
+      if (!coFounderProfile.featuredProjects) updateData.featuredProjects = OFFICIAL_CO_FOUNDER_PROJECTS;
+      if (Object.keys(updateData).length > 0) {
+        await db.teamProfile.update({
+          where: { id: coFounderProfile.id },
+          data: updateData,
+        });
+      }
     }
 
     // ── 3. CEO (Kishore) ───────────────────────────────────────────────────

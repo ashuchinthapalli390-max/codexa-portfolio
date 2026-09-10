@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, ArrowUpRight, ChevronRight } from "lucide-react";
+import { X, ArrowUpRight, ChevronRight, ExternalLink, Lock } from "lucide-react";
 import { LeadershipMember, ModalSection } from "@/config/leadershipData";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { getProfileImageStyle } from "@/lib/profile-media";
@@ -33,21 +33,71 @@ function ModalSectionBlock({ section }: { section: ModalSection }) {
 
       {/* PROJECTS */}
       {section.type === "projects" && section.projects && (
-        <div className="space-y-2.5">
+        <div className="space-y-3">
           {section.projects.map((proj, i) => (
             <div
               key={i}
-              className="bg-[#0C0C0C] border border-[rgba(217,4,41,0.15)] rounded-xl px-4 py-3 hover:border-[rgba(217,4,41,0.35)] transition-colors group"
+              className="bg-[#0C0C0C] border border-[rgba(217,4,41,0.2)] rounded-xl p-4 hover:border-[rgba(217,4,41,0.5)] transition-all duration-300 group relative overflow-hidden shadow-sm hover:shadow-[0_0_20px_rgba(217,4,41,0.15)]"
             >
-              <div className="flex items-center gap-2">
-                <span className="text-[#D90429] text-[10px] font-orbitron font-bold">◈</span>
-                <span className="text-xs font-orbitron font-bold text-white group-hover:text-[#D90429] transition-colors">
-                  {proj.name}
-                </span>
+              {/* Subtle top laser scan line */}
+              <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-crimson to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-[#D90429] text-[10px] font-orbitron font-bold">◈</span>
+                  <span className="text-sm font-orbitron font-bold text-white group-hover:text-[#D90429] transition-colors">
+                    {proj.name}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {proj.category && (
+                    <span className="text-[9px] font-orbitron font-bold text-[#AAA] bg-[#141414] px-2 py-0.5 rounded border border-white/5 uppercase">
+                      {proj.category}
+                    </span>
+                  )}
+                  {proj.isPrivate && (
+                    <span
+                      className="inline-flex items-center gap-1 text-[9px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30 uppercase tracking-wide"
+                      title="Proprietary / Closed-source repository"
+                    >
+                      <Lock className="w-2.5 h-2.5 text-amber-400" />
+                      Code is Private
+                    </span>
+                  )}
+                </div>
               </div>
-              <p className="text-[10px] text-[#666] font-light mt-1.5 leading-relaxed pl-4">
+
+              {/* Description */}
+              <p className="text-[11px] text-[#A0A0A0] font-light leading-relaxed mb-3">
                 {proj.description}
               </p>
+
+              {/* Tech Stack + Live Link Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/5">
+                <div className="flex flex-wrap gap-1">
+                  {proj.techStack?.map((tech, tIdx) => (
+                    <span
+                      key={tIdx}
+                      className="text-[8px] font-mono text-[#888] bg-[#111] px-1.5 py-0.5 rounded border border-white/5 uppercase"
+                    >
+                      {tech}
+                    </span>
+                  ))}
+                </div>
+
+                {proj.url && (
+                  <a
+                    href={proj.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-deep-red/20 hover:bg-crimson border border-crimson/40 hover:border-bright-red text-bright-red hover:text-white text-[10px] font-orbitron font-bold uppercase tracking-wider transition-all duration-300 ml-auto"
+                  >
+                    <span>Open Website</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+              </div>
             </div>
           ))}
         </div>
