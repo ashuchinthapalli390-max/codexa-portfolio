@@ -2,30 +2,35 @@
 
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, ArrowUpRight, Github, ExternalLink, Code2, Users, Sparkles } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Github, ExternalLink, Code2, Users, Sparkles, Lock } from "lucide-react";
 import Link from "next/link";
 import { SectionHeading } from "../ui/SectionHeading";
 import { NeonButton } from "../ui/NeonButton";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { Project } from "@/lib/data-store";
+import { OFFICIAL_PROJECTS } from "@/config/officialProjects";
 
 const CATEGORIES = ["All", "AI", "Web", "Mobile", "Cybersecurity", "Automation", "Full Stack"];
 
 export function TeamProjectsSection() {
   const isReduced = useReducedMotion();
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<Project[]>(OFFICIAL_PROJECTS);
   const [selectedCategory, setSelectedCategory] = useState("All");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/projects?public=true")
       .then((r) => r.json())
       .then((data) => {
-        if (data.success) {
+        if (data.success && Array.isArray(data.projects) && data.projects.length > 0) {
           setProjects(data.projects);
+        } else {
+          setProjects(OFFICIAL_PROJECTS);
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        setProjects(OFFICIAL_PROJECTS);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -75,7 +80,7 @@ export function TeamProjectsSection() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <AnimatePresence mode="popLayout">
-              {filteredProjects.slice(0, 6).map((project, idx) => (
+              {filteredProjects.map((project, idx) => (
                 <motion.div
                   key={project.id}
                   layout
@@ -131,29 +136,39 @@ export function TeamProjectsSection() {
                     </div>
 
                     {/* Bottom Action Links */}
-                    <div className="pt-3 border-t border-[#141414] flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
+                    <div className="pt-3 border-t border-[#141414] flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
                         {project.liveUrl && (
                           <a
                             href={project.liveUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-[#777] hover:text-white transition-colors"
-                            title="Live Preview"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-crimson/15 hover:bg-crimson text-bright-red hover:text-white border border-crimson/30 hover:border-bright-red transition-all text-[10px] font-orbitron font-bold uppercase tracking-wider"
+                            title="Open Website"
                           >
-                            <ExternalLink className="w-3.5 h-3.5" />
+                            <ExternalLink className="w-3 h-3" />
+                            Live
                           </a>
                         )}
-                        {project.repoUrl && (
+
+                        {project.repoUrl ? (
                           <a
                             href={project.repoUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-[#777] hover:text-white transition-colors"
+                            className="text-[#777] hover:text-white transition-colors p-1"
                             title="GitHub Repository"
                           >
                             <Github className="w-3.5 h-3.5" />
                           </a>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-black/60 border border-crimson/30 text-[9px] font-mono text-crimson"
+                            title="Source Code is Private"
+                          >
+                            <Lock className="w-2.5 h-2.5 text-crimson" />
+                            Private
+                          </span>
                         )}
                       </div>
 

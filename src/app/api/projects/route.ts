@@ -33,7 +33,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: true, projects }, { headers: NO_CACHE_HEADERS });
   } catch (err: any) {
     console.error("[GET /api/projects]", err);
-    return NextResponse.json({ error: "Failed to load projects." }, { status: 500, headers: NO_CACHE_HEADERS });
+    const fallbackProjects = await dataStore.getProjects();
+    return NextResponse.json({ success: true, projects: fallbackProjects }, { headers: NO_CACHE_HEADERS });
   }
 }
 

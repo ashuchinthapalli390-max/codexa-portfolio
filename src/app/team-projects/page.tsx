@@ -14,28 +14,34 @@ import {
   Shield, 
   Sparkles, 
   User, 
-  Layers 
+  Layers,
+  Lock,
 } from "lucide-react";
 import { CyberWebOverlay } from "@/components/ui/CyberWebOverlay";
 import { Project } from "@/lib/data-store";
+import { OFFICIAL_PROJECTS } from "@/config/officialProjects";
 
-const CATEGORIES = ["All", "AI", "Web", "Mobile", "Cybersecurity", "Automation", "Full Stack", "Discord Bot", "API"];
+const CATEGORIES = ["All", "AI", "Web", "Mobile", "Cybersecurity", "Automation", "Full Stack"];
 
 export default function TeamProjectsPage() {
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<Project[]>(OFFICIAL_PROJECTS);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/projects?public=true")
       .then((r) => r.json())
       .then((data) => {
-        if (data.success) {
+        if (data.success && Array.isArray(data.projects) && data.projects.length > 0) {
           setProjects(data.projects);
+        } else {
+          setProjects(OFFICIAL_PROJECTS);
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        setProjects(OFFICIAL_PROJECTS);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -224,29 +230,38 @@ export default function TeamProjectsPage() {
                   </div>
 
                   {/* Actions Bar */}
-                  <div className="pt-4 border-t border-[#161616] flex items-center justify-between">
-                    <div className="flex items-center gap-3">
+                  <div className="pt-4 border-t border-[#161616] flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
                       {project.liveUrl && (
                         <a
                           href={project.liveUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-[#777] hover:text-white transition-colors"
-                          title="Live Preview"
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-crimson/15 hover:bg-crimson text-bright-red hover:text-white border border-crimson/30 hover:border-bright-red transition-all text-xs font-orbitron font-bold uppercase tracking-wider"
+                          title="Open Live Website"
                         >
-                          <ExternalLink className="w-4 h-4" />
+                          <ExternalLink className="w-3 h-3" />
+                          Live Demo
                         </a>
                       )}
-                      {project.repoUrl && (
+                      {project.repoUrl ? (
                         <a
                           href={project.repoUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-[#777] hover:text-white transition-colors"
+                          className="text-[#777] hover:text-white transition-colors p-1"
                           title="GitHub Repository"
                         >
                           <Github className="w-4 h-4" />
                         </a>
+                      ) : (
+                        <span
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-black/80 border border-crimson/30 text-[10px] font-mono text-crimson"
+                          title="Source Code is Private"
+                        >
+                          <Lock className="w-3 h-3 text-crimson" />
+                          Code is Private
+                        </span>
                       )}
                     </div>
 

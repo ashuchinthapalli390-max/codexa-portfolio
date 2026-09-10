@@ -24,13 +24,20 @@ import {
 import { CyberWebOverlay } from "@/components/ui/CyberWebOverlay";
 import { NeonButton } from "@/components/ui/NeonButton";
 import { Project } from "@/lib/data-store";
+import { OFFICIAL_PROJECTS } from "@/config/officialProjects";
 
 export default function ProjectDetailPage() {
   const params = useParams();
   const slug = params?.slug as string;
 
-  const [project, setProject] = useState<Project | null>(null);
-  const [loading, setLoading] = useState(true);
+  const initialFallback = slug
+    ? OFFICIAL_PROJECTS.find(
+        (p) => p.slug.toLowerCase() === slug.toLowerCase() || p.id === slug
+      ) || null
+    : null;
+
+  const [project, setProject] = useState<Project | null>(initialFallback);
+  const [loading, setLoading] = useState(false);
   const [activeScreenshot, setActiveScreenshot] = useState<string | null>(null);
 
   useEffect(() => {
@@ -41,9 +48,19 @@ export default function ProjectDetailPage() {
       .then((data) => {
         if (data.success && data.project) {
           setProject(data.project);
+        } else {
+          const fallback = OFFICIAL_PROJECTS.find(
+            (p) => p.slug.toLowerCase() === slug.toLowerCase() || p.id === slug
+          );
+          if (fallback) setProject(fallback);
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        const fallback = OFFICIAL_PROJECTS.find(
+          (p) => p.slug.toLowerCase() === slug.toLowerCase() || p.id === slug
+        );
+        if (fallback) setProject(fallback);
+      })
       .finally(() => setLoading(false));
   }, [slug]);
 

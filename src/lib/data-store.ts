@@ -8,6 +8,7 @@ import crypto from "crypto";
 import { db } from "./db";
 import { Prisma } from "@prisma/client";
 import { encryptTotpSecret, decryptTotpSecret, verifyTotpToken, hashBackupCode } from "./totp";
+import { OFFICIAL_PROJECTS } from "@/config/officialProjects";
 
 // ─── ENTITY INTERFACES ────────────────────────────────────────────────────────
 
@@ -990,59 +991,134 @@ export const dataStore = {
   },
 
   // ── Projects ───────────────────────────────────────────────────────────────
-  async getProjects(filter?: { publicOnly?: boolean; isMain?: boolean; developerId?: string }): Promise<Project[]> {
-    const where: Prisma.ProjectWhereInput = {
-      isArchived: false,
-    };
-    if (filter?.publicOnly) where.isDraft = false;
-    if (filter?.isMain !== undefined) where.isMainProject = filter.isMain;
-    if (filter?.developerId) where.createdBy = filter.developerId;
+  async getProjects(filter?: {
+    publicOnly?: boolean;
+    isPublic?: boolean;
+    isMain?: boolean;
+    isMainProject?: boolean;
+    isFeatured?: boolean;
+    category?: string;
+    developerId?: string;
+    search?: string;
+  }): Promise<Project[]> {
+    let list: Project[] = [];
+    try {
+      const where: Prisma.ProjectWhereInput = {
+        isArchived: false,
+      };
+      if (filter?.publicOnly || filter?.isPublic) where.isDraft = false;
+      if (filter?.isMain !== undefined) where.isMainProject = filter.isMain;
+      if (filter?.isMainProject !== undefined) where.isMainProject = filter.isMainProject;
+      if (filter?.isFeatured !== undefined) where.isMainProject = filter.isFeatured;
+      if (filter?.developerId) where.createdBy = filter.developerId;
+      if (filter?.category && filter.category !== "All" && filter.category !== "ALL") {
+        where.category = { equals: filter.category, mode: "insensitive" };
+      }
 
-    const list = await db.project.findMany({
-      where,
-      include: {
-        creator: { include: { profile: true } },
-        collaborators: { include: { user: { include: { profile: true } } } },
-        media: { orderBy: { displayOrder: "asc" } },
-        links: true,
-      },
-      orderBy: [
-        { homepageOrder: "asc" },
-        { createdAt: "desc" },
-      ],
-    });
+      const dbList = await db.project.findMany({
+        where,
+        include: {
+          creator: { include: { profile: true } },
+          collaborators: { include: { user: { include: { profile: true } } } },
+          media: { orderBy: { displayOrder: "asc" } },
+          links: true,
+        },
+        orderBy: [
+          { homepageOrder: "asc" },
+          { createdAt: "desc" },
+        ],
+      });
 
-    return list.map(mapProjectToProject);
+      list = dbList.map(mapProjectToProject);
+    } catch {
+      // Database offline or query failure: fallback to official projects
+      list = [];
+    }
+
+    if (list.length === 0) {
+      // Fallback to canonical official projects
+      list = [...OFFICIAL_PROJECTS];
+      if (filter?.publicOnly || filter?.isPublic) {
+        list = list.filter((p) => p.isPublic && !p.isDraft);
+      }
+      if (filter?.isMain !== undefined) {
+        list = list.filter((p) => p.isMainProject === filter.isMain);
+      }
+      if (filter?.isMainProject !== undefined) {
+        list = list.filter((p) => p.isMainProject === filter.isMainProject);
+      }
+      if (filter?.isFeatured !== undefined) {
+        list = list.filter((p) => p.isFeatured === filter.isFeatured);
+      }
+      if (filter?.category && filter.category !== "All" && filter.category !== "ALL") {
+        list = list.filter((p) => p.category.toLowerCase() === filter.category!.toLowerCase());
+      }
+      if (filter?.developerId) {
+        list = list.filter(
+          (p) =>
+            p.createdBy === filter.developerId ||
+            p.creator?.id === filter.developerId ||
+            p.creator?.username === filter.developerId
+        );
+      }
+      if (filter?.search) {
+        const q = filter.search.toLowerCase();
+        list = list.filter(
+          (p) =>
+            p.title.toLowerCase().includes(q) ||
+            p.shortDesc.toLowerCase().includes(q) ||
+            p.techStack.some((t) => t.toLowerCase().includes(q))
+        );
+      }
+    }
+
+    return list;
   },
 
   async getProjectBySlug(slug: string): Promise<Project | null> {
-    const p = await db.project.findUnique({
-      where: { slug },
-      include: {
-        creator: { include: { profile: true } },
-        collaborators: { include: { user: { include: { profile: true } } } },
-        media: { orderBy: { displayOrder: "asc" } },
-        links: true,
-      },
-    });
+    try {
+      const p = await db.project.findUnique({
+        where: { slug },
+        include: {
+          creator: { include: { profile: true } },
+          collaborators: { include: { user: { include: { profile: true } } } },
+          media: { orderBy: { displayOrder: "asc" } },
+          links: true,
+        },
+      });
 
-    if (!p) return null;
-    return mapProjectToProject(p);
+      if (p) return mapProjectToProject(p);
+    } catch {
+      // ignore
+    }
+
+    const official = OFFICIAL_PROJECTS.find(
+      (p) => p.slug.toLowerCase() === slug.toLowerCase() || p.id === slug
+    );
+    return official || null;
   },
 
   async getProjectById(id: string): Promise<Project | null> {
-    const p = await db.project.findUnique({
-      where: { id },
-      include: {
-        creator: { include: { profile: true } },
-        collaborators: { include: { user: { include: { profile: true } } } },
-        media: { orderBy: { displayOrder: "asc" } },
-        links: true,
-      },
-    });
+    try {
+      const p = await db.project.findUnique({
+        where: { id },
+        include: {
+          creator: { include: { profile: true } },
+          collaborators: { include: { user: { include: { profile: true } } } },
+          media: { orderBy: { displayOrder: "asc" } },
+          links: true,
+        },
+      });
 
-    if (!p) return null;
-    return mapProjectToProject(p);
+      if (p) return mapProjectToProject(p);
+    } catch {
+      // ignore
+    }
+
+    const official = OFFICIAL_PROJECTS.find(
+      (p) => p.id === id || p.slug.toLowerCase() === id.toLowerCase()
+    );
+    return official || null;
   },
 
   async createProject(data: Partial<Project>): Promise<Project> {

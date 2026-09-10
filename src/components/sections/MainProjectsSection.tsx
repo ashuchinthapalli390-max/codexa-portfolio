@@ -2,28 +2,33 @@
 
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { ArrowUpRight, Github, ExternalLink, Sparkles, FolderCode } from "lucide-react";
+import { ArrowUpRight, Github, ExternalLink, Sparkles, FolderCode, Lock } from "lucide-react";
 import Link from "next/link";
 import { SectionHeading } from "../ui/SectionHeading";
 import { NeonButton } from "../ui/NeonButton";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { Project } from "@/lib/data-store";
 import { CyberEmptyState, ProjectSkeleton } from "../ui/Skeletons";
+import { OFFICIAL_MAIN_PROJECTS } from "@/config/officialProjects";
 
 export function MainProjectsSection() {
   const isReduced = useReducedMotion();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [projects, setProjects] = useState<Project[]>(OFFICIAL_MAIN_PROJECTS);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/projects?main=true")
       .then((r) => r.json())
       .then((data) => {
-        if (data.success) {
+        if (data.success && Array.isArray(data.projects) && data.projects.length > 0) {
           setProjects(data.projects);
+        } else {
+          setProjects(OFFICIAL_MAIN_PROJECTS);
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        setProjects(OFFICIAL_MAIN_PROJECTS);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -62,19 +67,19 @@ export function MainProjectsSection() {
             />
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-14">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mt-14">
             {projects.map((project, idx) => (
               <motion.div
                 key={project.id}
                 initial={isReduced ? { opacity: 1 } : { opacity: 0, y: 30 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: "-10%" }}
-                transition={{ duration: 0.5, delay: idx * 0.15 }}
+                transition={{ duration: 0.5, delay: idx * 0.1 }}
                 whileHover={isReduced ? {} : { y: -8 }}
                 className="group relative rounded-2xl bg-[#0A0A0A]/90 border border-crimson/25 hover:border-bright-red/60 transition-all duration-300 flex flex-col overflow-hidden shadow-lg hover:shadow-[0_0_35px_rgba(217,4,41,0.25)]"
               >
                 {/* Top Corner Badge */}
-                <div className="absolute top-3 left-4 z-20 flex items-center gap-1.5 bg-black/70 backdrop-blur-md px-3 py-1 rounded-full border border-crimson/30 text-[9px] font-orbitron font-bold text-bright-red uppercase tracking-wider">
+                <div className="absolute top-3 left-4 z-20 flex items-center gap-1.5 bg-black/80 backdrop-blur-md px-3 py-1 rounded-full border border-crimson/40 text-[9px] font-orbitron font-bold text-bright-red uppercase tracking-wider shadow-md">
                   <Sparkles className="w-3 h-3 text-bright-red animate-pulse" />
                   FLAGSHIP // {project.category}
                 </div>
@@ -92,11 +97,11 @@ export function MainProjectsSection() {
                 {/* Content Body */}
                 <div className="p-6 flex-1 flex flex-col justify-between">
                   <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="font-orbitron font-black text-xl text-white tracking-wide group-hover:text-bright-red transition-colors">
+                    <div className="flex items-center justify-between mb-2 gap-2">
+                      <h3 className="font-orbitron font-black text-xl text-white tracking-wide group-hover:text-bright-red transition-colors line-clamp-1">
                         {project.title}
                       </h3>
-                      <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded border border-emerald-500/30">
+                      <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded border border-emerald-500/30 shrink-0">
                         {project.status}
                       </span>
                     </div>
@@ -124,29 +129,39 @@ export function MainProjectsSection() {
                   </div>
 
                   {/* Footer Action Links */}
-                  <div className="pt-4 border-t border-[#161616] flex items-center justify-between">
-                    <div className="flex items-center gap-3">
+                  <div className="pt-4 border-t border-[#161616] flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
                       {project.liveUrl && (
                         <a
                           href={project.liveUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-[#A5A5A5] hover:text-white transition-colors"
-                          title="Live Preview"
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-crimson/15 hover:bg-crimson text-bright-red hover:text-white border border-crimson/30 hover:border-bright-red transition-all duration-300 text-[11px] font-orbitron font-bold uppercase tracking-wider shadow-sm hover:shadow-[0_0_15px_rgba(217,4,41,0.4)]"
+                          title="Open Live Website"
                         >
-                          <ExternalLink className="w-4 h-4" />
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          Live Demo
                         </a>
                       )}
-                      {project.repoUrl && (
+
+                      {project.repoUrl ? (
                         <a
                           href={project.repoUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-[#A5A5A5] hover:text-white transition-colors"
+                          className="text-[#A5A5A5] hover:text-white transition-colors p-1"
                           title="GitHub Repository"
                         >
                           <Github className="w-4 h-4" />
                         </a>
+                      ) : (
+                        <span
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-black/80 border border-crimson/30 text-[10px] font-mono text-crimson"
+                          title="Source Code is Private"
+                        >
+                          <Lock className="w-3 h-3 text-crimson" />
+                          Code is Private
+                        </span>
                       )}
                     </div>
 

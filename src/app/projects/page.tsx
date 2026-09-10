@@ -15,29 +15,35 @@ import {
   Sparkles,
   User,
   Layers,
-  FolderGit2
+  FolderGit2,
+  Lock,
 } from "lucide-react";
 import { CyberWebOverlay } from "@/components/ui/CyberWebOverlay";
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
 import { Project } from "@/lib/data-store";
+import { OFFICIAL_PROJECTS } from "@/config/officialProjects";
 
-const CATEGORIES = ["ALL", "AI", "WEB", "MOBILE", "CYBERSECURITY", "CLOUD", "AUTOMATION"];
+const CATEGORIES = ["ALL", "AI", "WEB", "MOBILE", "CYBERSECURITY", "AUTOMATION", "FULL STACK"];
 
 export default function ProjectsShowcasePage() {
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<Project[]>(OFFICIAL_PROJECTS);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("ALL");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/projects?public=true")
       .then((r) => r.json())
       .then((data) => {
-        if (data.success && data.projects) {
+        if (data.success && Array.isArray(data.projects) && data.projects.length > 0) {
           setProjects(data.projects);
+        } else {
+          setProjects(OFFICIAL_PROJECTS);
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        setProjects(OFFICIAL_PROJECTS);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -178,6 +184,14 @@ export default function ProjectsShowcasePage() {
                   </div>
 
                   <div className="space-y-4 pt-2">
+                    {/* Creator / Engineer Tag */}
+                    <div className="flex items-center gap-2 py-1.5 px-2.5 rounded-lg bg-[#101010] border border-white/5">
+                      <User className="w-3 h-3 text-crimson" />
+                      <span className="text-[10px] font-orbitron text-[#A5A5A5]">
+                        {proj.creator?.displayName || "CodeXa Engineer"}
+                      </span>
+                    </div>
+
                     {/* Tech Stack Chips */}
                     <div className="flex flex-wrap gap-1.5">
                       {proj.techStack?.slice(0, 3).map((tech, idx) => (
@@ -204,12 +218,12 @@ export default function ProjectsShowcasePage() {
                           target="_blank"
                           rel="noreferrer"
                           className="p-2.5 rounded-xl bg-[#141414] hover:bg-deep-red/30 border border-crimson/20 text-[#888] hover:text-white transition-colors"
-                          title="Live Demo"
+                          title="Open Live Platform"
                         >
                           <Globe className="w-4 h-4" />
                         </a>
                       )}
-                      {proj.repoUrl && (
+                      {proj.repoUrl ? (
                         <a
                           href={proj.repoUrl}
                           target="_blank"
@@ -219,6 +233,14 @@ export default function ProjectsShowcasePage() {
                         >
                           <Github className="w-4 h-4" />
                         </a>
+                      ) : (
+                        <span
+                          className="p-2.5 rounded-xl bg-black/80 border border-crimson/30 text-crimson flex items-center gap-1 text-[10px] font-mono shrink-0"
+                          title="Source Code is Private"
+                        >
+                          <Lock className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Private</span>
+                        </span>
                       )}
                     </div>
                   </div>
