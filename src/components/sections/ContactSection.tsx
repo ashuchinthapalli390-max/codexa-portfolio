@@ -202,33 +202,33 @@ export function ContactSection() {
                 </a>
               </div>
 
-              {/* Co-Founder Deepak */}
+              {/* Co-Founder Sanjay */}
               <div className="flex justify-between items-center p-4 rounded bg-card/60 border border-crimson/15 shadow-inner">
                 <div>
                   <span className="text-[9px] uppercase tracking-wider text-crimson font-orbitron font-semibold">Co-Founder</span>
-                  <h5 className="font-orbitron font-bold text-sm text-white">Deepak</h5>
+                  <h5 className="font-orbitron font-bold text-sm text-white">Sanjay</h5>
                 </div>
                 <a 
-                  href={`tel:${siteConfig.contact.deepak.phone}`} 
+                  href={`tel:${siteConfig.contact.sanjay.phone}`} 
                   className="flex items-center gap-1.5 font-mono text-xs text-bright-red hover:text-white transition-colors"
                 >
                   <Phone className="w-3.5 h-3.5" />
-                  {siteConfig.contact.deepak.phone}
+                  {siteConfig.contact.sanjay.phone}
                 </a>
               </div>
 
-              {/* CEO Venu */}
+              {/* CEO Kishore */}
               <div className="flex justify-between items-center p-4 rounded bg-card/60 border border-crimson/15 shadow-inner">
                 <div>
                   <span className="text-[9px] uppercase tracking-wider text-crimson font-orbitron font-semibold">CEO</span>
-                  <h5 className="font-orbitron font-bold text-sm text-white">Venu</h5>
+                  <h5 className="font-orbitron font-bold text-sm text-white">Kishore</h5>
                 </div>
                 <a 
-                  href={`tel:${siteConfig.contact.venu.phone}`} 
+                  href={`tel:${siteConfig.contact.kishore.phone}`} 
                   className="flex items-center gap-1.5 font-mono text-xs text-bright-red hover:text-white transition-colors"
                 >
                   <Phone className="w-3.5 h-3.5" />
-                  {siteConfig.contact.venu.phone}
+                  {siteConfig.contact.kishore.phone}
                 </a>
               </div>
             </div>

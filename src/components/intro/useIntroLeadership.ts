@@ -21,16 +21,19 @@ const SAFE_FALLBACK_LEADERSHIP: IntroLeadershipData = {
     role: "FOUNDER",
     roleLabel: "FOUNDER",
     name: "ASHU",
+    mediaUrl: "/assets/images/founder.jpeg",
   },
   coFounder: {
     role: "CO-FOUNDER",
     roleLabel: "CO-FOUNDER",
     name: "SANJAY",
+    mediaUrl: "/assets/images/co-founder.jpeg",
   },
   ceo: {
     role: "CEO",
     roleLabel: "CEO",
     name: "KISHORE",
+    mediaUrl: "/assets/images/ceo.jpeg",
   },
 };
 

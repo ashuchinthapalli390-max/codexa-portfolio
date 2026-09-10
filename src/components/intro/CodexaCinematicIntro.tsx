@@ -250,6 +250,9 @@ export function CodexaCinematicIntro({ onComplete }: CodexaCinematicIntroProps) 
               <IntroLeaderReveal
                 role={leaders.founder.roleLabel}
                 name={leaders.founder.name}
+                mediaUrl={leaders.founder.mediaUrl || "/assets/images/founder.jpeg"}
+                positionX={45}
+                positionY={22}
                 isReducedMotion={isReducedMotion}
               />
             </motion.div>
@@ -268,6 +271,9 @@ export function CodexaCinematicIntro({ onComplete }: CodexaCinematicIntroProps) 
               <IntroLeaderReveal
                 role={leaders.coFounder.roleLabel}
                 name={leaders.coFounder.name}
+                mediaUrl={leaders.coFounder.mediaUrl || "/assets/images/co-founder.jpeg"}
+                positionX={50}
+                positionY={25}
                 isReducedMotion={isReducedMotion}
               />
             </motion.div>
@@ -286,6 +292,9 @@ export function CodexaCinematicIntro({ onComplete }: CodexaCinematicIntroProps) 
               <IntroLeaderReveal
                 role={leaders.ceo.roleLabel}
                 name={leaders.ceo.name}
+                mediaUrl={leaders.ceo.mediaUrl || "/assets/images/ceo.jpeg"}
+                positionX={50}
+                positionY={20}
                 isReducedMotion={isReducedMotion}
               />
             </motion.div>

@@ -393,10 +393,32 @@ export default function DedicatedTeamProfilePage() {
               <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-crimson to-bright-red opacity-60 blur-md group-hover:opacity-100 transition-opacity" />
               <div className="relative rounded-3xl overflow-hidden border-2 border-bright-red bg-black">
                 <CodeXaAvatar
-                  src={profile.mediaUrl}
+                  src={
+                    profile.mediaUrl ||
+                    (profile.leadershipPosition === "FOUNDER" || profile.username === "ashu"
+                      ? "/assets/images/founder.jpeg"
+                      : profile.leadershipPosition === "CO_FOUNDER" || profile.username === "sanjay"
+                      ? "/assets/images/co-founder.jpeg"
+                      : profile.leadershipPosition === "CEO" || profile.username === "kishore"
+                      ? "/assets/images/ceo.jpeg"
+                      : null)
+                  }
                   alt={profile.displayName}
                   size="2xl"
-                  className="w-32 h-32 sm:w-40 sm:h-40"
+                  className="w-32 h-32 sm:w-40 sm:h-40 rounded-3xl"
+                  positionX={
+                    profile.cropX ??
+                    (profile.leadershipPosition === "FOUNDER" || profile.username === "ashu" ? 45 : 50)
+                  }
+                  positionY={
+                    profile.cropY ??
+                    (profile.leadershipPosition === "FOUNDER" || profile.username === "ashu"
+                      ? 22
+                      : profile.leadershipPosition === "CO_FOUNDER" || profile.username === "sanjay"
+                      ? 25
+                      : 20)
+                  }
+                  zoom={profile.cropZoom ?? 1.05}
                 />
               </div>
               {canEdit && (

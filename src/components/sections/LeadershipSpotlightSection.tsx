@@ -167,10 +167,13 @@ export function LeadershipSpotlightSection({ profiles = [] }: LeadershipSpotligh
                   <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-crimson to-bright-red opacity-70 blur-sm group-hover/avatar:opacity-100 transition-opacity" />
                   <div className="relative rounded-2xl overflow-hidden border-2 border-bright-red bg-black">
                     <CodeXaAvatar
-                      src={founder?.mediaUrl || "/assets/images/128acbeb739b3eb8bc4d1d9ae15fcfb2.jpg"}
+                      src={founder?.mediaUrl || "/assets/images/founder.jpeg"}
                       alt={founder?.displayName || "Ashu"}
                       size="xl"
-                      className="w-24 h-24 sm:w-28 sm:h-28"
+                      className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl"
+                      positionX={founder?.cropX ?? 45}
+                      positionY={founder?.cropY ?? 22}
+                      zoom={founder?.cropZoom ?? 1.05}
                     />
                   </div>
                 </div>
@@ -296,14 +299,17 @@ export function LeadershipSpotlightSection({ profiles = [] }: LeadershipSpotligh
 
               <div className="flex items-center gap-4">
                 <CodeXaAvatar
-                  src={ceo?.mediaUrl || "/assets/images/2306fc1d8f6ea04d1ddd4ebfafd003f2.jpg"}
-                  alt={ceo?.displayName || "Venu"}
+                  src={ceo?.mediaUrl || "/assets/images/ceo.jpeg"}
+                  alt={ceo?.displayName || "Kishore"}
                   size="md"
-                  className="border border-amber-500/40 flex-shrink-0"
+                  className="border border-amber-500/40 flex-shrink-0 rounded-2xl"
+                  positionX={ceo?.cropX ?? 50}
+                  positionY={ceo?.cropY ?? 20}
+                  zoom={ceo?.cropZoom ?? 1.05}
                 />
                 <div>
                   <h4 className="font-orbitron font-black text-lg text-white uppercase group-hover:text-amber-400 transition-colors">
-                    {ceo?.displayName || "Venu"}
+                    {ceo?.displayName || "Kishore"}
                   </h4>
                   <p className="text-[10px] font-orbitron font-bold text-[#AAA] uppercase tracking-wider">
                     {ceo?.primaryRole || "Chief Executive Officer"}
@@ -329,7 +335,7 @@ export function LeadershipSpotlightSection({ profiles = [] }: LeadershipSpotligh
                   EXPERIENCED &bull; CONTINUOUS LEARNING
                 </span>
                 <Link
-                  href={`/team/${ceo?.username || "venu"}`}
+                  href={`/team/${ceo?.username || "kishore"}`}
                   className="text-xs font-orbitron text-bright-red hover:underline uppercase inline-flex items-center gap-1 font-bold"
                 >
                   Profile <ChevronRight className="w-3.5 h-3.5" />
@@ -354,17 +360,20 @@ export function LeadershipSpotlightSection({ profiles = [] }: LeadershipSpotligh
 
               <div className="flex items-center gap-4">
                 <CodeXaAvatar
-                  src={coFounder?.mediaUrl || "/assets/images/2299fdd2a1d01339a71af61a2c7e9cac.jpg"}
-                  alt={coFounder?.displayName || "Deepak"}
+                  src={coFounder?.mediaUrl || "/assets/images/co-founder.jpeg"}
+                  alt={coFounder?.displayName || "Sanjay"}
                   size="md"
-                  className="border border-sky-500/40 flex-shrink-0"
+                  className="border border-sky-500/40 flex-shrink-0 rounded-2xl"
+                  positionX={coFounder?.cropX ?? 50}
+                  positionY={coFounder?.cropY ?? 25}
+                  zoom={coFounder?.cropZoom ?? 1.05}
                 />
                 <div>
                   <h4 className="font-orbitron font-black text-lg text-white uppercase group-hover:text-sky-400 transition-colors">
-                    {coFounder?.displayName || "Deepak"}
+                    {coFounder?.displayName || "Sanjay"}
                   </h4>
                   <p className="text-[10px] font-orbitron font-bold text-[#AAA] uppercase tracking-wider">
-                    {coFounder?.primaryRole || "Co-Founder & Community Director"}
+                    {coFounder?.primaryRole || "Co-Founder & Operations Lead"}
                   </p>
                 </div>
               </div>
@@ -387,7 +396,7 @@ export function LeadershipSpotlightSection({ profiles = [] }: LeadershipSpotligh
                   BUILDING &bull; LEARNING &bull; SUPPORTING
                 </span>
                 <Link
-                  href={`/team/${coFounder?.username || "deepak"}`}
+                  href={`/team/${coFounder?.username || "sanjay"}`}
                   className="text-xs font-orbitron text-bright-red hover:underline uppercase inline-flex items-center gap-1 font-bold"
                 >
                   Profile <ChevronRight className="w-3.5 h-3.5" />

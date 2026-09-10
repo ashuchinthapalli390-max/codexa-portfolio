@@ -67,7 +67,10 @@ const DEFAULT_LEADERSHIP: LeadershipProfileDto[] = [
     headline: "Full-Stack Developer • AI Engineer • Cybersecurity & Linux Specialist",
     publicBio: "Ashu is the Founder and technical architect behind CodeXa Agency, building full-stack platforms, AI systems, cybersecurity tools, developer products, SaaS applications, desktop software and cross-platform applications.",
     quote: "Vision creates companies. Execution builds them.",
-    mediaUrl: "/assets/images/128acbeb739b3eb8bc4d1d9ae15fcfb2.jpg",
+    mediaUrl: "/assets/images/founder.jpeg",
+    cropX: 45,
+    cropY: 22,
+    cropZoom: 1.05,
     skills: ["Full-Stack", "AI Engineering", "Cybersecurity", "Next.js", "Linux", "Cloud Architecture"],
     displayOrder: 1,
     isPublic: true,
@@ -83,7 +86,10 @@ const DEFAULT_LEADERSHIP: LeadershipProfileDto[] = [
     headline: "Co-Founder • Platform Growth & Operations",
     publicBio: "Sanjay drives operations, cross-platform product architecture, and ecosystem expansion at CodeXa Agency.",
     quote: "Precision execution turns bold ideas into reality.",
-    mediaUrl: "/assets/images/2299fdd2a1d01339a71af61a2c7e9cac.jpg",
+    mediaUrl: "/assets/images/co-founder.jpeg",
+    cropX: 50,
+    cropY: 25,
+    cropZoom: 1.05,
     skills: ["Platform Architecture", "Operations", "Team Leadership", "Product Scaling"],
     displayOrder: 2,
     isPublic: true,
@@ -99,7 +105,10 @@ const DEFAULT_LEADERSHIP: LeadershipProfileDto[] = [
     headline: "CEO • Strategic Expansion & Global Deliveries",
     publicBio: "Kishore directs executive strategy, key enterprise partnerships, and technology innovation at CodeXa Agency.",
     quote: "Vision creates companies. Relentless engineering scales them.",
-    mediaUrl: "/assets/images/2306fc1d8f6ea04d1ddd4ebfafd003f2.jpg",
+    mediaUrl: "/assets/images/ceo.jpeg",
+    cropX: 50,
+    cropY: 20,
+    cropZoom: 1.05,
     skills: ["Executive Strategy", "Enterprise Delivery", "Business Growth", "Technology Innovation"],
     displayOrder: 3,
     isPublic: true,
@@ -282,7 +291,8 @@ export function PublicLeadershipSection({ initialProfiles }: PublicLeadershipPro
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto items-stretch">
             {profiles.map((leader, index) => {
               const badge = getPositionBadge(leader.leadershipPosition, leader.role);
-              const isFounder = leader.leadershipPosition === "FOUNDER" || leader.role === "OWNER";
+              const isFounder = leader.leadershipPosition === "FOUNDER" || leader.role === "OWNER" || leader.username === "ashu";
+              const isCoFounder = leader.leadershipPosition === "CO_FOUNDER" || leader.username === "sanjay";
 
               return (
                 <motion.div
@@ -321,12 +331,22 @@ export function PublicLeadershipSection({ initialProfiles }: PublicLeadershipPro
                     <div className="flex flex-col items-center text-center space-y-3 pt-2">
                       <div className="relative group/avatar cursor-pointer" onClick={() => setSelectedLeader(leader)}>
                         <div className={`absolute -inset-1 rounded-2xl bg-gradient-to-r ${isFounder ? "from-crimson to-bright-red opacity-80" : "from-deep-red to-crimson opacity-50"} blur-sm group-hover/avatar:opacity-100 transition-opacity`} />
-                        <div className="relative rounded-2xl overflow-hidden border-2 border-crimson/40 group-hover/avatar:border-bright-red bg-black">
+                        <div className="relative rounded-2xl overflow-hidden border-2 border-crimson/40 group-hover/avatar:border-bright-red bg-black shadow-[0_0_20px_rgba(217,4,41,0.2)]">
                           <CodeXaAvatar
-                            src={leader.mediaUrl || "/assets/images/128acbeb739b3eb8bc4d1d9ae15fcfb2.jpg"}
+                            src={
+                              leader.mediaUrl ||
+                              (isFounder
+                                ? "/assets/images/founder.jpeg"
+                                : isCoFounder
+                                ? "/assets/images/co-founder.jpeg"
+                                : "/assets/images/ceo.jpeg")
+                            }
                             alt={leader.displayName}
                             size="lg"
-                            className="w-24 h-24 sm:w-28 sm:h-28"
+                            className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl"
+                            positionX={leader.cropX ?? (isFounder ? 45 : 50)}
+                            positionY={leader.cropY ?? (isFounder ? 22 : isCoFounder ? 25 : 20)}
+                            zoom={leader.cropZoom ?? 1.05}
                           />
                         </div>
                       </div>
@@ -481,10 +501,30 @@ export function PublicLeadershipSection({ initialProfiles }: PublicLeadershipPro
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 border-b border-white/5 pb-6 text-center sm:text-left">
                 <div className="relative rounded-2xl overflow-hidden border-2 border-bright-red/70 bg-black flex-shrink-0 shadow-[0_0_25px_rgba(217,4,41,0.3)]">
                   <CodeXaAvatar
-                    src={selectedLeader.mediaUrl || "/assets/images/128acbeb739b3eb8bc4d1d9ae15fcfb2.jpg"}
+                    src={
+                      selectedLeader.mediaUrl ||
+                      (selectedLeader.leadershipPosition === "FOUNDER"
+                        ? "/assets/images/founder.jpeg"
+                        : selectedLeader.leadershipPosition === "CO_FOUNDER"
+                        ? "/assets/images/co-founder.jpeg"
+                        : "/assets/images/ceo.jpeg")
+                    }
                     alt={selectedLeader.displayName}
                     size="xl"
-                    className="w-28 h-28"
+                    className="w-28 h-28 rounded-2xl"
+                    positionX={
+                      selectedLeader.cropX ??
+                      (selectedLeader.leadershipPosition === "FOUNDER" ? 45 : 50)
+                    }
+                    positionY={
+                      selectedLeader.cropY ??
+                      (selectedLeader.leadershipPosition === "FOUNDER"
+                        ? 22
+                        : selectedLeader.leadershipPosition === "CO_FOUNDER"
+                        ? 25
+                        : 20)
+                    }
+                    zoom={selectedLeader.cropZoom ?? 1.05}
                   />
                 </div>
 

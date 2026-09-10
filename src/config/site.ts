@@ -11,7 +11,7 @@ export const siteConfig = {
       name: "Ashu",
       role: "Founder & Full-Stack Developer",
       phone: "8897901413",
-      image: "/assets/images/128acbeb739b3eb8bc4d1d9ae15fcfb2.jpg",
+      image: "/assets/images/founder.jpeg",
       details: [
         "AI Workflow Engineer",
         "Creator of EDITH AI Agent",
@@ -25,35 +25,41 @@ export const siteConfig = {
       ],
       quote: "Vision creates companies. Execution builds them."
     },
-    deepak: {
-      name: "Deepak",
-      role: "Communication & Community Lead",
+    sanjay: {
+      name: "Sanjay",
+      role: "Co-Founder & Operations Lead",
       phone: "9494245412",
-      image: "/assets/images/2299fdd2a1d01339a71af61a2c7e9cac.jpg",
+      image: "/assets/images/co-founder.jpeg",
       details: [
+        "Platform Architecture",
+        "Operations Leadership",
         "Team Coordination",
-        "Student Support",
-        "Internship Management",
-        "Community Building",
-        "Application Review",
-        "Developer Communication"
+        "Product Scaling",
+        "Ecosystem Growth",
+        "Client Solutions"
       ],
-      quote: "Helping every developer grow together."
+      quote: "Precision execution turns bold ideas into reality."
     },
-    venu: {
-      name: "Venu",
-      role: "CEO & Strategy Lead",
+    kishore: {
+      name: "Kishore",
+      role: "CEO & Executive Strategy",
       phone: "7075800951",
-      image: "/assets/images/2306fc1d8f6ea04d1ddd4ebfafd003f2.jpg",
+      image: "/assets/images/ceo.jpeg",
       details: [
-        "Client Operations",
-        "Strategy",
+        "Executive Strategy",
+        "Enterprise Delivery",
         "Business Growth",
-        "Agency Expansion",
-        "Partnerships",
-        "Project Direction"
+        "Technology Innovation",
+        "Global Client Operations",
+        "Strategic Partnerships"
       ],
-      quote: "Vision creates companies. Execution builds them."
+      quote: "Vision creates companies. Relentless engineering scales them."
+    },
+    get deepak() {
+      return this.sanjay;
+    },
+    get venu() {
+      return this.kishore;
     }
   },
   

@@ -119,78 +119,77 @@ const FOUNDER: LeadershipMember = {
       ],
     },
   ],
-  quote: "I don't just write code. I engineer digital futures.",
-  defaultImage: "/assets/images/128acbeb739b3eb8bc4d1d9ae15fcfb2.jpg",
-  cardSkillPreview: ["AI Workflow Engineer", "Full-Stack Dev", "3D Websites"],
+  quote: "Vision creates companies. Execution builds them.",
+  defaultImage: "/assets/images/founder.jpeg",
+  cardSkillPreview: ["AI Workflow Engineer", "Full-Stack Dev", "Cloud Architect"],
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CO-FOUNDER — DEEPAK (LOCKED)
+// CO-FOUNDER — SANJAY (LOCKED)
 // ─────────────────────────────────────────────────────────────────────────────
 const CO_FOUNDER: LeadershipMember = {
   leadershipPosition: "CO_FOUNDER",
-  name: "Deepak",
-  role: "Communication & Community Lead",
-  tagline: "Co-Founder & Community Lead",
+  name: "Sanjay",
+  role: "Co-Founder & Operations Lead",
+  tagline: "Co-Founder & Operations Lead",
   description:
-    "Deepak manages the people side of CodeXa. He helps keep the team organized, supports students and applicants, coordinates internship communication, and builds a welcoming developer community.",
+    "Sanjay drives operations, cross-platform product architecture, and ecosystem expansion at CodeXa Agency, ensuring smooth coordination across engineering and clients.",
   modalSections: [
     {
-      title: "Community & Operations",
+      title: "Operations & Platform Growth",
       type: "skills",
       skills: [
+        "Platform Architecture",
+        "Operations Leadership",
         "Team Coordination",
-        "Student Support",
-        "Internship Management",
-        "Community Building",
-        "Application Review",
-        "Developer Communication",
-        "Member Engagement",
-        "Internal Collaboration",
-        "Feedback Collection",
-        "New Member Guidance",
-        "Team Updates and Coordination",
+        "Product Scaling",
+        "Ecosystem Growth",
+        "Client Solutions",
+        "Engineering Management",
+        "Workflow Automation",
+        "Developer Community",
+        "Quality Assurance",
+        "Cross-Platform Systems",
       ],
     },
   ],
-  quote: "Helping every developer grow together.",
-  defaultImage: "/assets/images/2299fdd2a1d01339a71af61a2c7e9cac.jpg",
-  cardSkillPreview: ["Team Coordination", "Community Building", "Internship Mgmt"],
+  quote: "Precision execution turns bold ideas into reality.",
+  defaultImage: "/assets/images/co-founder.jpeg",
+  cardSkillPreview: ["Platform Architecture", "Operations", "Team Leadership"],
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CEO — VENU (LOCKED)
+// CEO — KISHORE (LOCKED)
 // ─────────────────────────────────────────────────────────────────────────────
 const CEO: LeadershipMember = {
   leadershipPosition: "CEO",
-  name: "Venu",
-  role: "CEO & Strategy Lead",
-  tagline: "CEO & Strategy Lead",
+  name: "Kishore",
+  role: "CEO & Executive Strategy",
+  tagline: "CEO & Executive Strategy",
   description:
-    "Venu drives CodeXa's business direction, client coordination, partnerships, growth planning, and long-term agency expansion. He focuses on turning the team's technical strengths into clear execution and sustainable growth.",
+    "Kishore directs executive strategy, key enterprise partnerships, and technology innovation at CodeXa Agency, scaling client deliveries globally.",
   modalSections: [
     {
-      title: "Leadership & Growth",
+      title: "Executive Strategy & Enterprise Delivery",
       type: "skills",
       skills: [
-        "Client Operations",
-        "Business Strategy",
-        "Growth Planning",
-        "Agency Expansion",
-        "Partnerships",
-        "Project Direction",
-        "Client Communication",
-        "Team Leadership",
-        "Opportunity Planning",
-        "Service Strategy",
-        "Brand Direction",
-        "Operational Decisions",
+        "Executive Strategy",
+        "Enterprise Delivery",
+        "Business Growth",
+        "Technology Innovation",
+        "Global Client Operations",
+        "Strategic Partnerships",
+        "Engineering Leadership",
+        "Product Direction",
+        "Brand Strategy",
+        "Resource Optimization",
+        "Scalable Infrastructure",
       ],
     },
   ],
-  quote: "Vision creates companies. Execution builds them.",
-  defaultImage: "/assets/images/2306fc1d8f6ea04d1ddd4ebfafd003f2.jpg",
-  cardSkillPreview: ["Business Strategy", "Agency Growth", "Client Operations"],
+  quote: "Vision creates companies. Relentless engineering scales them.",
+  defaultImage: "/assets/images/ceo.jpeg",
+  cardSkillPreview: ["Executive Strategy", "Enterprise Delivery", "Business Growth"],
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

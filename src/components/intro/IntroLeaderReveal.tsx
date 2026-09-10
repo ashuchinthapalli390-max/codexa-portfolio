@@ -7,6 +7,9 @@ import { getMorphGlyphsForChar } from "./intro-language-tokens";
 interface IntroLeaderRevealProps {
   role: string;
   name: string;
+  mediaUrl?: string;
+  positionX?: number;
+  positionY?: number;
   isReducedMotion?: boolean;
   isExiting?: boolean;
 }
@@ -97,6 +100,9 @@ function LeaderCharSlot({ char, index, isReducedMotion }: LeaderCharSlotProps) {
 export function IntroLeaderReveal({
   role,
   name,
+  mediaUrl,
+  positionX = 50,
+  positionY = 50,
   isReducedMotion = false,
   isExiting = false,
 }: IntroLeaderRevealProps) {
@@ -118,8 +124,42 @@ export function IntroLeaderReveal({
         initial={{ scaleX: 0 }}
         animate={{ scaleX: 1 }}
         transition={{ duration: 0.8 }}
-        className="w-20 h-[2px] bg-[#FF1E3C] mb-4 shadow-[0_0_12px_#FF1E3C]"
+        className="w-20 h-[2px] bg-[#FF1E3C] mb-3 shadow-[0_0_12px_#FF1E3C]"
       />
+
+      {/* Leader Avatar Card with Cyber Hologram Halo */}
+      {mediaUrl && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.84, y: -8 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
+          className="relative mb-3 group"
+        >
+          {/* Animated Halo Glow */}
+          <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-crimson via-bright-red to-deep-red opacity-70 blur-sm group-hover:opacity-100 transition-opacity" />
+
+          {/* Cyber Framing */}
+          <div className="relative w-24 h-24 sm:w-28 sm:h-28 md:w-32 md:h-32 rounded-2xl overflow-hidden border-2 border-bright-red/90 bg-black shadow-[0_0_25px_rgba(255,30,60,0.5)]">
+            <img
+              src={mediaUrl}
+              alt={name}
+              className="w-full h-full object-cover select-none"
+              style={{
+                objectPosition: `${positionX}% ${positionY}%`,
+              }}
+            />
+            {/* Subtle cyber scanline texture */}
+            <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0)_50%,rgba(0,0,0,0.35)_50%)] bg-[length:100%_4px] opacity-25 pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none" />
+          </div>
+
+          {/* Corner Cyber Brackets */}
+          <div className="absolute -top-1 -left-1 w-2.5 h-2.5 border-t-2 border-l-2 border-[#FF1E3C] pointer-events-none" />
+          <div className="absolute -top-1 -right-1 w-2.5 h-2.5 border-t-2 border-r-2 border-[#FF1E3C] pointer-events-none" />
+          <div className="absolute -bottom-1 -left-1 w-2.5 h-2.5 border-b-2 border-l-2 border-[#FF1E3C] pointer-events-none" />
+          <div className="absolute -bottom-1 -right-1 w-2.5 h-2.5 border-b-2 border-r-2 border-[#FF1E3C] pointer-events-none" />
+        </motion.div>
+      )}
 
       {/* Role Monospace Title */}
       <motion.div

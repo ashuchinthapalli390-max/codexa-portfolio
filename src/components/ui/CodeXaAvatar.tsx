@@ -43,10 +43,11 @@ export function CodeXaAvatar({
   const posX = positionX !== null && positionX !== undefined ? positionX : 50;
   const posY = positionY !== null && positionY !== undefined ? positionY : 50;
   const scale = zoom !== null && zoom !== undefined && zoom >= 1 ? zoom : 1;
+  const isRoundedClassProvided = className.includes("rounded-");
 
   return (
     <div
-      className={`relative rounded-full overflow-hidden flex-shrink-0 bg-[#0A0A0A] border transition-all duration-300 ${
+      className={`relative ${isRoundedClassProvided ? "" : "rounded-full"} overflow-hidden flex-shrink-0 bg-[#0A0A0A] border transition-all duration-300 ${
         showGlow
           ? "border-bright-red shadow-[0_0_15px_rgba(255,30,60,0.45)] hover:shadow-[0_0_22px_rgba(255,30,60,0.65)] hover:scale-[1.03]"
           : "border-crimson/30 hover:border-crimson/60"
@@ -57,11 +58,11 @@ export function CodeXaAvatar({
         src={finalSrc}
         alt={alt}
         onError={() => setHasError(true)}
-        className="w-full h-full object-cover transition-transform duration-300"
+        className="w-full h-full object-cover transition-transform duration-300 select-none"
         style={{
           objectPosition: `${posX}% ${posY}%`,
           transform: `scale(${scale})`,
-          transformOrigin: "center center",
+          transformOrigin: `${posX}% ${posY}%`,
         }}
       />
     </div>
