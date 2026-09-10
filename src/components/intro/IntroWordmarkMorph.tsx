@@ -27,8 +27,8 @@ function MorphCharacterSlot({ targetChar, slotIndex, isReducedMotion }: SlotProp
   const [isLocked, setIsLocked] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
 
-  // Stagger delay: 140ms to 200ms per slot (160ms)
-  const startDelayMs = slotIndex * 160;
+  // Stagger delay: 90ms to 140ms per slot (110ms)
+  const startDelayMs = slotIndex * 110;
 
   useEffect(() => {
     if (isSpace) return;
@@ -42,7 +42,7 @@ function MorphCharacterSlot({ targetChar, slotIndex, isReducedMotion }: SlotProp
     let intervalId: ReturnType<typeof setInterval>;
 
     const startTimeout = setTimeout(() => {
-      // Step slowly through language glyphs (360ms per language hold)
+      // Step through language glyphs (220ms per language hold)
       intervalId = setInterval(() => {
         frameIndex++;
         setStepIndex(frameIndex);
@@ -55,7 +55,7 @@ function MorphCharacterSlot({ targetChar, slotIndex, isReducedMotion }: SlotProp
           setIsLocked(true);
           clearInterval(intervalId);
         }
-      }, 360);
+      }, 220);
     }, startDelayMs);
 
     return () => {
@@ -72,8 +72,8 @@ function MorphCharacterSlot({ targetChar, slotIndex, isReducedMotion }: SlotProp
   // Subtle rotation range: -3deg to +3deg
   const initialRot = slotIndex % 3 === 0 ? -2.5 : slotIndex % 2 === 0 ? 2.5 : -1.5;
 
-  // Scale: 2.2 -> 1.5 -> 1.0
-  const currentScale = isLocked ? 1.0 : stepIndex > 3 ? 1.5 : 2.1;
+  // Scale: 1.95 -> 1.35 -> 1.0
+  const currentScale = isLocked ? 1.0 : stepIndex > 3 ? 1.35 : 1.95;
 
   return (
     <div
@@ -85,7 +85,7 @@ function MorphCharacterSlot({ targetChar, slotIndex, isReducedMotion }: SlotProp
       <motion.span
         initial={{
           opacity: 0,
-          scale: isReducedMotion ? 1 : 2.2,
+          scale: isReducedMotion ? 1 : 1.95,
           rotate: isReducedMotion ? 0 : initialRot,
         }}
         animate={{
@@ -94,7 +94,7 @@ function MorphCharacterSlot({ targetChar, slotIndex, isReducedMotion }: SlotProp
           rotate: isLocked ? 0 : initialRot * 0.4,
         }}
         transition={{
-          duration: isReducedMotion ? 0.4 : 0.7,
+          duration: isReducedMotion ? 0.4 : 0.65,
           ease: [0.16, 1, 0.3, 1], // easeOutExpo
         }}
         className={`font-orbitron font-black text-2xl sm:text-4xl md:text-5xl lg:text-6xl text-center leading-none transition-colors duration-300 ${
@@ -123,15 +123,15 @@ export function IntroWordmarkMorph({
   const [activeLangIndex, setActiveLangIndex] = useState(0);
 
   useEffect(() => {
-    // Cycle language indicators slowly across Scene 3
+    // Cycle language indicators across Scene 3
     const langInterval = setInterval(() => {
       setActiveLangIndex((prev) => (prev + 1) % CODEXA_MULTILINGUAL_VARIANTS.length);
-    }, 1200);
+    }, 700);
 
-    // Full 12s completion timer
+    // 6.8s completion timer (Scene 3: 5.0s to 12.0s)
     const completeTimer = setTimeout(() => {
       if (onComplete) onComplete();
-    }, 11500);
+    }, 6800);
 
     return () => {
       clearInterval(langInterval);

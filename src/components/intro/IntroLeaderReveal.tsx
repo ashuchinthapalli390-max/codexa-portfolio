@@ -29,8 +29,8 @@ function LeaderCharSlot({ char, index, isReducedMotion }: LeaderCharSlotProps) {
   const [currentGlyph, setCurrentGlyph] = useState<string>(glyphs[0] || char);
   const [isLocked, setIsLocked] = useState(false);
 
-  // Stagger: 120ms to 160ms per character
-  const startDelayMs = index * 140;
+  // Stagger: 90ms to 140ms per character (110ms)
+  const startDelayMs = index * 110;
 
   useEffect(() => {
     if (isSpace) return;
@@ -44,7 +44,7 @@ function LeaderCharSlot({ char, index, isReducedMotion }: LeaderCharSlotProps) {
     let interval: ReturnType<typeof setInterval>;
 
     const timer = setTimeout(() => {
-      // Step deliberately through glyphs (240ms per step)
+      // Step smoothly through glyphs (170ms per step)
       interval = setInterval(() => {
         frame++;
         if (frame < glyphs.length - 1) {
@@ -54,7 +54,7 @@ function LeaderCharSlot({ char, index, isReducedMotion }: LeaderCharSlotProps) {
           setIsLocked(true);
           clearInterval(interval);
         }
-      }, 240);
+      }, 170);
     }, startDelayMs);
 
     return () => {

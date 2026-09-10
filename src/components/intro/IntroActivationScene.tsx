@@ -17,7 +17,7 @@ export function IntroActivationScene({ isReducedMotion = false }: IntroActivatio
         <motion.div
           initial={{ scale: 0.1, opacity: 0 }}
           animate={{ scale: 1, opacity: [0, 0.9, 0.7] }}
-          transition={{ duration: 2.2, ease: [0.16, 1, 0.3, 1] }}
+          transition={{ duration: 1.6, ease: [0.16, 1, 0.3, 1] }}
           className="absolute inset-0 rounded-full border border-[rgba(255,30,60,0.45)]"
           style={{
             boxShadow: "0 0 25px rgba(217,4,41,0.25), inset 0 0 15px rgba(217,4,41,0.15)",
@@ -28,7 +28,7 @@ export function IntroActivationScene({ isReducedMotion = false }: IntroActivatio
         <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1.15, opacity: [0, 0.4, 0.25] }}
-          transition={{ duration: 3.0, ease: "easeOut" }}
+          transition={{ duration: 2.0, ease: "easeOut" }}
           className="absolute -inset-4 rounded-full pointer-events-none"
           style={{
             background: "radial-gradient(circle, rgba(255,30,60,0.2) 0%, transparent 70%)",
@@ -40,7 +40,7 @@ export function IntroActivationScene({ isReducedMotion = false }: IntroActivatio
         {!isReducedMotion && (
           <motion.div
             animate={{ rotate: 360 }}
-            transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
+            transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
             className="absolute inset-0 rounded-full pointer-events-none"
           >
             <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-[#FF1E3C] shadow-[0_0_10px_#FF1E3C]" />
@@ -62,7 +62,7 @@ export function IntroActivationScene({ isReducedMotion = false }: IntroActivatio
             strokeDasharray="4 4"
             initial={{ pathLength: 0 }}
             animate={{ pathLength: 1 }}
-            transition={{ duration: 1.5, delay: 0.5 }}
+            transition={{ duration: 1.0, delay: 0.2 }}
           />
           <motion.line
             x1="100%"

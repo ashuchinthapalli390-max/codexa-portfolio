@@ -64,7 +64,7 @@ export function useIntroLeadership(): {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
       controller.abort();
-    }, 2000); // 2 seconds maximum wait per specification
+    }, 1500); // 1.5 seconds maximum wait per specification
 
     fetch("/api/leadership/public", {
       signal: controller.signal,

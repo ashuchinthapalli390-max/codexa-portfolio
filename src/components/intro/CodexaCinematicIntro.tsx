@@ -172,7 +172,7 @@ export function CodexaCinematicIntro({ onComplete }: CodexaCinematicIntroProps) 
         opacity: isFadingOut ? 0 : 1,
         pointerEvents: isFadingOut ? "none" : "auto",
       }}
-      aria-label="CodeXa 50-Second Cinematic Identity Sequence"
+      aria-label="CodeXa 30-Second Cinematic Identity Sequence"
     >
       {/* 1. Skip Intro Button (Top-Right + ESC) */}
       <IntroSkipButton onSkip={handleFinish} />

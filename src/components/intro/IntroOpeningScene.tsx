@@ -23,7 +23,7 @@ export function IntroOpeningScene({ isReducedMotion = false }: IntroOpeningScene
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 0.08 }}
-        transition={{ duration: 3, delay: 0.5 }}
+        transition={{ duration: 1.5, delay: 0.2 }}
         className="absolute inset-0"
         style={{
           backgroundImage: `
@@ -47,7 +47,7 @@ export function IntroOpeningScene({ isReducedMotion = false }: IntroOpeningScene
       <motion.div
         initial={{ opacity: 0, scale: 0.7 }}
         animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 3.5, delay: 0.6, ease: "easeOut" }}
+        transition={{ duration: 2.0, delay: 0.2, ease: "easeOut" }}
         className="absolute inset-0"
         style={{
           background:
@@ -55,12 +55,12 @@ export function IntroOpeningScene({ isReducedMotion = false }: IntroOpeningScene
         }}
       />
 
-      {/* 3 & 4. Thin red horizontal line slowly expanding from center outward */}
+      {/* 3 & 4. Thin red horizontal line expanding from center outward */}
       <div className="absolute top-1/2 left-0 right-0 -translate-y-1/2 flex items-center justify-center">
         <motion.div
           initial={{ scaleX: 0, opacity: 0 }}
           animate={{ scaleX: 1, opacity: [0, 0.9, 0.6] }}
-          transition={{ duration: 3.2, delay: 0.8, ease: [0.16, 1, 0.3, 1] }}
+          transition={{ duration: 1.8, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
           className="w-full max-w-5xl h-[1px]"
           style={{
             background:

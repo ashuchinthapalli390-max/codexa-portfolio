@@ -6,13 +6,22 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { idToken } = body;
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json(
+        { success: false, authorized: false, error: "Invalid or malformed request body." },
+        { status: 401 }
+      );
+    }
 
-    if (!idToken || typeof idToken !== "string") {
+    const { idToken } = body || {};
+
+    if (!idToken || typeof idToken !== "string" || !idToken.trim()) {
       return NextResponse.json(
         { success: false, authorized: false, error: "Firebase ID token is required." },
-        { status: 400 }
+        { status: 401 }
       );
     }
 
@@ -22,13 +31,20 @@ export async function POST(req: NextRequest) {
     const result = await handleFirebaseSession(idToken, { userAgent, ip });
 
     if (!result.success || !result.authorized) {
+      const isTokenError =
+        result.message?.toLowerCase().includes("invalid") ||
+        result.message?.toLowerCase().includes("expired") ||
+        result.message?.toLowerCase().includes("malformed") ||
+        result.message?.toLowerCase().includes("token") ||
+        result.message?.toLowerCase().includes("decode");
+
       return NextResponse.json(
         {
           success: false,
           authorized: false,
           error: result.message || "Unauthorized account.",
         },
-        { status: result.message?.includes("Invalid") || result.message?.includes("expired") ? 401 : 403 }
+        { status: isTokenError ? 401 : 403 }
       );
     }
 
