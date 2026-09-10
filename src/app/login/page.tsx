@@ -557,63 +557,6 @@ function LoginForm() {
     }
   };
 
-  // ── Status Fallback UI ────────────────────────────────────────────────────
-  if (status === "temporarily-unavailable") {
-    return (
-      <div className="relative min-h-screen bg-[#050505] text-white flex flex-col justify-between overflow-hidden">
-        <CyberWebOverlay />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[500px] bg-crimson/10 rounded-full blur-[180px] pointer-events-none" />
-
-        <header className="relative z-20 px-6 py-6 max-w-7xl mx-auto w-full flex justify-between items-center">
-          <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="w-8 h-8 rounded-lg overflow-hidden border border-bright-red/50 shadow-[0_0_15px_rgba(217,4,41,0.3)]">
-              <Image src="/logo.jpeg" alt="Logo" width={32} height={32} className="w-full h-full object-cover" />
-            </div>
-            <span className="font-orbitron font-black text-sm tracking-[0.2em] text-white">
-              CODEXA <span className="text-crimson text-xs font-normal">GATEWAY</span>
-            </span>
-          </Link>
-        </header>
-
-        <main className="relative z-20 flex items-center justify-center px-4 py-12">
-          <div className="w-full max-w-md p-8 sm:p-10 rounded-3xl bg-[#080808]/95 border border-crimson/40 shadow-[0_0_50px_rgba(217,4,41,0.2)] text-center space-y-6">
-            <div className="w-16 h-16 rounded-2xl bg-crimson/20 border border-bright-red flex items-center justify-center mx-auto shadow-[0_0_20px_rgba(217,4,41,0.4)]">
-              <RefreshCw className="w-8 h-8 text-bright-red animate-spin" />
-            </div>
-            <div className="space-y-2">
-              <span className="text-[10px] font-orbitron font-bold uppercase tracking-[0.25em] text-bright-red px-3 py-1 rounded-full bg-crimson/15 border border-crimson/30">
-                CODEXA SECURITY GATEWAY
-              </span>
-              <h2 className="font-orbitron font-black text-xl text-white uppercase tracking-wider">
-                RESTORING SECURE SESSION...
-              </h2>
-              <p className="text-xs text-[#AAAAAA] leading-relaxed">
-                {authErrorMsg || "Connection to the authentication service is temporarily unavailable. Retrying..."}
-              </p>
-              {requestId && (
-                <p className="text-[10px] font-mono text-[#666666]">
-                  Diagnostic Ref: {requestId}
-                </p>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => retryConnection()}
-              className="w-full py-3.5 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-lg"
-            >
-              <RefreshCw className="w-4 h-4" /> RETRY CONNECTION
-            </button>
-          </div>
-        </main>
-
-        <footer className="relative z-20 px-6 py-6 text-center text-xs text-[#555] font-mono">
-          CodeXa Developer Network &bull; Cryptographically Verified Platform
-        </footer>
-      </div>
-    );
-  }
-
   return (
     <div className="relative min-h-screen bg-[#050505] text-white flex flex-col justify-between overflow-x-hidden selection:bg-bright-red selection:text-white">
       {/* Background Cyber Grid & Crimson Atmosphere */}
@@ -744,6 +687,26 @@ function LoginForm() {
                       Single Sign-On for authorized founders, executives & team members.
                     </p>
                   </div>
+
+                  {/* Reconnecting Alert Banner if service is temporarily unavailable */}
+                  {status === "temporarily-unavailable" && (
+                    <div className="p-3 rounded-2xl bg-[#141414] border border-bright-red/40 flex items-center justify-between text-xs text-[#DDD] shadow-[0_0_15px_rgba(217,4,41,0.15)]">
+                      <div className="flex items-center gap-2">
+                        <RefreshCw className="w-3.5 h-3.5 text-bright-red animate-spin" />
+                        <span>
+                          {authErrorMsg || "Security Gateway reconnecting..."}
+                          {requestId && <span className="font-mono text-[10px] text-[#888] ml-1.5">[{requestId}]</span>}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => retryConnection()}
+                        className="px-2.5 py-1 rounded-lg bg-crimson hover:bg-bright-red text-white text-[10px] font-orbitron font-bold uppercase tracking-wider"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
 
                   {/* Unauthorized Account Alert (Requirement 10) */}
                   {unauthorizedMessage && (

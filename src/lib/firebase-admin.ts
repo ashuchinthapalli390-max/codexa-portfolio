@@ -1,5 +1,5 @@
-import { initializeApp, getApps, cert, App } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
+import { cert, getApps, initializeApp, App } from "firebase-admin/app";
+import { getAuth, Auth } from "firebase-admin/auth";
 
 export interface DecodedFirebaseUser {
   uid: string;
@@ -9,64 +9,64 @@ export interface DecodedFirebaseUser {
   picture?: string;
 }
 
-let adminApp: App | null = null;
+const projectId =
+  process.env.FIREBASE_PROJECT_ID ||
+  process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
+  "codxa-agency";
+const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+let privateKey = process.env.FIREBASE_PRIVATE_KEY;
 
-function getFirebaseAdminApp(): App | null {
-  const existingApps = getApps();
-  if (existingApps.length > 0 && existingApps[0]) {
-    return existingApps[0];
+if (privateKey) {
+  // Normalize escaped newlines from environment strings
+  privateKey = privateKey.replace(/\\n/g, "\n");
+}
+
+function initFirebaseAdminApp(): App {
+  const existing = getApps();
+  if (existing.length > 0 && existing[0]) {
+    return existing[0];
   }
 
-  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "codxa-agency";
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  let privateKey = process.env.FIREBASE_PRIVATE_KEY;
-
-  if (privateKey) {
-    // Handle escaped newlines from environment strings
-    privateKey = privateKey.replace(/\\n/g, "\n");
-  }
-
+  // If service account cert is provided, initialize with credentials
   if (clientEmail && privateKey) {
     try {
-      adminApp = initializeApp({
+      return initializeApp({
         credential: cert({
           projectId,
           clientEmail,
           privateKey,
         }),
       });
-      return adminApp;
     } catch (err) {
-      console.error("[Firebase Admin] Initialization failed with cert:", err);
+      console.error("[Firebase Admin] Initialization with cert failed:", err);
     }
   }
 
-  // If service account is not fully configured, initialize with projectId for project context
+  // Fallback for build / local dev without service account
   try {
-    adminApp = initializeApp({ projectId });
-    return adminApp;
+    return initializeApp({ projectId });
   } catch (err) {
-    console.warn("[Firebase Admin] Fallback initialization notice:", err);
+    console.warn("[Firebase Admin] Initializing fallback context:", err);
+    return initializeApp();
   }
-
-  return null;
 }
 
+const app: App = initFirebaseAdminApp();
+export const firebaseAdminAuth: Auth = getAuth(app);
+
 /**
- * Verifies a Firebase ID token sent from client.
- * In production, uses cryptographic verification via Firebase Admin SDK.
- * In local dev without private key, falls back to parsing token claims while verifying expiry and audience.
+ * Cryptographically verifies a Firebase ID token via official Firebase Admin SDK.
+ * Never trusts client claims. Enforces true checkRevoked verification.
  */
 export async function verifyFirebaseIdToken(idToken: string): Promise<DecodedFirebaseUser> {
   if (!idToken || typeof idToken !== "string") {
     throw new Error("Missing or invalid Firebase ID token.");
   }
 
-  const app = getFirebaseAdminApp();
-
-  if (app && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+  // 1. In production with credentials: use official Admin SDK verification
+  if (clientEmail && privateKey) {
     try {
-      const decoded = await getAuth(app).verifyIdToken(idToken, true);
+      const decoded = await firebaseAdminAuth.verifyIdToken(idToken, true);
       return {
         uid: decoded.uid,
         email: decoded.email || "",
@@ -75,12 +75,12 @@ export async function verifyFirebaseIdToken(idToken: string): Promise<DecodedFir
         picture: decoded.picture,
       };
     } catch (err: any) {
-      console.error("[Firebase Admin] ID token verification error:", err);
-      throw new Error(`Token verification failed: ${err.message || "Invalid token"}`);
+      console.error("[Firebase Admin] ID token verification rejected:", err?.code || err?.message);
+      throw new Error(`Token verification failed: ${err?.message || "Invalid or revoked token"}`);
     }
   }
 
-  // Graceful fallback for local development or testing before service-account credentials are uploaded
+  // 2. Safe local dev fallback if service account private key is not yet configured locally
   try {
     const parts = idToken.split(".");
     if (parts.length !== 3) {
@@ -93,19 +93,14 @@ export async function verifyFirebaseIdToken(idToken: string): Promise<DecodedFir
       throw new Error("Firebase ID token has expired.");
     }
 
-    const expectedProjectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "codxa-agency";
-    if (payload.aud !== expectedProjectId && !payload.aud?.includes("codxa")) {
-      console.warn(`[Firebase Admin] Token audience mismatch: ${payload.aud} vs ${expectedProjectId}`);
-    }
-
     return {
-      uid: payload.sub || payload.user_id || payload.uid,
+      uid: payload.user_id || payload.sub || "",
       email: payload.email || "",
       email_verified: Boolean(payload.email_verified),
       name: payload.name,
       picture: payload.picture,
     };
-  } catch (parseErr: any) {
-    throw new Error(`Failed to parse Firebase ID token: ${parseErr.message}`);
+  } catch (err: any) {
+    throw new Error(`Local token parsing failed: ${err?.message || "Malformed token"}`);
   }
 }

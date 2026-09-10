@@ -79,7 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // 2. Confirmed Unauthenticated (401)
+      // 2. Confirmed Unauthenticated (401 - Not signed in)
       if (res.status === 401) {
         if (!isMountedRef.current) return null;
         setUser(null);
@@ -89,18 +89,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return null;
       }
 
-      // 3. Temporary Service / Database Failure (503, 500, or other)
+      // 3. Forbidden / Not Authorized (403)
+      if (res.status === 403) {
+        if (!isMountedRef.current) return null;
+        setUser(null);
+        setStatus("unauthenticated");
+        setErrorMessage("Account is not authorized for the requested resource.");
+        setRequestId(null);
+        return null;
+      }
+
+      // 4. Server / Database Error (503 = Database unavailable, 500 = Internal server error)
       const data = await res.json().catch(() => ({}));
       const reqId = data?.requestId || null;
 
       if (!isMountedRef.current) return null;
       setStatus("temporarily-unavailable");
-      setErrorMessage(
-        data?.message || "We temporarily couldn't verify your secure session. Retrying..."
-      );
+
+      if (res.status === 503) {
+        setErrorMessage(data?.message || "CodeXa database is temporarily unavailable. Retrying...");
+      } else if (res.status === 500) {
+        setErrorMessage(data?.message || "Authentication server error encountered.");
+      } else {
+        setErrorMessage(data?.message || "We temporarily couldn't verify your secure session. Retrying...");
+      }
+
       setRequestId(reqId);
 
-      // Trigger automatic exponential backoff retry if attempts remain
+      // Trigger limited exponential backoff retry (up to 3 times)
       if (retryCount < RETRY_DELAYS.length) {
         const delay = RETRY_DELAYS[retryCount];
         if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
@@ -117,7 +133,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!isMountedRef.current) return null;
 
       setStatus("temporarily-unavailable");
-      setErrorMessage("Network error connecting to CodeXa Security Gateway. Retrying...");
+      setErrorMessage("Network issue connecting to CodeXa Security Gateway. Please check your connection.");
 
       if (retryCount < RETRY_DELAYS.length) {
         const delay = RETRY_DELAYS[retryCount];

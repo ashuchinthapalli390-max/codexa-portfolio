@@ -21,58 +21,73 @@ const NO_CACHE_HEADERS = {
 };
 
 export async function GET() {
-  const result = await getCurrentSessionResult();
+  try {
+    const result = await getCurrentSessionResult();
 
-  if (result.status === "error") {
+    if (result.status === "error") {
+      return NextResponse.json(
+        {
+          authenticated: null,
+          error: "AUTH_SERVICE_UNAVAILABLE",
+          message: "We temporarily couldn't verify your secure session. Retrying...",
+          requestId: result.requestId,
+        },
+        {
+          status: 503,
+          headers: NO_CACHE_HEADERS,
+        }
+      );
+    }
+
+    if (result.status === "unauthenticated") {
+      return NextResponse.json(
+        {
+          authenticated: false,
+          user: null,
+          error: "SESSION_INVALID",
+          reason: result.reason,
+        },
+        {
+          status: 401,
+          headers: NO_CACHE_HEADERS,
+        }
+      );
+    }
+
+    const user = result.user;
+
+    return NextResponse.json(
+      {
+        authenticated: true,
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          displayName: user.displayName,
+          role: user.role,
+          isActive: user.isActive,
+          mediaUrl: user.mediaUrl,
+          leadershipPosition: user.leadershipPosition,
+          primaryRole: user.primaryRole,
+        },
+      },
+      {
+        status: 200,
+        headers: NO_CACHE_HEADERS,
+      }
+    );
+  } catch (unexpectedErr: any) {
+    console.error("[GET /api/session] Unexpected error:", unexpectedErr);
     return NextResponse.json(
       {
         authenticated: null,
-        error: "AUTH_SERVICE_UNAVAILABLE",
-        message: "We temporarily couldn't verify your secure session. Retrying...",
-        requestId: result.requestId,
+        error: "INTERNAL_ERROR",
+        message: "An unexpected error occurred while verifying your session.",
       },
       {
-        status: 503,
+        status: 500,
         headers: NO_CACHE_HEADERS,
       }
     );
   }
-
-  if (result.status === "unauthenticated") {
-    return NextResponse.json(
-      {
-        authenticated: false,
-        user: null,
-        error: "SESSION_INVALID",
-        reason: result.reason,
-      },
-      {
-        status: 401,
-        headers: NO_CACHE_HEADERS,
-      }
-    );
-  }
-
-  const user = result.user;
-
-  return NextResponse.json(
-    {
-      authenticated: true,
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        displayName: user.displayName,
-        role: user.role,
-        isActive: user.isActive,
-        mediaUrl: user.mediaUrl,
-        leadershipPosition: user.leadershipPosition,
-        primaryRole: user.primaryRole,
-      },
-    },
-    {
-      status: 200,
-      headers: NO_CACHE_HEADERS,
-    }
-  );
 }

@@ -214,10 +214,25 @@ erDiagram
   - Secrets are encrypted with AES-256-CBC using `AUTH_SECRET` before database persistence.
   - Backup codes are hashed using `bcrypt` and invalidated immediately upon use.
 - **Strict Canonical Leadership Invariant**:
-  - `src/config/leadershipData.ts` holds the locked text content for Founder (Ashu), Deepak (Community Lead), and Venu (CEO).
-  - The API explicitly forbids updating text bios/roles of canonical leaders from client requests, ensuring integrity against tampering. Only photo media URLs and crop coordinates are mutable.
-- **Safe Diagnostics**:
-  - Diagnostic scripts (`auth-diagnose.ts`) never log passwords or secret keys.
+  - The canonical leadership team consists of **Ashu** (Founder), **Sanjay** (Co-Founder), and **Kishore** (CEO).
+  - Leadership profiles are managed centrally in the main admin dashboard and served to both the public site and the cinematic intro via `/api/leadership/public`.
+- **50-Second Cinematic Multilingual Intro Animation**:
+  - Pure code-based reveal (0:00 to 0:50s) utilizing Framer Motion, canvas, SVG, and CSS animations. No video files or heavy animation packages.
+  - Exactly 8 scenes:
+    - 00.0–05.0s: Scene 1 — Black cinematic initialization (`CODEXA SYSTEM // INITIALIZING` -> `SECURE EXPERIENCE CHANNEL // ACTIVE`).
+    - 05.0–09.0s: Scene 2 — System activation (expanding ring, orbiting particles, connecting lines, faint logo outline preview, `IDENTITY PROTOCOL // CODEXA`).
+    - 09.0–21.0s: Scene 3 — Multilingual `CODEXA AGENCY` transformation (12 seconds, character-by-character slot morphing across Telugu, Hindi, Tamil, Kannada, Malayalam, Bengali, Japanese, Korean, Arabic, and Greek).
+    - 21.0–26.0s: Scene 4 — Official CodeXa logo formation, crimson halo glow, and diagonal light sweep.
+    - 26.0–34.0s: Scene 5 — Founder — Ashu (multilingual character morph, 8s).
+    - 34.0–42.0s: Scene 6 — Co-Founder — Sanjay (multilingual character morph, 8s).
+    - 42.0–48.0s: Scene 7 — CEO — Kishore (multilingual character morph, 6s).
+    - 48.0–50.0s: Scene 8 — Final brand lockup (`CODEXA AGENCY`, `Where Ideas Become Digital Reality`, `LEARN • BUILD • DEPLOY • GROW`, glowing cyber frame) & smooth homepage reveal.
+  - Skip functionality via top-right `SKIP INTRO` button or `Escape` key, persisted via `sessionStorage` (`codexa_intro_seen_v1` & `v2`). Bypass with `?replayIntro=1`.
+- **Safe Diagnostics & Database Migrations**:
+  - Supabase PostgreSQL schema is maintained via Prisma migration `prisma/migrations/20260910000000_init_postgresql/migration.sql`.
+  - Deployment uses `npx prisma migrate deploy` via `DIRECT_URL`.
+  - Next.js server externals include `firebase-admin` via `next.config.js` to avoid ESM CommonJS collisions (`ERR_REQUIRE_ESM`).
+
 
 ---
 

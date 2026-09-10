@@ -26,7 +26,8 @@ function LeaderCharSlot({ char, index, isReducedMotion }: LeaderCharSlotProps) {
   const [currentGlyph, setCurrentGlyph] = useState<string>(glyphs[0] || char);
   const [isLocked, setIsLocked] = useState(false);
 
-  const startDelayMs = index * 65;
+  // Stagger: 120ms to 160ms per character
+  const startDelayMs = index * 140;
 
   useEffect(() => {
     if (isSpace) return;
@@ -40,6 +41,7 @@ function LeaderCharSlot({ char, index, isReducedMotion }: LeaderCharSlotProps) {
     let interval: ReturnType<typeof setInterval>;
 
     const timer = setTimeout(() => {
+      // Step deliberately through glyphs (240ms per step)
       interval = setInterval(() => {
         frame++;
         if (frame < glyphs.length - 1) {
@@ -49,7 +51,7 @@ function LeaderCharSlot({ char, index, isReducedMotion }: LeaderCharSlotProps) {
           setIsLocked(true);
           clearInterval(interval);
         }
-      }, 70);
+      }, 240);
     }, startDelayMs);
 
     return () => {
@@ -59,31 +61,31 @@ function LeaderCharSlot({ char, index, isReducedMotion }: LeaderCharSlotProps) {
   }, [isSpace, char, glyphs, isReducedMotion, startDelayMs]);
 
   if (isSpace) {
-    return <div className="w-2 sm:w-4" />;
+    return <div className="w-3 sm:w-5" />;
   }
 
   return (
-    <div className="relative flex items-center justify-center overflow-hidden w-[24px] sm:w-[38px] md:w-[50px] h-[44px] sm:h-[60px] md:h-[76px]">
+    <div className="relative flex items-center justify-center overflow-hidden w-[26px] sm:w-[42px] md:w-[56px] h-[48px] sm:h-[66px] md:h-[84px]">
       <motion.span
         initial={{
           opacity: 0,
-          scale: isReducedMotion ? 1 : 1.7,
+          scale: isReducedMotion ? 1 : 2.0,
         }}
         animate={{
-          opacity: isLocked ? 1 : 0.7,
-          scale: isLocked ? 1 : 1.2,
+          opacity: isLocked ? 1 : 0.75,
+          scale: isLocked ? 1 : 1.3,
         }}
-        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-        className={`font-orbitron font-black text-2xl sm:text-4xl md:text-5xl lg:text-6xl text-center leading-none transition-colors duration-200 ${
+        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+        className={`font-orbitron font-black text-3xl sm:text-5xl md:text-6xl text-center leading-none transition-colors duration-300 ${
           isLocked
-            ? "text-white drop-shadow-[0_0_20px_rgba(255,30,60,0.8)]"
-            : "text-[#FF1E3C] drop-shadow-[0_0_12px_rgba(217,4,41,0.6)]"
+            ? "text-white drop-shadow-[0_0_22px_rgba(255,30,60,0.85)]"
+            : "text-[#FF1E3C] drop-shadow-[0_0_14px_rgba(217,4,41,0.6)]"
         }`}
         style={{
           fontFamily: "'Orbitron', 'Inter', sans-serif",
           textShadow: isLocked
-            ? "0 0 15px rgba(255,30,60,0.8), 0 0 30px rgba(217,4,41,0.4)"
-            : "0 0 10px rgba(255,30,60,0.9)",
+            ? "0 0 18px rgba(255,30,60,0.85), 0 0 35px rgba(217,4,41,0.45)"
+            : "0 0 12px rgba(255,30,60,0.9)",
         }}
       >
         {currentGlyph}
@@ -102,35 +104,35 @@ export function IntroLeaderReveal({
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
+      initial={{ opacity: 0, scale: 0.96 }}
       animate={
         isExiting
-          ? { opacity: 0, scale: 1.04, filter: "blur(4px)" }
+          ? { opacity: 0, scale: 1.04, filter: "blur(5px)" }
           : { opacity: 1, scale: 1, filter: "blur(0px)" }
       }
-      transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+      transition={{ duration: 1.0, ease: [0.16, 1, 0.3, 1] }}
       className="flex flex-col items-center justify-center select-none max-w-xl mx-auto px-4"
     >
       {/* Subtle Crimson Laser Indicator Sweep */}
       <motion.div
         initial={{ scaleX: 0 }}
         animate={{ scaleX: 1 }}
-        transition={{ duration: 0.4 }}
-        className="w-16 h-[2px] bg-[#FF1E3C] mb-4 shadow-[0_0_10px_#FF1E3C]"
+        transition={{ duration: 0.8 }}
+        className="w-20 h-[2px] bg-[#FF1E3C] mb-4 shadow-[0_0_12px_#FF1E3C]"
       />
 
       {/* Role Monospace Title */}
       <motion.div
-        initial={{ opacity: 0, y: -4 }}
+        initial={{ opacity: 0, y: -6 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.1 }}
-        className="text-xs sm:text-sm md:text-base font-orbitron font-bold tracking-[0.4em] text-[#FF1E3C] uppercase mb-2"
-        style={{ textShadow: "0 0 10px rgba(255,30,60,0.6)" }}
+        transition={{ duration: 0.8, delay: 0.2 }}
+        className="text-xs sm:text-sm md:text-base font-orbitron font-bold tracking-[0.45em] text-[#FF1E3C] uppercase mb-2"
+        style={{ textShadow: "0 0 12px rgba(255,30,60,0.65)" }}
       >
         {role}
       </motion.div>
 
-      {/* Name with Multilingual Character Morph */}
+      {/* Name with Slow Multilingual Character Morph */}
       <div className="flex items-center justify-center flex-nowrap py-1">
         {characters.map((char, idx) => (
           <LeaderCharSlot
@@ -146,12 +148,12 @@ export function IntroLeaderReveal({
       <motion.div
         initial={{ scaleX: 0 }}
         animate={{ scaleX: 1 }}
-        transition={{ delay: 0.4, duration: 0.5, ease: "easeOut" }}
-        className="w-full max-w-[200px] sm:max-w-[280px] h-[1px] mt-3"
+        transition={{ delay: 0.8, duration: 1.0, ease: "easeOut" }}
+        className="w-full max-w-[220px] sm:max-w-[320px] h-[1px] mt-4"
         style={{
           background:
             "linear-gradient(90deg, transparent 0%, #FF1E3C 50%, transparent 100%)",
-          boxShadow: "0 0 12px rgba(255,30,60,0.8)",
+          boxShadow: "0 0 15px rgba(255,30,60,0.85)",
         }}
       />
     </motion.div>

@@ -37,8 +37,9 @@ export default function Home() {
       const urlParams = new URLSearchParams(window.location.search);
       const forceReplay =
         urlParams.get("replayIntro") === "1" || urlParams.get("intro") === "force";
-      const seen = sessionStorage.getItem("codexa_intro_seen_v2");
-      if (seen === "1" && !forceReplay) {
+      const seen1 = sessionStorage.getItem("codexa_intro_seen_v1");
+      const seen2 = sessionStorage.getItem("codexa_intro_seen_v2");
+      if ((seen1 === "1" || seen2 === "1") && !forceReplay) {
         setIntroActive(false);
       }
     } catch {

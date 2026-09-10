@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { WORDMARK_CHAR_GLYPHS } from "./intro-language-tokens";
+import { WORDMARK_CHAR_GLYPHS, CODEXA_MULTILINGUAL_VARIANTS } from "./intro-language-tokens";
 
 interface IntroWordmarkMorphProps {
   isReducedMotion?: boolean;
@@ -25,9 +25,10 @@ function MorphCharacterSlot({ targetChar, slotIndex, isReducedMotion }: SlotProp
 
   const [currentGlyph, setCurrentGlyph] = useState<string>(glyphPool[0] || targetChar);
   const [isLocked, setIsLocked] = useState(false);
+  const [stepIndex, setStepIndex] = useState(0);
 
-  // Staggered delay: 70ms - 110ms per character (averaging ~85ms)
-  const startDelayMs = slotIndex * 85;
+  // Stagger delay: 140ms to 200ms per slot (160ms)
+  const startDelayMs = slotIndex * 160;
 
   useEffect(() => {
     if (isSpace) return;
@@ -41,9 +42,11 @@ function MorphCharacterSlot({ targetChar, slotIndex, isReducedMotion }: SlotProp
     let intervalId: ReturnType<typeof setInterval>;
 
     const startTimeout = setTimeout(() => {
-      // Step rapidly through language glyphs
+      // Step slowly through language glyphs (360ms per language hold)
       intervalId = setInterval(() => {
         frameIndex++;
+        setStepIndex(frameIndex);
+
         if (frameIndex < glyphPool.length - 1) {
           setCurrentGlyph(glyphPool[frameIndex]);
         } else {
@@ -52,7 +55,7 @@ function MorphCharacterSlot({ targetChar, slotIndex, isReducedMotion }: SlotProp
           setIsLocked(true);
           clearInterval(intervalId);
         }
-      }, 75);
+      }, 360);
     }, startDelayMs);
 
     return () => {
@@ -61,46 +64,50 @@ function MorphCharacterSlot({ targetChar, slotIndex, isReducedMotion }: SlotProp
     };
   }, [isSpace, isReducedMotion, targetChar, glyphPool, startDelayMs]);
 
-  // If this is a space, return a dedicated spacer slot
+  // If this is a space, return a dedicated fixed spacer slot
   if (isSpace) {
     return <div className="w-2 sm:w-4 md:w-6 lg:w-8 h-full pointer-events-none" />;
   }
 
-  // Subtle rotation range: -4deg to +4deg
-  const initialRot = (slotIndex % 3 === 0 ? -3 : slotIndex % 2 === 0 ? 3 : -1.5);
+  // Subtle rotation range: -3deg to +3deg
+  const initialRot = slotIndex % 3 === 0 ? -2.5 : slotIndex % 2 === 0 ? 2.5 : -1.5;
+
+  // Scale: 2.2 -> 1.5 -> 1.0
+  const currentScale = isLocked ? 1.0 : stepIndex > 3 ? 1.5 : 2.1;
 
   return (
     <div
-      className="relative flex items-center justify-center overflow-hidden w-[22px] sm:w-[34px] md:w-[46px] lg:w-[56px] h-[40px] sm:h-[56px] md:h-[72px] lg:h-[84px] select-none"
+      className="relative flex items-center justify-center overflow-hidden w-[24px] sm:w-[38px] md:w-[50px] lg:w-[62px] h-[46px] sm:h-[62px] md:h-[78px] lg:h-[92px] select-none"
       style={{
-        perspective: "600px",
+        perspective: "800px",
       }}
     >
       <motion.span
         initial={{
           opacity: 0,
-          scale: isReducedMotion ? 1 : 1.8,
+          scale: isReducedMotion ? 1 : 2.2,
           rotate: isReducedMotion ? 0 : initialRot,
         }}
         animate={{
-          opacity: isLocked ? 1 : 0.75,
-          scale: isLocked ? 1 : 1.25,
-          rotate: isLocked ? 0 : initialRot * 0.5,
+          opacity: isLocked ? 1 : 0.8,
+          scale: isReducedMotion ? 1 : currentScale,
+          rotate: isLocked ? 0 : initialRot * 0.4,
         }}
         transition={{
-          duration: isReducedMotion ? 0.3 : 0.45,
-          ease: [0.16, 1, 0.3, 1],
+          duration: isReducedMotion ? 0.4 : 0.7,
+          ease: [0.16, 1, 0.3, 1], // easeOutExpo
         }}
-        className={`font-orbitron font-black text-2xl sm:text-4xl md:text-5xl lg:text-6xl text-center leading-none transition-colors duration-200 ${
+        className={`font-orbitron font-black text-2xl sm:text-4xl md:text-5xl lg:text-6xl text-center leading-none transition-colors duration-300 ${
           isLocked
-            ? "text-white drop-shadow-[0_0_20px_rgba(255,30,60,0.85)]"
-            : "text-[#FF1E3C] drop-shadow-[0_0_12px_rgba(217,4,41,0.6)]"
+            ? "text-white drop-shadow-[0_0_25px_rgba(255,30,60,0.85)]"
+            : "text-[#FF1E3C] drop-shadow-[0_0_14px_rgba(217,4,41,0.6)]"
         }`}
         style={{
-          fontFamily: "'Orbitron', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+          fontFamily:
+            "'Orbitron', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
           textShadow: isLocked
-            ? "0 0 15px rgba(255,30,60,0.7), 0 0 30px rgba(217,4,41,0.4)"
-            : "0 0 10px rgba(255,30,60,0.9)",
+            ? "0 0 20px rgba(255,30,60,0.8), 0 0 40px rgba(217,4,41,0.45)"
+            : "0 0 12px rgba(255,30,60,0.9)",
         }}
       >
         {currentGlyph}
@@ -113,17 +120,30 @@ export function IntroWordmarkMorph({
   isReducedMotion = false,
   onComplete,
 }: IntroWordmarkMorphProps) {
+  const [activeLangIndex, setActiveLangIndex] = useState(0);
+
   useEffect(() => {
-    // Wordmark settles around 2200ms
-    const timer = setTimeout(() => {
+    // Cycle language indicators slowly across Scene 3
+    const langInterval = setInterval(() => {
+      setActiveLangIndex((prev) => (prev + 1) % CODEXA_MULTILINGUAL_VARIANTS.length);
+    }, 1200);
+
+    // Full 12s completion timer
+    const completeTimer = setTimeout(() => {
       if (onComplete) onComplete();
-    }, 2200);
-    return () => clearTimeout(timer);
+    }, 11500);
+
+    return () => {
+      clearInterval(langInterval);
+      clearTimeout(completeTimer);
+    };
   }, [onComplete]);
+
+  const currentVariant = CODEXA_MULTILINGUAL_VARIANTS[activeLangIndex];
 
   return (
     <div className="flex flex-col items-center justify-center">
-      {/* Character Slots Container */}
+      {/* 1. Character Slots Container */}
       <div className="flex items-center justify-center flex-nowrap max-w-full px-2">
         {TARGET_CHARS.map((char, idx) => (
           <MorphCharacterSlot
@@ -135,16 +155,17 @@ export function IntroWordmarkMorph({
         ))}
       </div>
 
-      {/* Cyber Subtitle Decoded Indicator */}
+      {/* 2. Slow Localized Script Subtitle Telemetry */}
       <motion.div
-        initial={{ opacity: 0, y: 6 }}
+        initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 1.4, duration: 0.6 }}
-        className="mt-3 flex items-center gap-2 text-[9px] sm:text-[11px] font-mono tracking-[0.35em] text-[#D90429] uppercase"
+        transition={{ delay: 1.5, duration: 0.8 }}
+        className="mt-4 flex items-center gap-2.5 text-[10px] sm:text-xs font-mono tracking-[0.35em] text-[#D90429] uppercase"
       >
-        <span className="w-1 h-1 rounded-full bg-[#FF1E3C]" />
-        <span>CYBER ARCHITECTURE AGENCY</span>
-        <span className="w-1 h-1 rounded-full bg-[#FF1E3C]" />
+        <span className="w-1.5 h-1.5 rounded-full bg-[#FF1E3C] animate-pulse" />
+        <span>MULTILINGUAL IDENTITY SYSTEM</span>
+        <span className="text-[#666]">{"//"}</span>
+        <span className="text-white/80 font-bold">{currentVariant?.nativeName}</span>
       </motion.div>
     </div>
   );
