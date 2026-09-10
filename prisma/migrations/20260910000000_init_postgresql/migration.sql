@@ -1,4 +1,4 @@
-﻿-- CreateTable
+-- CreateTable
 CREATE TABLE "User" (
     "id" TEXT NOT NULL,
     "firebaseUid" TEXT,
@@ -694,4 +694,36 @@ ALTER TABLE "NotificationPreference" ADD CONSTRAINT "NotificationPreference_user
 
 -- AddForeignKey
 ALTER TABLE "ProjectPayment" ADD CONSTRAINT "ProjectPayment_projectApplicationId_fkey" FOREIGN KEY ("projectApplicationId") REFERENCES "ProjectApplication"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- CreateTable
+CREATE TABLE "AdminLoginIdentity" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "firebaseUid" TEXT,
+    "role" TEXT NOT NULL,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "lastLoginAt" TIMESTAMP(3),
+
+    CONSTRAINT "AdminLoginIdentity_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "AdminLoginIdentity_email_key" ON "AdminLoginIdentity"("email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "AdminLoginIdentity_firebaseUid_key" ON "AdminLoginIdentity"("firebaseUid");
+
+-- CreateIndex
+CREATE INDEX "AdminLoginIdentity_userId_idx" ON "AdminLoginIdentity"("userId");
+
+-- CreateIndex
+CREATE INDEX "AdminLoginIdentity_email_idx" ON "AdminLoginIdentity"("email");
+
+-- CreateIndex
+CREATE INDEX "AdminLoginIdentity_firebaseUid_idx" ON "AdminLoginIdentity"("firebaseUid");
+
+-- AddForeignKey
+ALTER TABLE "AdminLoginIdentity" ADD CONSTRAINT "AdminLoginIdentity_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 

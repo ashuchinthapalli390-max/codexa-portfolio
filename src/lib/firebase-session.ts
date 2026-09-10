@@ -248,16 +248,41 @@ export async function handleFirebaseSession(
       }
     }
 
-    // 5. Create persistent session and set HttpOnly cxa_session cookie
+    // 5. Track discrete AdminLoginIdentity without merging different UIDs
+    try {
+      await (db as any).adminLoginIdentity.upsert({
+        where: { email: normalizedEmail },
+        update: {
+          userId: user.id,
+          firebaseUid: decoded.uid,
+          role: identity.role,
+          isActive: true,
+          lastLoginAt: new Date(),
+        },
+        create: {
+          userId: user.id,
+          email: normalizedEmail,
+          firebaseUid: decoded.uid,
+          role: identity.role,
+          isActive: true,
+          lastLoginAt: new Date(),
+        },
+      });
+    } catch (identityErr) {
+      // Non-fatal if table is still migrating
+      console.warn("[AdminLoginIdentity Warning]:", identityErr);
+    }
+
+    // 6. Create persistent session and set HttpOnly cxa_session cookie
     await createSession(user.id, metadata);
 
-    // 6. Write comprehensive audit log
+    // 7. Write comprehensive audit log
     await dataStore
       .logAudit({
         action: "FIREBASE_OAUTH_LOGIN",
         actorId: user.id,
         actorName: user.profile?.displayName || user.fullName || user.username,
-        details: `Approved OAuth login via ${normalizedEmail} (mapped to canonical @${identity.canonicalUsername}, role: ${identity.role})`,
+        details: `Approved OAuth login via ${normalizedEmail} (UID: ${decoded.uid}) mapped to canonical @${identity.canonicalUsername}, role: ${identity.role}`,
         ipAddress: metadata?.ip || "127.0.0.1",
         userAgent: metadata?.userAgent,
       })

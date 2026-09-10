@@ -50,6 +50,7 @@ model User {
   mediaAssets         MediaAsset[]
   activityEvents      ActivityEvent[]
   auditLogs           AuditLog[]
+  adminIdentities     AdminLoginIdentity[]
 }
 
 // ─── TEAM PROFILES ────────────────────────────────────────────────────────────
@@ -583,5 +584,23 @@ model ProjectPayment {
   @@index([razorpayOrderId])
   @@index([razorpayPaymentId])
   @@index([status])
+}
+
+// ─── ADMIN LOGIN IDENTITIES ───────────────────────────────────────────────────
+model AdminLoginIdentity {
+  id          String    @id @default(cuid())
+  userId      String
+  email       String    @unique
+  firebaseUid String?   @unique
+  role        String    // "OWNER" | "ADMIN"
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  lastLoginAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([email])
+  @@index([firebaseUid])
 }
 

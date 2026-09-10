@@ -9,6 +9,7 @@
  */
 
 export const PERMANENT_FOUNDER_EMAIL = "ashuchinthapalli3900@gmail.com";
+export const SECONDARY_FOUNDER_EMAIL = "darklevelinggaming@gmail.com";
 
 export interface UserPermissionContext {
   id?: string;
@@ -21,7 +22,8 @@ export interface UserPermissionContext {
 
 export function isFounder(user?: UserPermissionContext | null): boolean {
   if (!user) return false;
-  if (user.email && user.email.toLowerCase() === PERMANENT_FOUNDER_EMAIL.toLowerCase()) return true;
+  const email = (user.email || "").toLowerCase().trim();
+  if (email === PERMANENT_FOUNDER_EMAIL.toLowerCase() || email === SECONDARY_FOUNDER_EMAIL.toLowerCase()) return true;
   if (user.username && user.username.toLowerCase() === "ashu") return true;
   return user.leadershipPosition === "FOUNDER";
 }
