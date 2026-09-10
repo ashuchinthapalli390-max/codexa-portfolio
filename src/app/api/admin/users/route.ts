@@ -26,6 +26,7 @@ export async function GET(_req: NextRequest) {
         email: true,
         fullName: true,
         role: true,
+        firebaseUid: true,
         isActive: true,
         lastLoginAt: true,
         createdAt: true,

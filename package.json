@@ -22,6 +22,8 @@
     "@vercel/blob": "^2.5.0",
     "bcryptjs": "^3.0.3",
     "dotenv": "^17.4.2",
+    "firebase": "^12.19.0",
+    "firebase-admin": "^14.3.0",
     "framer-motion": "^11.11.0",
     "iron-session": "^8.0.4",
     "lucide-react": "^0.460.0",

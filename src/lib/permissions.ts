@@ -8,16 +8,27 @@
  * 3. TEAM_MEMBER: Self-service profile editing, project creation, feed interaction, and messaging.
  */
 
+export const PERMANENT_FOUNDER_EMAIL = "ashuchinthapalli3900@gmail.com";
+
 export interface UserPermissionContext {
   id?: string;
   userId?: string | null;
+  email?: string | null;
+  username?: string | null;
   role?: "OWNER" | "ADMIN" | "TEAM_MEMBER" | string;
   leadershipPosition?: "FOUNDER" | "CO_FOUNDER" | "CEO" | string | null;
 }
 
+export function isFounder(user?: UserPermissionContext | null): boolean {
+  if (!user) return false;
+  if (user.email && user.email.toLowerCase() === PERMANENT_FOUNDER_EMAIL.toLowerCase()) return true;
+  if (user.username && user.username.toLowerCase() === "ashu") return true;
+  return user.leadershipPosition === "FOUNDER";
+}
+
 export function isOwner(user?: UserPermissionContext | null): boolean {
   if (!user) return false;
-  return user.role === "OWNER" || user.leadershipPosition === "FOUNDER";
+  return isFounder(user) || user.role === "OWNER";
 }
 
 export function isCeoOrAdmin(user?: UserPermissionContext | null): boolean {
@@ -79,15 +90,15 @@ export function canCreateAccount(actor?: UserPermissionContext | null): boolean 
   return isOwner(actor) || isCeoOrAdmin(actor);
 }
 
-export function canDisableAccount(actor?: UserPermissionContext | null, targetUser?: { role?: string; id?: string } | null): boolean {
+export function canDisableAccount(actor?: UserPermissionContext | null, targetUser?: { role?: string; id?: string; email?: string | null; username?: string | null } | null): boolean {
   if (!actor) return false;
-  if (targetUser && targetUser.role === "OWNER") return false;
+  if (targetUser && (isFounder(targetUser) || targetUser.role === "OWNER")) return false;
   return isOwner(actor) || isCeoOrAdmin(actor);
 }
 
-export function canChangeRole(actor?: UserPermissionContext | null, targetUser?: { role?: string; id?: string } | null, requestedRole?: string): boolean {
+export function canChangeRole(actor?: UserPermissionContext | null, targetUser?: { role?: string; id?: string; email?: string | null; username?: string | null } | null, requestedRole?: string): boolean {
   if (!actor) return false;
-  if (targetUser && targetUser.role === "OWNER") return false;
+  if (targetUser && (isFounder(targetUser) || targetUser.role === "OWNER")) return false;
   if (requestedRole === "OWNER") return isOwner(actor);
   return isOwner(actor) || isCeoOrAdmin(actor);
 }

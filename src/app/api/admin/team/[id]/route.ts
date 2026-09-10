@@ -146,12 +146,10 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       // 2. Build profile update payload
       const updateData: any = { ...mediaUrlPayload };
 
-      if (!isLeadership) {
-        if (displayName !== undefined) updateData.displayName = displayName.trim();
-        if (publicBio !== undefined) updateData.publicBio = publicBio ? publicBio.trim() : null;
-        if (isPublic !== undefined) updateData.isPublic = isPublic;
-        if (displayOrder !== undefined) updateData.displayOrder = Number(displayOrder);
-      }
+      if (displayName !== undefined) updateData.displayName = displayName.trim();
+      if (publicBio !== undefined) updateData.publicBio = publicBio ? publicBio.trim() : null;
+      if (isPublic !== undefined) updateData.isPublic = isPublic;
+      if (displayOrder !== undefined) updateData.displayOrder = Number(displayOrder);
 
       const prof = await tx.teamProfile.update({
         where: { id },
@@ -194,14 +192,21 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Team profile not found." }, { status: 404 });
     }
 
-    // Prevent deletion of leadership records
-    if (profile.memberType === "LEADERSHIP") {
-      return NextResponse.json({ error: "Cannot delete leadership profiles." }, { status: 400 });
+    // Check if target is Founder account
+    let isFounderTarget = false;
+    if (profile.userId) {
+      const u = await db.user.findUnique({ where: { id: profile.userId } });
+      if (u && (u.email?.toLowerCase() === "ashuchinthapalli3900@gmail.com" || u.role === "OWNER" || u.username === "ashu")) {
+        isFounderTarget = true;
+      }
+    }
+    if (profile.leadershipPosition === "FOUNDER" || profile.displayName.toLowerCase().includes("ashu") || isFounderTarget) {
+      return NextResponse.json({ error: "Cannot delete the permanent Founder / Super Admin account." }, { status: 403 });
     }
 
     // Prevent owner from deleting their own account
     if (profile.userId === actor.id) {
-      return NextResponse.json({ error: "Cannot delete the Owner account." }, { status: 400 });
+      return NextResponse.json({ error: "Cannot delete your own Owner account." }, { status: 400 });
     }
 
     // Delete User (which cascades and deletes profile and sessions)

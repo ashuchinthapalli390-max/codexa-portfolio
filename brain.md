@@ -65,6 +65,7 @@
 | **Storage** | Supabase Storage API | Public & private media assets (Avatars, Project previews, Feed) |
 | **Payments** | Razorpay Node SDK & Checkout | Dynamic booking advance payments in INR, HMAC-SHA256 verification |
 | **Email & Comms** | Resend API 6.21 | 6-digit login OTPs, security notifications |
+| **Analytics & Telemetry** | Firebase JS SDK 11 & GA4 | Real-time traffic, page views, and event tracking (`G-EZQL4W66WR`) |
 
 ---
 
@@ -119,7 +120,8 @@ c:\Users\MYPC\Desktop\codexa\codexa-portfolio
         ├── project-calculator.ts # Requirement pricing and dynamic advance calculator engine
         ├── razorpay.ts           # Order generation and HMAC SHA256 signature verification
         ├── supabase.ts           # Supabase client and storage bucket interactions
-        └── totp.ts               # TOTP 2FA secret generation, AES encryption, verification
+        ├── totp.ts               # TOTP 2FA secret generation, AES encryption, verification
+        └── firebase.ts           # Firebase App & Analytics SDK initialization & tracking
 ```
 
 ---
@@ -323,6 +325,9 @@ npm run start
 | `INITIAL_OWNER_EMAIL` | Yes | Default owner account email (`ashuchinthapalli3900@gmail.com`) |
 | `INITIAL_OWNER_USERNAME`| Yes | Default owner username (`ashu`) |
 | `INITIAL_OWNER_PASSWORD`| Yes | Initial password used during first-time database seed |
+| `NEXT_PUBLIC_FIREBASE_API_KEY` | Optional | Firebase API Key (`AIzaSy...`) |
+| `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Optional | Firebase Project ID (`codxa-agency`) |
+| `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID` | Optional | Google Analytics 4 Measurement ID (`G-EZQL4W66WR`) |
 
 ---
 
@@ -330,12 +335,21 @@ npm run start
 
 1. **Security & Secrets**:
    - Never commit `.env` or `.env.local` to git.
-   - Client components must NEVER import `@prisma/client`, `bcryptjs`, or private secrets.
-2. **Canonical Leadership Protection**:
-   - Text bios, titles, and details for Ashu, Deepak, and Venu defined in `src/config/leadershipData.ts` are immutable via API.
-3. **Database Performance**:
+   - Client components must NEVER import `@prisma/client`, `bcryptjs`, service account credentials, or private secrets.
+2. **Permanent Founder & Super Admin Invariant**:
+   - `ashuchinthapalli3900@gmail.com` is the permanent Founder, Owner, and Super Admin of CodeXa Agency.
+   - The Founder account is permanently mapped to `role = "OWNER"` and cannot be deleted, demoted, deactivated, or overridden by any API or client action.
+3. **Canonical Leadership Single Source of Truth**:
+   - The public website renders exactly ONE canonical leadership section (`PublicLeadershipSection`) connected directly to the database via `/api/leadership/public`.
+   - All duplicate public leadership card sections and detailed directory layouts have been removed.
+   - Leadership profiles (bios, quotes, roles, skills, display order, public visibility, photos) are managed directly inside the main Admin/Owner Dashboard.
+4. **Firebase Authentication Architecture**:
+   - Google Sign-In uses Firebase Authentication (`GoogleAuthProvider`, `signInWithPopup` with `signInWithRedirect` fallback).
+   - The client exchanges Firebase ID tokens with `/api/auth/firebase-session`, which verifies identity using Firebase Admin SDK and binds verified emails to database roles in secure HttpOnly cookies (`cxa_session`).
+   - Unauthorized accounts are blocked from administrative routes with clear guidance.
+5. **Database Performance**:
    - When connecting through serverless functions, always use `DATABASE_URL` with transaction pooling enabled (`pgbouncer=true`). Use `DIRECT_URL` only for CLI migrations.
-4. **Advance Calculator Parity**:
+6. **Advance Calculator Parity**:
    - Any modifications to the pricing matrix in `src/lib/project-calculator.ts` must maintain complete logic symmetry between frontend previews and backend validation.
-5. **Design System Harmony**:
-   - Adhere strictly to the dark crimson / cyber aesthetic: jet black backgrounds (`#050505`, `#0a0a0a`), crimson neon accents (`#FF1E3C`, `#8B0000`), frosted glassmorphism overlays, and Orbitron / Inter / JetBrains Mono typography.
+7. **Design System Harmony**:
+   - Adhere strictly to the dark crimson / cyber aesthetic: jet black backgrounds (`#050505`, `#080808`), dark crimson (`#8B0000`), neon red (`#FF1E3C`), frosted glassmorphism overlays, and Orbitron / Inter / JetBrains Mono typography.

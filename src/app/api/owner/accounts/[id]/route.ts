@@ -54,6 +54,26 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       return NextResponse.json({ error: "Account not found." }, { status: 404, headers: NO_CACHE_HEADERS });
     }
 
+    const isTargetFounder =
+      profileBefore.email?.toLowerCase() === "ashuchinthapalli3900@gmail.com" ||
+      profileBefore.username?.toLowerCase() === "ashu" ||
+      profileBefore.role === "OWNER";
+
+    if (isTargetFounder) {
+      if (role && role !== "OWNER") {
+        return NextResponse.json(
+          { error: "The permanent Founder/Owner account (ashuchinthapalli3900@gmail.com) cannot be demoted." },
+          { status: 400, headers: NO_CACHE_HEADERS }
+        );
+      }
+      if (isActive === false) {
+        return NextResponse.json(
+          { error: "The permanent Founder/Owner account cannot be deactivated." },
+          { status: 400, headers: NO_CACHE_HEADERS }
+        );
+      }
+    }
+
     const updates: any = {};
     if (role && ["OWNER", "CO_FOUNDER", "CEO", "ADMIN", "TEAM_MEMBER"].includes(role)) {
       updates.role = role;
@@ -156,6 +176,20 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
 
   try {
     const profile = await dataStore.getProfileById(id);
+    if (!profile) {
+      return NextResponse.json({ error: "Account not found." }, { status: 404, headers: NO_CACHE_HEADERS });
+    }
+
+    if (
+      profile.email?.toLowerCase() === "ashuchinthapalli3900@gmail.com" ||
+      profile.username?.toLowerCase() === "ashu" ||
+      profile.role === "OWNER"
+    ) {
+      return NextResponse.json(
+        { error: "The permanent Founder/Super Admin/Owner account (ashuchinthapalli3900@gmail.com) cannot be deleted." },
+        { status: 403, headers: NO_CACHE_HEADERS }
+      );
+    }
 
     const deleted = await dataStore.deleteProfile(id);
     if (!deleted) {

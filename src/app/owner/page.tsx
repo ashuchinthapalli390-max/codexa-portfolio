@@ -1754,6 +1754,7 @@ function OwnerDashboardContent() {
                       <th className="pb-3">User</th>
                       <th className="pb-3">Email</th>
                       <th className="pb-3">Role</th>
+                      <th className="pb-3">Auth Source</th>
                       <th className="pb-3">2FA Security</th>
                       <th className="pb-3">Status</th>
                       <th className="pb-3">Created Date</th>
@@ -1793,9 +1794,9 @@ function OwnerDashboardContent() {
                           </td>
                           <td className="py-3 text-[#AAA] font-mono">{acc.email}</td>
                           <td className="py-3">
-                            {acc.role === "OWNER" ? (
-                              <span className="px-2 py-0.5 rounded bg-crimson text-white font-orbitron text-[9px] font-black uppercase">
-                                OWNER
+                            {acc.email?.toLowerCase() === "ashuchinthapalli3900@gmail.com" || acc.username === "ashu" || acc.role === "OWNER" ? (
+                              <span className="px-2.5 py-1 rounded-full bg-crimson text-white font-orbitron text-[9px] font-black uppercase tracking-wider shadow-[0_0_15px_rgba(217,4,41,0.5)] border border-bright-red/50">
+                                FOUNDER / OWNER
                               </span>
                             ) : (
                               <select
@@ -1808,6 +1809,18 @@ function OwnerDashboardContent() {
                                 <option value="CEO">CEO</option>
                                 <option value="ADMIN">ADMIN</option>
                               </select>
+                            )}
+                          </td>
+                          <td className="py-3">
+                            {acc.firebaseUid || acc.email?.toLowerCase() === "ashuchinthapalli3900@gmail.com" ? (
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-[9px]">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                Google OAuth
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-mono text-[#777]">
+                                Password
+                              </span>
                             )}
                           </td>
                           <td className="py-3">
@@ -1839,7 +1852,7 @@ function OwnerDashboardContent() {
                               >
                                 <Key className="w-3.5 h-3.5 text-amber-400" />
                               </button>
-                              {acc.role !== "OWNER" && (
+                              {acc.role !== "OWNER" && acc.email?.toLowerCase() !== "ashuchinthapalli3900@gmail.com" && acc.username !== "ashu" && (
                                 <button
                                   onClick={() => handleDeleteAccount(acc)}
                                   className="p-1.5 rounded-lg bg-[#141414] hover:bg-crimson text-[#888] hover:text-white transition-colors"

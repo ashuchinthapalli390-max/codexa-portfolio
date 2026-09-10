@@ -5,7 +5,6 @@ import React, { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getProfileImageStyle } from "@/lib/profile-media";
-import { LEADERSHIP_DATA } from "@/config/leadershipData";
 import { PfpGalleryModal } from "@/components/ui/PfpGalleryModal";
 import { PfpCropModal } from "@/components/ui/PfpCropModal";
 import { useAuth } from "@/context/AuthContext";
@@ -317,26 +316,11 @@ function TeamProfilesContent() {
     }
   };
 
-  // Helper to render leadership position labels — sourced from locked config
-  const getPositionLabel = (pos: string | null) => {
-    if (!pos) return "Board Member";
-    const data = LEADERSHIP_DATA[pos as keyof typeof LEADERSHIP_DATA];
-    if (!data) return "Board Member";
-    return `${pos === "CO_FOUNDER" ? "Co-Founder" : pos.charAt(0) + pos.slice(1).toLowerCase()} — ${data.name}`;
-  };
-
-  const getPositionLockedBio = (pos: string | null) => {
-    if (!pos) return "";
-    const data = LEADERSHIP_DATA[pos as keyof typeof LEADERSHIP_DATA];
-    if (!data) return "";
-    // Show first sentence of description (before first period that ends a sentence)
-    return data.description.split(".\n")[0].split(". ")[0] + ".";
-  };
-
-  const getPositionLockedRole = (pos: string | null) => {
-    if (!pos) return "";
-    const data = LEADERSHIP_DATA[pos as keyof typeof LEADERSHIP_DATA];
-    return data?.role ?? "";
+  // Helper to render leadership position labels dynamically from database
+  const getPositionLabel = (pos: string | null, lead?: ProfileItem) => {
+    if (lead?.displayName) return lead.displayName;
+    if (!pos) return "Executive";
+    return pos === "CO_FOUNDER" ? "Co-Founder" : pos.replace("_", " ");
   };
 
   if (uiState === "loading") {
@@ -434,11 +418,13 @@ function TeamProfilesContent() {
         {/* Scrollable Work Area */}
         <div className="flex-1 overflow-y-auto p-8 space-y-10 bg-[radial-gradient(circle_at_top,rgba(217,4,41,0.02)_0%,transparent_60%)]">
           
-          {/* ─── SECTION 1: LEADERSHIP PROFILE MEDIA MANAGER ────────── */}
+          {/* ─── SECTION 1: LEADERSHIP PROFILES MANAGER ────────── */}
           <section className="space-y-4">
-            <div>
-              <h2 className="font-orbitron text-sm font-bold text-white uppercase tracking-wider">Leadership Profile Media</h2>
-              <p className="text-[11px] text-[#A5A5A5] font-light mt-0.5">Written content (names, bios, quotes) is permanently locked. Manage static image and animated GIF media files below.</p>
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="font-orbitron text-sm font-bold text-white uppercase tracking-wider">Leadership & Executive Direction</h2>
+                <p className="text-[11px] text-[#A5A5A5] font-light mt-0.5">Canonical source of truth for the public website leadership section. Manage bios, quotes, sort priority, and media assets.</p>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -468,39 +454,35 @@ function TeamProfilesContent() {
 
                     <div className="flex-1">
                       <h3 className="font-orbitron font-bold text-sm text-white tracking-wide uppercase">
-                        {getPositionLabel(lead.leadershipPosition)}
+                        {lead.displayName}
                       </h3>
-                      <p className="text-[9px] text-[#D90429]/70 font-orbitron tracking-wider uppercase mt-0.5 font-bold">
-                        {getPositionLockedRole(lead.leadershipPosition)}
+                      <p className="text-[9px] text-[#D90429] font-orbitron tracking-wider uppercase mt-0.5 font-bold">
+                        {lead.leadershipPosition?.replace("_", " ") || "EXECUTIVE"}
                       </p>
-                      <p className="text-[10px] text-[#A5A5A5] leading-relaxed mt-1.5 font-light italic line-clamp-2">
-                        &ldquo;{getPositionLockedBio(lead.leadershipPosition)}&rdquo;
+                      <p className="text-[10px] text-[#A5A5A5] leading-relaxed mt-1.5 font-light line-clamp-2">
+                        {lead.publicBio || "No bio configured."}
                       </p>
                     </div>
                   </div>
 
-                  {/* Locked text reminder */}
+                  {/* Controls */}
                   <div className="mt-4 pt-3 border-t border-[#191919] flex justify-between items-center">
-                    <span className="text-[9px] font-orbitron tracking-widest text-[#333] uppercase">TEXT LOCKED🔒</span>
+                    <span className="text-[9px] font-orbitron tracking-widest text-[#777] uppercase">
+                      Order: #{lead.displayOrder} {lead.isPublic ? "• PUBLIC" : "• HIDDEN"}
+                    </span>
                     <div className="flex gap-2">
-                      {pfpSuccessMsgs[lead.id] && (
-                        <span className="text-[9px] font-orbitron text-[#4ECDC4] tracking-wider">✓ Updated</span>
-                      )}
+                      <button
+                        onClick={() => handleEditOpen(lead)}
+                        className="flex items-center gap-1 bg-[rgba(217,4,41,0.15)] hover:bg-[rgba(217,4,41,0.3)] hover:border-[#D90429]/50 border border-[rgba(217,4,41,0.25)] text-[9px] font-orbitron font-semibold tracking-wider uppercase px-2.5 py-1.5 rounded text-white transition-all"
+                      >
+                        Edit Info
+                      </button>
                       <button
                         onClick={() => handleOpenPfpGallery(lead.id)}
-                        className="flex items-center gap-1 bg-[rgba(217,4,41,0.12)] hover:bg-[rgba(217,4,41,0.25)] hover:border-[#D90429]/40 border border-[rgba(217,4,41,0.2)] text-[9px] font-orbitron font-semibold tracking-wider uppercase px-2.5 py-1.5 rounded text-[#D90429] transition-all"
+                        className="flex items-center gap-1 bg-[#141414] hover:bg-[#202020] border border-white/10 text-[9px] font-orbitron font-semibold tracking-wider uppercase px-2 py-1.5 rounded text-[#D90429] transition-all"
                       >
-                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                        {lead.mediaUrl ? "Replace Media" : "Set Media"}
+                        Photo
                       </button>
-                      {lead.mediaUrl && (
-                        <button
-                          onClick={() => handleLeadershipMediaRemove(lead.id)}
-                          className="bg-transparent hover:text-[#D90429] text-[9px] font-orbitron font-semibold tracking-wider uppercase px-2 py-1 text-[#555] transition-all"
-                        >
-                          Remove
-                        </button>
-                      )}
                     </div>
                   </div>
                 </div>

@@ -6,13 +6,12 @@ import { AnimatePresence, motion } from "framer-motion";
 import { LoadingScreen } from "@/components/sections/LoadingScreen";
 import { Navbar } from "@/components/sections/Navbar";
 import { HeroSection } from "@/components/sections/HeroSection";
-import { LeadershipSpotlightSection } from "@/components/sections/LeadershipSpotlightSection";
 import { AboutSection } from "@/components/sections/AboutSection";
 import { ServicesSection } from "@/components/sections/ServicesSection";
 import { TechDivider } from "@/components/sections/TechDivider";
 import { MainProjectsSection } from "@/components/sections/MainProjectsSection";
 import { TeamProjectsSection } from "@/components/sections/TeamProjectsSection";
-import { TeamSection } from "@/components/sections/TeamSection";
+import { PublicLeadershipSection } from "@/components/sections/PublicLeadershipSection";
 import { InternshipSection } from "@/components/sections/InternshipSection";
 import { CapabilitiesSection } from "@/components/sections/CapabilitiesSection";
 import { ProcessSection } from "@/components/sections/ProcessSection";
@@ -21,12 +20,10 @@ import { ContactSection } from "@/components/sections/ContactSection";
 import { EndingSection } from "@/components/sections/EndingSection";
 import { Footer } from "@/components/sections/Footer";
 import { CyberWebOverlay } from "@/components/ui/CyberWebOverlay";
-import { Profile } from "@/lib/data-store";
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [siteSettings, setSiteSettings] = useState({
     mainProjectsHomeVisible: true,
     teamProjectsHomeVisible: true,
@@ -41,16 +38,6 @@ export default function Home() {
       .then((data) => {
         if (data.success && data.settings) {
           setSiteSettings(data.settings);
-        }
-      })
-      .catch(() => {});
-
-    // Load official leadership profiles
-    fetch("/api/team/public")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.success && Array.isArray(data.profiles)) {
-          setProfiles(data.profiles);
         }
       })
       .catch(() => {});
@@ -84,25 +71,22 @@ export default function Home() {
               {/* 1. HERO */}
               <HeroSection />
               
-              {/* 2. CODEXA LEADERSHIP SPOTLIGHT */}
-              <LeadershipSpotlightSection profiles={profiles} />
-              
-              {/* 3. ABOUT */}
+              {/* 2. ABOUT */}
               <AboutSection />
               
-              {/* 4. SERVICES */}
+              {/* 3. SERVICES */}
               <ServicesSection />
               
               <TechDivider />
               
-              {/* 5. PROJECTS */}
+              {/* 4. PROJECTS */}
               {siteSettings.mainProjectsHomeVisible && <MainProjectsSection />}
               {siteSettings.teamProjectsHomeVisible && <TeamProjectsSection />}
               
-              {/* 6. FULL TEAM */}
-              <TeamSection />
+              {/* 5. CANONICAL CODEXA LEADERSHIP */}
+              <PublicLeadershipSection />
               
-              {/* 7. REMAINING SECTIONS */}
+              {/* 6. REMAINING SECTIONS */}
               <InternshipSection />
               <CapabilitiesSection />
               <ProcessSection />

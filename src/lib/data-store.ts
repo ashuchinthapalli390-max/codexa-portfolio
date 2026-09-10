@@ -55,6 +55,9 @@ export interface Profile {
   displayOrder: number;
   mustChangePassword?: boolean;
   twoFactorEnabled?: boolean;
+  firebaseUid?: string | null;
+  quote?: string | null;
+  slug?: string | null;
   lastLoginAt?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -435,6 +438,9 @@ function mapUserToProfile(user: any): Profile {
     displayOrder: profile?.displayOrder ?? 0,
     mustChangePassword: !!user.mustChangePassword,
     twoFactorEnabled,
+    firebaseUid: user.firebaseUid || null,
+    quote: profile?.quote || null,
+    slug: profile?.slug || null,
     lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,
     createdAt: user.createdAt ? user.createdAt.toISOString() : new Date().toISOString(),
     updatedAt: user.updatedAt ? user.updatedAt.toISOString() : new Date().toISOString(),
@@ -804,6 +810,15 @@ export const dataStore = {
 
   async deleteProfile(id: string): Promise<boolean> {
     try {
+      const user = await db.user.findUnique({ where: { id } });
+      if (
+        !user ||
+        user.email?.toLowerCase() === "ashuchinthapalli3900@gmail.com" ||
+        user.username?.toLowerCase() === "ashu" ||
+        user.role === "OWNER"
+      ) {
+        return false;
+      }
       await db.user.delete({ where: { id } });
       return true;
     } catch {

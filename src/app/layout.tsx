@@ -1,7 +1,9 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/Toast";
 import { AuthProvider } from "@/context/AuthContext";
+import { FirebaseAnalytics } from "@/components/FirebaseAnalytics";
 
 export const metadata: Metadata = {
   title: "CODEXA AGENCY | Where Ideas Become Digital Reality",
@@ -40,6 +42,9 @@ export default function RootLayout({
         <AuthProvider>
           <ToastProvider>{children}</ToastProvider>
         </AuthProvider>
+        <Suspense fallback={null}>
+          <FirebaseAnalytics />
+        </Suspense>
       </body>
     </html>
   );
