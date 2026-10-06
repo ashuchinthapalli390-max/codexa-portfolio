@@ -70,7 +70,7 @@ export async function GET() {
           role: user.role,
           orgRole: user.orgRole || effectiveRole,
           effectiveRole,
-          mustChangePassword: false,
+          mustChangePassword: !!user.mustChangePassword,
           isActive: user.isActive,
           mediaUrl: user.mediaUrl,
           leadershipPosition: user.leadershipPosition,
