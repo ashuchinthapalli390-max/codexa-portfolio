@@ -32,6 +32,10 @@ export function MainProjectsSection() {
       .finally(() => setLoading(false));
   }, []);
 
+  if (!loading && projects.length === 0) {
+    return null;
+  }
+
   return (
     <section id="main-projects" className="relative py-24 bg-[#070707] overflow-hidden">
       {/* Background cyber ambient glow */}

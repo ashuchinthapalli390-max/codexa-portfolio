@@ -68,24 +68,12 @@ export function LeadershipSpotlightSection({ profiles = [] }: LeadershipSpotligh
   const founderProjects: Array<{ name: string; category: string; url?: string; isPrivate?: boolean }> =
     founder?.featuredProjects && founder.featuredProjects.length > 0
       ? (founder.featuredProjects as any)
-      : [
-          { name: "Nexa AI", category: "Artificial Intelligence", url: "https://nexa-ai.xyz/", isPrivate: true },
-          { name: "Nexa IDE", category: "Developer Platform", url: "https://codxa-agency.online/", isPrivate: true },
-          { name: "CloudWave", category: "Cloud Infrastructure", url: "https://cloudewave.in/", isPrivate: true },
-          { name: "NEC Portal", category: "Institutional Platform", url: "https://nec-portal-rosy.vercel.app/", isPrivate: true },
-          { name: "NodeWave", category: "Developer System", url: "https://nodewave.in/", isPrivate: true },
-          { name: "CodeAxis Apply", category: "Recruitment Universe", url: "https://www.codeaxisapply.xyz/", isPrivate: true },
-          { name: "CodeXa Agency", category: "Agency Platform", url: "https://codxa-agency.online/", isPrivate: true },
-          { name: "EDITH AI Agent", category: "AI Agent", url: "https://codxa-agency.online/", isPrivate: true },
-        ];
+      : [];
 
   const coFounderProjects: Array<{ name: string; category: string; url?: string; isPrivate?: boolean }> =
     coFounder?.featuredProjects && coFounder.featuredProjects.length > 0
       ? (coFounder.featuredProjects as any)
-      : [
-          { name: "StarX Live", category: "Live Entertainment", url: "https://starx-live-official.vercel.app/", isPrivate: true },
-          { name: "TicketX", category: "Ticketing Platform", url: "https://ticket-x-theta.vercel.app/", isPrivate: true },
-        ];
+      : [];
 
   const capabilityStrip = [
     "WEB DEVELOPMENT",
@@ -231,62 +219,64 @@ export function LeadershipSpotlightSection({ profiles = [] }: LeadershipSpotligh
               </div>
 
               {/* Selected Projects & Systems Grid */}
-              <div className="space-y-3 pt-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Code2 className="w-3.5 h-3.5 text-bright-red" />
-                    <span className="text-[10px] font-orbitron font-bold uppercase tracking-[0.2em] text-[#888]">
-                      SELECTED PROJECTS & SYSTEMS
-                    </span>
+              {founderProjects.length > 0 && (
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Code2 className="w-3.5 h-3.5 text-bright-red" />
+                      <span className="text-[10px] font-orbitron font-bold uppercase tracking-[0.2em] text-[#888]">
+                        SELECTED PROJECTS & SYSTEMS
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] font-mono text-amber-400/90 flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                        <Lock className="w-2.5 h-2.5" />
+                        CODE IS PRIVATE
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[9px] font-mono text-amber-400/90 flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                      <Lock className="w-2.5 h-2.5" />
-                      CODE IS PRIVATE
-                    </span>
-                  </div>
-                </div>
 
-                <motion.div
-                  variants={staggerContainerVariants}
-                  initial="hidden"
-                  whileInView="visible"
-                  viewport={{ once: true }}
-                  className="grid grid-cols-2 sm:grid-cols-4 gap-2.5"
-                >
-                  {founderProjects.map((proj, idx) => (
-                    <motion.a
-                      key={idx}
-                      href={proj.url || "https://codxa-agency.online"}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      variants={staggerItemVariants}
-                      whileHover={{ scale: 1.02, y: -2 }}
-                      className="group/chip relative p-3 rounded-xl bg-[#111111] border border-white/5 hover:border-crimson/60 hover:bg-[#141414] transition-all duration-300 flex flex-col justify-between overflow-hidden shadow-sm cursor-pointer"
-                    >
-                      {/* Subtle Laser Scan Effect */}
-                      <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-crimson to-transparent opacity-0 group-hover/chip:opacity-100 transition-opacity" />
-                      
-                      <div className="flex items-center justify-between gap-1 mb-1">
-                        <span className="font-orbitron font-bold text-xs text-white uppercase group-hover/chip:text-bright-red transition-colors truncate">
-                          {proj.name}
-                        </span>
-                        {proj.url && (
-                          <ExternalLink className="w-3 h-3 text-[#666] group-hover/chip:text-bright-red transition-colors flex-shrink-0" />
-                        )}
-                      </div>
-                      <div className="flex items-center justify-between gap-1 mt-1 text-[9px] font-mono text-[#777] uppercase">
-                        <span className="truncate">{proj.category}</span>
-                        {proj.isPrivate && (
-                          <span title="Code is Private" className="text-amber-400/80 flex-shrink-0">
-                            <Lock className="w-2.5 h-2.5" />
+                  <motion.div
+                    variants={staggerContainerVariants}
+                    initial="hidden"
+                    whileInView="visible"
+                    viewport={{ once: true }}
+                    className="grid grid-cols-2 sm:grid-cols-4 gap-2.5"
+                  >
+                    {founderProjects.map((proj, idx) => (
+                      <motion.a
+                        key={idx}
+                        href={proj.url || "https://codxa-agency.online"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        variants={staggerItemVariants}
+                        whileHover={{ scale: 1.02, y: -2 }}
+                        className="group/chip relative p-3 rounded-xl bg-[#111111] border border-white/5 hover:border-crimson/60 hover:bg-[#141414] transition-all duration-300 flex flex-col justify-between overflow-hidden shadow-sm cursor-pointer"
+                      >
+                        {/* Subtle Laser Scan Effect */}
+                        <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-crimson to-transparent opacity-0 group-hover/chip:opacity-100 transition-opacity" />
+                        
+                        <div className="flex items-center justify-between gap-1 mb-1">
+                          <span className="font-orbitron font-bold text-xs text-white uppercase group-hover/chip:text-bright-red transition-colors truncate">
+                            {proj.name}
                           </span>
-                        )}
-                      </div>
-                    </motion.a>
-                  ))}
-                </motion.div>
-              </div>
+                          {proj.url && (
+                            <ExternalLink className="w-3 h-3 text-[#666] group-hover/chip:text-bright-red transition-colors flex-shrink-0" />
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between gap-1 mt-1 text-[9px] font-mono text-[#777] uppercase">
+                          <span className="truncate">{proj.category}</span>
+                          {proj.isPrivate && (
+                            <span title="Code is Private" className="text-amber-400/80 flex-shrink-0">
+                              <Lock className="w-2.5 h-2.5" />
+                            </span>
+                          )}
+                        </div>
+                      </motion.a>
+                    ))}
+                  </motion.div>
+                </div>
+              )}
 
             </div>
 
@@ -422,40 +412,42 @@ export function LeadershipSpotlightSection({ profiles = [] }: LeadershipSpotligh
               </div>
 
               {/* Selected Projects & Systems for Co-Founder */}
-              <div className="space-y-2 pt-2 border-t border-white/5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-orbitron font-bold uppercase tracking-[0.15em] text-[#888] flex items-center gap-1.5">
-                    <Code2 className="w-3 h-3 text-sky-400" />
-                    KEY BUILDS & PLATFORMS
-                  </span>
-                  <span className="text-[8px] font-mono text-amber-400/90 flex items-center gap-1 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                    <Lock className="w-2 h-2" />
-                    CODE IS PRIVATE
-                  </span>
-                </div>
+              {coFounderProjects.length > 0 && (
+                <div className="space-y-2 pt-2 border-t border-white/5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-orbitron font-bold uppercase tracking-[0.15em] text-[#888] flex items-center gap-1.5">
+                      <Code2 className="w-3 h-3 text-sky-400" />
+                      KEY BUILDS & PLATFORMS
+                    </span>
+                    <span className="text-[8px] font-mono text-amber-400/90 flex items-center gap-1 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                      <Lock className="w-2 h-2" />
+                      CODE IS PRIVATE
+                    </span>
+                  </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {coFounderProjects.map((proj, idx) => (
-                    <a
-                      key={idx}
-                      href={proj.url || "#"}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="p-2.5 rounded-xl bg-[#111] border border-white/5 hover:border-sky-500/50 hover:bg-[#151515] transition-all group/p flex flex-col justify-between cursor-pointer shadow-sm"
-                    >
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="font-orbitron font-bold text-xs text-white group-hover/p:text-sky-400 transition-colors truncate">
-                          {proj.name}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {coFounderProjects.map((proj, idx) => (
+                      <a
+                        key={idx}
+                        href={proj.url || "#"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2.5 rounded-xl bg-[#111] border border-white/5 hover:border-sky-500/50 hover:bg-[#151515] transition-all group/p flex flex-col justify-between cursor-pointer shadow-sm"
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-orbitron font-bold text-xs text-white group-hover/p:text-sky-400 transition-colors truncate">
+                            {proj.name}
+                          </span>
+                          <ExternalLink className="w-3 h-3 text-[#666] group-hover/p:text-sky-400 transition-colors flex-shrink-0" />
+                        </div>
+                        <span className="text-[9px] font-mono text-[#888] truncate mt-1">
+                          {proj.category}
                         </span>
-                        <ExternalLink className="w-3 h-3 text-[#666] group-hover/p:text-sky-400 transition-colors flex-shrink-0" />
-                      </div>
-                      <span className="text-[9px] font-mono text-[#888] truncate mt-1">
-                        {proj.category}
-                      </span>
-                    </a>
-                  ))}
+                      </a>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="pt-2 border-t border-white/5 flex justify-between items-center">
                 <span className="text-[9px] font-orbitron text-sky-400 font-bold uppercase tracking-widest">

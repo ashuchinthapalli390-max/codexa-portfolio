@@ -546,7 +546,7 @@ export default function DedicatedTeamProfilePage() {
             {[
               { id: "about", label: "About", icon: UserCheck },
               { id: "expertise", label: "Expertise", icon: Cpu },
-              { id: "systems", label: "Selected Systems", icon: Code2, count: (profile.featuredProjects || []).length || (isFounder ? 8 : isCoFounder ? 2 : undefined) },
+              { id: "systems", label: "Selected Systems", icon: Code2, count: (profile.featuredProjects || []).length },
               { id: "projects", label: "Builds", icon: FolderGit2, count: allProjects.length },
               { id: "posts", label: "Posts", icon: ImageIcon, count: posts.length },
             ].map((tab) => {
@@ -816,146 +816,77 @@ export default function DedicatedTeamProfilePage() {
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {(profile.featuredProjects && profile.featuredProjects.length > 0
-                      ? profile.featuredProjects
-                      : isCoFounder
-                      ? [
-                          {
-                            name: "StarX Live",
-                            category: "Live Music & Entertainment",
-                            url: "https://starx-live-official.vercel.app/",
-                            isPrivate: true,
-                            desc: "Official band booking & media streaming web platform.",
-                          },
-                          {
-                            name: "TicketX",
-                            category: "Ticketing & Event Platform",
-                            url: "https://ticket-x-theta.vercel.app/",
-                            isPrivate: true,
-                            desc: "Real-time cinema & event ticket booking engine.",
-                          },
-                        ]
-                      : [
-                          {
-                            name: "Nexa AI",
-                            category: "Artificial Intelligence",
-                            url: "https://nexa-ai.xyz/",
-                            isPrivate: true,
-                            desc: "AI intelligence suite and autonomous agent workflows.",
-                          },
-                          {
-                            name: "Nexa IDE",
-                            category: "Developer Platform",
-                            url: "https://codxa-agency.online/",
-                            isPrivate: true,
-                            desc: "Cloud-native developer IDE with AI vibe coding.",
-                          },
-                          {
-                            name: "CloudWave",
-                            category: "Cloud Infrastructure",
-                            url: "https://cloudewave.in/",
-                            isPrivate: true,
-                            desc: "Enterprise cloud hosting, NVMe VPS & infrastructure.",
-                          },
-                          {
-                            name: "NEC Portal",
-                            category: "Institutional Platform",
-                            url: "https://nec-portal-rosy.vercel.app/",
-                            isPrivate: true,
-                            desc: "Autonomous college academic & research management portal.",
-                          },
-                          {
-                            name: "NodeWave",
-                            category: "Developer System",
-                            url: "https://nodewave.in/",
-                            isPrivate: true,
-                            desc: "High-throughput Node.js microservices framework.",
-                          },
-                          {
-                            name: "CodeAxis Apply",
-                            category: "Recruitment Universe",
-                            url: "https://www.codeaxisapply.xyz/",
-                            isPrivate: true,
-                            desc: "Developer screening & internship recruitment universe.",
-                          },
-                          {
-                            name: "CodeXa Agency",
-                            category: "Agency Platform",
-                            url: "https://codxa-agency.online/",
-                            isPrivate: true,
-                            desc: "Flagship digital agency & enterprise software showcase.",
-                          },
-                          {
-                            name: "EDITH AI Agent",
-                            category: "AI Agent",
-                            url: "https://codxa-agency.online/",
-                            isPrivate: true,
-                            desc: "Autonomous productivity assistant and task automation.",
-                          },
-                        ]
-                    ).map((proj: any, idx: number) => (
-                      <div
-                        key={idx}
-                        className="group relative p-4 rounded-2xl bg-[#111111] border border-white/5 hover:border-crimson/60 hover:bg-[#141414] transition-all duration-300 flex flex-col justify-between overflow-hidden shadow-sm"
-                      >
-                        <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-crimson to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                        
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between gap-1">
-                            <h4 className="font-orbitron font-bold text-sm text-white uppercase group-hover:text-bright-red transition-colors truncate">
-                              {proj.name}
-                            </h4>
-                            {proj.url && (
+                  {((profile.featuredProjects || []) as any[]).length === 0 ? (
+                    <div className="text-center py-12 rounded-2xl bg-[#070707] border border-white/5 space-y-2">
+                      <Code2 className="w-8 h-8 text-[#555] mx-auto" />
+                      <h4 className="font-orbitron font-bold text-xs text-[#AAA] uppercase">No architectural systems listed</h4>
+                      <p className="text-xs text-[#666]">System highlights for @{profile.username} will appear here when assigned.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      {((profile.featuredProjects || []) as any[]).map((proj: any, idx: number) => (
+                        <div
+                          key={idx}
+                          className="group relative p-4 rounded-2xl bg-[#111111] border border-white/5 hover:border-crimson/60 hover:bg-[#141414] transition-all duration-300 flex flex-col justify-between overflow-hidden shadow-sm"
+                        >
+                          <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-crimson to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                          
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-1">
+                              <h4 className="font-orbitron font-bold text-sm text-white uppercase group-hover:text-bright-red transition-colors truncate">
+                                {proj.name}
+                              </h4>
+                              {proj.url && (
+                                <a
+                                  href={proj.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-1 rounded bg-[#181818] hover:bg-crimson text-[#888] hover:text-white transition-colors"
+                                  title="Open Live Website"
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[9px] font-mono text-[#AAA] uppercase">
+                                {proj.category}
+                              </span>
+                              {(proj.isPrivate !== false) && (
+                                <span className="inline-flex items-center gap-1 text-[8px] font-mono font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/25">
+                                  <Lock className="w-2 h-2" />
+                                  Code is Private
+                                </span>
+                              )}
+                            </div>
+
+                            {proj.desc && (
+                              <p className="text-[11px] text-[#777] line-clamp-2 leading-relaxed">
+                                {proj.desc}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] text-[#555] font-mono">
+                            {proj.url ? (
                               <a
                                 href={proj.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="p-1 rounded bg-[#181818] hover:bg-crimson text-[#888] hover:text-white transition-colors"
-                                title="Open Live Website"
+                                className="text-bright-red hover:underline flex items-center gap-1 font-orbitron font-bold text-[9px] uppercase tracking-wider"
                               >
-                                <ExternalLink className="w-3 h-3" />
+                                Live Preview <ArrowUpRight className="w-2.5 h-2.5" />
                               </a>
+                            ) : (
+                              <span>SYSTEM BUILD</span>
                             )}
+                            <span className="text-crimson font-bold">ACTIVE</span>
                           </div>
-
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-[9px] font-mono text-[#AAA] uppercase">
-                              {proj.category}
-                            </span>
-                            {(proj.isPrivate !== false) && (
-                              <span className="inline-flex items-center gap-1 text-[8px] font-mono font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/25">
-                                <Lock className="w-2 h-2" />
-                                Code is Private
-                              </span>
-                            )}
-                          </div>
-
-                          {proj.desc && (
-                            <p className="text-[11px] text-[#777] line-clamp-2 leading-relaxed">
-                              {proj.desc}
-                            </p>
-                          )}
                         </div>
-
-                        <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] text-[#555] font-mono">
-                          {proj.url ? (
-                            <a
-                              href={proj.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-bright-red hover:underline flex items-center gap-1 font-orbitron font-bold text-[9px] uppercase tracking-wider"
-                            >
-                              Live Preview <ArrowUpRight className="w-2.5 h-2.5" />
-                            </a>
-                          ) : (
-                            <span>SYSTEM BUILD</span>
-                          )}
-                          <span className="text-crimson font-bold">ACTIVE</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )}

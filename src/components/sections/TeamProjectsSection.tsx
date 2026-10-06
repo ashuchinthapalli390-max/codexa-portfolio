@@ -34,6 +34,10 @@ export function TeamProjectsSection() {
       .finally(() => setLoading(false));
   }, []);
 
+  if (!loading && projects.length === 0) {
+    return null;
+  }
+
   const filteredProjects = selectedCategory === "All"
     ? projects
     : projects.filter((p) => p.category.toLowerCase() === selectedCategory.toLowerCase());

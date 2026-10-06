@@ -67,92 +67,6 @@ const FOUNDER: LeadershipMember = {
     "Ashu is the technical force behind CodeXa Agency, focused on turning ambitious ideas into polished, scalable, secure digital products. From interactive 3D websites and custom platforms to AI-powered workflows and deployment systems, he leads the architecture, development, and creative technology direction of CodeXa.\n\nHe combines modern frontend design with practical backend systems, automation, cloud deployment, and developer-focused tools. His goal is not only to make websites look premium, but to build complete digital experiences that are fast, functional, secure, and ready to grow.",
   modalSections: [
     {
-      title: "Projects & Creations",
-      type: "projects",
-      projects: [
-        {
-          name: "Nexa AI",
-          category: "Artificial Intelligence",
-          url: "https://nexa-ai.xyz/",
-          isPrivate: true,
-          techStack: ["Next.js", "AI Agents", "LLM APIs", "Python", "TypeScript"],
-          status: "Live",
-          description:
-            "Cutting-edge AI intelligence suite and autonomous agent workflow platform. Orchestrates cognitive automation, custom prompt pipelines, and intelligent assistant workflows.",
-        },
-        {
-          name: "Nexa IDE / CodeXa IDE",
-          category: "Developer Platform",
-          url: "https://codxa-agency.online/",
-          isPrivate: true,
-          techStack: ["Monaco Editor", "Web IDE", "Node.js", "TypeScript"],
-          status: "In Development",
-          description:
-            "A futuristic cloud-native coding workspace designed around modern developer velocity, AI-assisted vibe coding, instant project compilation, and terminal previews.",
-        },
-        {
-          name: "CloudWave (CloudeWave)",
-          category: "Cloud Infrastructure",
-          url: "https://cloudewave.in/",
-          isPrivate: true,
-          techStack: ["Cloud Hosting", "NVMe VPS", "Linux", "Docker", "REST APIs"],
-          status: "Live",
-          description:
-            "Enterprise-grade cloud infrastructure and hosting portal. Delivers high-performance NVMe VPS, automated container deployments, Discord bot hosting, DDoS mitigation, and 99.99% uptime server management.",
-        },
-        {
-          name: "NEC Portal",
-          category: "Institutional Platform",
-          url: "https://nec-portal-rosy.vercel.app/",
-          isPrivate: true,
-          techStack: ["React", "Vite", "Tailwind CSS", "Academic Engine"],
-          status: "Live",
-          description:
-            "Official Academic, Research & Institutional Management Portal of Narasaraopeta Engineering College (Autonomous). Integrates 13 academic departments, 418+ verified faculty directories, research publication auto-sync, and student analytics.",
-        },
-        {
-          name: "NodeWave",
-          category: "Developer System",
-          url: "https://nodewave.in/",
-          isPrivate: true,
-          techStack: ["Node.js", "Express", "Redis", "TypeScript", "Microservices"],
-          status: "Live",
-          description:
-            "High-throughput Node.js microservices framework and developer runtime tooling. Offers backend automation, API gateway routing, distributed caching, and scalable server orchestration.",
-        },
-        {
-          name: "CodeAxis Apply",
-          category: "Recruitment Universe",
-          url: "https://www.codeaxisapply.xyz/",
-          isPrivate: true,
-          techStack: ["Next.js App Router", "Supabase", "Tailwind CSS", "Framer Motion"],
-          status: "Live",
-          description:
-            "Developer screening and recruitment universe for CodeXa Developer Internship. Features 8-stage candidate assessment, live application tracking, automated project evaluation, and interactive screening terminal.",
-        },
-        {
-          name: "CodeXa Agency Platform",
-          category: "Enterprise Agency",
-          url: "https://codxa-agency.online/",
-          isPrivate: true,
-          techStack: ["Next.js", "Tailwind CSS", "Framer Motion", "Prisma", "PostgreSQL"],
-          status: "Live",
-          description:
-            "Flagship digital agency platform showcasing enterprise web development, cybersecurity testing, AI automation, and custom client software solutions with interactive cyber aesthetics.",
-        },
-        {
-          name: "EDITH AI Agent",
-          category: "AI Agent",
-          url: "https://codxa-agency.online/",
-          isPrivate: true,
-          techStack: ["AI Workflow", "Automation", "LLMs"],
-          status: "Live",
-          description:
-            "An AI-focused assistant/workflow concept built to support smarter productivity, autonomous task execution, and modern developer engineering.",
-        },
-      ],
-    },
-    {
       title: "Technical Expertise",
       type: "skills",
       skills: [
@@ -205,32 +119,6 @@ const CO_FOUNDER: LeadershipMember = {
   description:
     "Sanjay drives operations, cross-platform product architecture, and ecosystem expansion at CodeXa Agency, ensuring smooth coordination across engineering, event platforms, and client solutions.",
   modalSections: [
-    {
-      title: "Projects & Creations",
-      type: "projects",
-      projects: [
-        {
-          name: "StarX Live",
-          category: "Live Music & Entertainment",
-          url: "https://starx-live-official.vercel.app/",
-          isPrivate: true,
-          techStack: ["React", "Vite", "Tailwind CSS", "Audio Streaming"],
-          status: "Live",
-          description:
-            "Official web platform and booking portal for StarX Live, a premier live rock band in Hyderabad. Features audio-visual performance galleries, live event tour schedules, musician lineup profiles, and direct VIP booking management.",
-        },
-        {
-          name: "TicketX",
-          category: "Ticketing & Event Platform",
-          url: "https://ticket-x-theta.vercel.app/",
-          isPrivate: true,
-          techStack: ["Next.js", "React", "Tailwind CSS", "Real-time Booking"],
-          status: "Live",
-          description:
-            "Next-gen real-time cinema and live event ticketing engine. Features interactive theater seat layout maps, multi-city showtime booking, digital pass generation, bookmarking, and payment checkout integration.",
-        },
-      ],
-    },
     {
       title: "Operations & Platform Growth",
       type: "skills",

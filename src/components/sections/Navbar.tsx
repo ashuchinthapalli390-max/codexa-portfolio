@@ -21,8 +21,6 @@ export function Navbar() {
     { name: "Home", id: "home" },
     { name: "About", id: "about" },
     { name: "Services", id: "services" },
-    { name: "Main Projects", id: "main-projects" },
-    { name: "Team Projects", id: "team-projects" },
     { name: "Team", id: "team" },
     { name: "Internship", id: "internship" },
     { name: "Process", id: "process" },
