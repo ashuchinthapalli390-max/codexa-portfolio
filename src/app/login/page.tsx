@@ -786,8 +786,8 @@ function LoginForm() {
                         </>
                       )}
                     </motion.button>
-                    <p className="text-[10px] font-mono text-[#666] text-center">
-                      Founder permanent mapping &bull; ashuchinthapalli3900@gmail.com
+                    <p className="text-[10px] font-mono text-[#555] text-center">
+                      Authorized Single Sign-On Channel &bull; End-to-End Encrypted
                     </p>
                   </div>
 
@@ -1298,7 +1298,7 @@ function LoginForm() {
 
       {/* Footer */}
       <footer className="relative z-20 px-6 py-6 text-center text-[11px] text-[#555] font-mono">
-        CodeXa Developer Network &bull; Cryptographically Verified Platform &bull; Founder &bull; ashuchinthapalli3900@gmail.com
+        CodeXa Developer Network &bull; Cryptographically Verified Platform
       </footer>
     </div>
   );
