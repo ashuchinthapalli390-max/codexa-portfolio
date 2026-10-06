@@ -265,7 +265,16 @@ function LoginForm() {
         body: JSON.stringify({ idToken }),
       });
 
-      const data = await res.json();
+      let data: any;
+      try {
+        data = await res.json();
+      } catch {
+        await signOutFirebase().catch(() => {});
+        setErrorMessage("Server communication error during session handshake. Please try again or sign in with credentials below.");
+        setLoginState("idle");
+        setGoogleLoading(false);
+        return;
+      }
 
       if (res.ok && data.success && data.authorized) {
         await refreshSession();
@@ -296,8 +305,8 @@ function LoginForm() {
     } catch (err) {
       console.error("[Session Handshake Error]", err);
       await signOutFirebase().catch(() => {});
-      setErrorMessage("Network error establishing secure session with CodeXa server.");
-      setLoginState("denied");
+      setErrorMessage("Network error establishing secure session with CodeXa server. Please try again or sign in with credentials below.");
+      setLoginState("idle");
       setGoogleLoading(false);
     }
   };
@@ -819,7 +828,11 @@ function LoginForm() {
                               type="text"
                               required
                               value={identifier}
-                              onChange={(e) => setIdentifier(e.target.value)}
+                              onChange={(e) => {
+                                setIdentifier(e.target.value);
+                                if (loginState === "denied") setLoginState("idle");
+                                if (errorMessage) setErrorMessage("");
+                              }}
                               placeholder="e.g. ashu or ashu@codexa.agency"
                               disabled={loginState === "verifying" || loginState === "success"}
                               className="w-full pl-10 pr-4 py-3 rounded-xl bg-[#101010] border border-crimson/25 focus:border-bright-red text-white text-xs font-mono placeholder:text-[#444] outline-none transition-all focus:shadow-[0_0_15px_rgba(217,4,41,0.25)]"
@@ -853,7 +866,11 @@ function LoginForm() {
                               type={showPassword ? "text" : "password"}
                               required
                               value={password}
-                              onChange={(e) => setPassword(e.target.value)}
+                              onChange={(e) => {
+                                setPassword(e.target.value);
+                                if (loginState === "denied") setLoginState("idle");
+                                if (errorMessage) setErrorMessage("");
+                              }}
                               placeholder="••••••••••••"
                               disabled={loginState === "verifying" || loginState === "success"}
                               className="w-full pl-10 pr-10 py-3 rounded-xl bg-[#101010] border border-crimson/25 focus:border-bright-red text-white text-xs font-mono placeholder:text-[#444] outline-none transition-all focus:shadow-[0_0_15px_rgba(217,4,41,0.25)]"
