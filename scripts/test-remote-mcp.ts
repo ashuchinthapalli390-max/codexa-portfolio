@@ -103,33 +103,88 @@ async function runIntegrationChecks() {
       "Contains standard protocol authentication failure payload"
     );
 
+    // Securely store newly created test key in local environment variable
+    process.env.MCP_TEST_API_KEY = activeRawKey;
+
     // -------------------------------------------------------------
-    // Check 2: Unauthenticated POST Request (tools/list)
+    // Check 2: Missing Key Rejection (POST tools/list without auth)
     // -------------------------------------------------------------
-    console.log("\n2. Unauthenticated POST Request (tools/list) Check:");
-    const unauthPostRes = await fetch(TARGET_URL, {
+    console.log("\n2. Missing API Key Rejection Check:");
+    const missingPostRes = await fetch(TARGET_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
     });
     assert(
-      unauthPostRes.status === 401,
-      `Unauthenticated POST tools/list returned HTTP 401 (got ${unauthPostRes.status})`
+      missingPostRes.status === 401,
+      `Missing key POST tools/list returned HTTP 401 (got ${missingPostRes.status})`
     );
-    const unauthPostBody = await unauthPostRes.json().catch(() => ({}));
+    const missingPostBody = await missingPostRes.json().catch(() => ({}));
     assert(
-      unauthPostBody.error?.code === -32001,
+      missingPostBody.error?.code === -32001,
       "Returned JSON-RPC protocol error code -32001 (Unauthorized)"
     );
     assert(
-      !unauthPostBody.result?.tools,
-      "Tools list is NOT exposed to unauthenticated callers"
+      !missingPostBody.result?.tools,
+      "Tools list is NOT exposed when API key is missing"
     );
 
     // -------------------------------------------------------------
-    // Check 3: Invalid API Key Rejection
+    // Check 3: Malformed API Key Rejection
     // -------------------------------------------------------------
-    console.log("\n3. Invalid API Key Rejection Check:");
+    console.log("\n3. Malformed API Key Rejection Checks:");
+    
+    // Subcase 3a: Raw key without 'Bearer ' prefix (testing old client bug)
+    const rawNoBearerRes = await fetch(TARGET_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: process.env.MCP_TEST_API_KEY!, // Sent directly without Bearer prefix
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 21, method: "tools/list" }),
+    });
+    assert(
+      rawNoBearerRes.status === 401,
+      `Raw key without 'Bearer ' prefix rejected with HTTP 401 (got ${rawNoBearerRes.status})`
+    );
+    const rawNoBearerBody = await rawNoBearerRes.json().catch(() => ({}));
+    assert(
+      rawNoBearerBody.error?.code === -32001,
+      "Raw key without Bearer returned error -32001 (Authentication strictly requires Bearer prefix)"
+    );
+
+    // Subcase 3b: Empty Bearer token ('Bearer ')
+    const emptyBearerRes = await fetch(TARGET_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer ",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 22, method: "tools/list" }),
+    });
+    assert(
+      emptyBearerRes.status === 401,
+      `Empty Bearer token rejected with HTTP 401 (got ${emptyBearerRes.status})`
+    );
+
+    // Subcase 3c: Wrong authorization scheme ('Basic ...')
+    const wrongSchemeRes = await fetch(TARGET_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Basic ${Buffer.from("user:pass").toString("base64")}`,
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 23, method: "tools/list" }),
+    });
+    assert(
+      wrongSchemeRes.status === 401,
+      `Non-Bearer scheme rejected with HTTP 401 (got ${wrongSchemeRes.status})`
+    );
+
+    // -------------------------------------------------------------
+    // Check 4: Invalid API Key Rejection
+    // -------------------------------------------------------------
+    console.log("\n4. Invalid API Key Rejection Check:");
     const invalidKeyRes = await fetch(TARGET_URL, {
       method: "POST",
       headers: {
@@ -149,9 +204,9 @@ async function runIntegrationChecks() {
     );
 
     // -------------------------------------------------------------
-    // Check 4: Revoked API Key Rejection
+    // Check 5: Revoked API Key Rejection
     // -------------------------------------------------------------
-    console.log("\n4. Revoked API Key Rejection Check:");
+    console.log("\n5. Revoked API Key Rejection Check:");
     const revokedKeyRes = await fetch(TARGET_URL, {
       method: "POST",
       headers: {
@@ -173,14 +228,14 @@ async function runIntegrationChecks() {
     );
 
     // -------------------------------------------------------------
-    // Check 5: Authenticated Protocol Handshake (initialize & ping)
+    // Check 6: Authenticated Protocol Handshake (initialize & ping)
     // -------------------------------------------------------------
-    console.log("\n5. Authenticated Protocol Handshake Check:");
+    console.log("\n6. Authenticated Protocol Handshake Check:");
     const initRes = await fetch(TARGET_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${activeRawKey}`,
+        Authorization: `Bearer ${process.env.MCP_TEST_API_KEY}`,
       },
       body: JSON.stringify({
         jsonrpc: "2.0",
@@ -208,21 +263,21 @@ async function runIntegrationChecks() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${activeRawKey}`,
+        Authorization: `Bearer ${process.env.MCP_TEST_API_KEY}`,
       },
       body: JSON.stringify({ jsonrpc: "2.0", id: 5, method: "ping" }),
     });
     assert(pingRes.status === 200, "ping method responded with HTTP 200");
 
     // -------------------------------------------------------------
-    // Check 6: Authenticated Tool Discovery (tools/list)
+    // Check 7: Authenticated Tool Discovery (tools/list)
     // -------------------------------------------------------------
-    console.log("\n6. Authenticated Tool Discovery Check:");
+    console.log("\n7. Authenticated Tool Discovery Check:");
     const listRes = await fetch(TARGET_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${activeRawKey}`,
+        Authorization: `Bearer ${process.env.MCP_TEST_API_KEY}`,
       },
       body: JSON.stringify({ jsonrpc: "2.0", id: 6, method: "tools/list" }),
     });
@@ -236,14 +291,14 @@ async function runIntegrationChecks() {
     assert(hasCreateAccount, "Found sensitive write tool: 'create_account'");
 
     // -------------------------------------------------------------
-    // Check 7: Harmless Read-Only Tool Execution (get_company_overview)
+    // Check 8: Harmless Read-Only Tool Execution (get_company_overview)
     // -------------------------------------------------------------
-    console.log("\n7. Read-Only Tool Execution Check:");
+    console.log("\n8. Read-Only Tool Execution Check:");
     const readCallRes = await fetch(TARGET_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${activeRawKey}`,
+        Authorization: `Bearer ${process.env.MCP_TEST_API_KEY}`,
       },
       body: JSON.stringify({
         jsonrpc: "2.0",
@@ -265,14 +320,14 @@ async function runIntegrationChecks() {
     );
 
     // -------------------------------------------------------------
-    // Check 8: Write Tool Call Human Approval Interception
+    // Check 9: Write Tool Call Human Approval Interception
     // -------------------------------------------------------------
-    console.log("\n8. Sensitive Write Tool Approval Interception Check:");
+    console.log("\n9. Sensitive Write Tool Approval Interception Check:");
     const writeCallRes = await fetch(TARGET_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${activeRawKey}`,
+        Authorization: `Bearer ${process.env.MCP_TEST_API_KEY}`,
       },
       body: JSON.stringify({
         jsonrpc: "2.0",
@@ -319,14 +374,14 @@ async function runIntegrationChecks() {
     }
 
     // -------------------------------------------------------------
-    // Check 9: Server-Sent Events (SSE) Remote Transport Handshake
+    // Check 10: Server-Sent Events (SSE) Remote Transport Handshake
     // -------------------------------------------------------------
-    console.log("\n9. Remote SSE Transport Stream Handshake Check:");
+    console.log("\n10. Remote SSE Transport Stream Handshake Check:");
     const sseRes = await fetch(TARGET_URL, {
       method: "GET",
       headers: {
         Accept: "text/event-stream",
-        Authorization: `Bearer ${activeRawKey}`,
+        Authorization: `Bearer ${process.env.MCP_TEST_API_KEY}`,
       },
     });
     assert(sseRes.status === 200, `SSE GET returned HTTP 200 (got ${sseRes.status})`);

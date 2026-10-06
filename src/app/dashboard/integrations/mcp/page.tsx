@@ -388,7 +388,7 @@ export default function McpControlCenterPage() {
     "codexa": {
       "url": "https://codxa-agency.online/mcp",
       "headers": {
-        "Authorization": "Bearer YOUR_API_KEY_HERE"
+        "Authorization": "Bearer <API_KEY>"
       }
     }
   }
@@ -422,7 +422,7 @@ export default function McpControlCenterPage() {
         "mcp-remote",
         "https://codxa-agency.online/mcp",
         "--header",
-        "Authorization: Bearer YOUR_API_KEY_HERE"
+        "Authorization: Bearer <API_KEY>"
       ]
     }
   }
@@ -984,6 +984,29 @@ export default function McpControlCenterPage() {
                   {copiedKey === "secret-key" ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
                   {copiedKey === "secret-key" ? "Copied" : "Copy"}
                 </button>
+              </div>
+
+              {/* Generated Configuration Example */}
+              <div className="mb-5 space-y-1.5 text-left">
+                <div className="text-[11px] font-semibold text-[#aaa] uppercase tracking-wider flex items-center justify-between">
+                  <span>Generated Client Configuration</span>
+                  <span className="text-[10px] text-[#666] font-mono">Authorization: Bearer &lt;API_KEY&gt;</span>
+                </div>
+                <pre className="text-[11px] font-mono text-[#aaa] bg-[#050505] p-3 rounded-lg overflow-x-auto border border-[#161616]">
+{`{
+  "mcpServers": {
+    "codexa": {
+      "url": "https://codxa-agency.online/mcp",
+      "headers": {
+        "Authorization": "Bearer <API_KEY>"
+      }
+    }
+  }
+}`}
+                </pre>
+                <p className="text-[10px] text-[#777]">
+                  Configure your client with the header format: <code className="text-white">Authorization: Bearer &lt;API_KEY&gt;</code>. Never send keys without the Bearer prefix.
+                </p>
               </div>
 
               <button
