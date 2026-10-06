@@ -39,14 +39,30 @@ export function generateOAuthAccessToken(): { rawToken: string; tokenHash: strin
   return { rawToken, tokenHash };
 }
 
-export async function resolveMcpAuthContext(req: Request): Promise<
+export async function resolveMcpAuthContext(
+  req: Request,
+  options?: { allowWebSession?: boolean }
+): Promise<
   | { success: true; context: McpAuthContext }
   | { success: false; status: number; error: string; code: string }
 > {
   const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
+  let rawToken: string | null = null;
 
   if (authHeader && authHeader.toLowerCase().startsWith("bearer ")) {
-    const rawToken = authHeader.slice(7).trim();
+    rawToken = authHeader.slice(7).trim();
+  } else {
+    // Support ?apiKey= or ?token= for SSE EventSource connections that cannot set custom headers
+    try {
+      const url = new URL(req.url);
+      const qToken = url.searchParams.get("apiKey") || url.searchParams.get("token");
+      if (qToken) {
+        rawToken = qToken.trim();
+      }
+    } catch {}
+  }
+
+  if (rawToken !== null) {
     if (!rawToken) {
       return {
         success: false,
@@ -61,7 +77,7 @@ export async function resolveMcpAuthContext(req: Request): Promise<
     // Case A: Service Account Token (cxa_sa_live_...)
     if (rawToken.startsWith("cxa_sa_")) {
       const sa = await prisma.serviceAccount.findFirst({
-        where: { apiKeyHash: tokenHash, status: "ACTIVE" },
+        where: { apiKeyHash: tokenHash },
       });
 
       if (!sa) {
@@ -69,7 +85,16 @@ export async function resolveMcpAuthContext(req: Request): Promise<
           success: false,
           status: 401,
           code: "INVALID_SERVICE_ACCOUNT",
-          error: "Invalid or revoked Service Account API key.",
+          error: "Invalid or non-existent Service Account API key.",
+        };
+      }
+
+      if (sa.status !== "ACTIVE") {
+        return {
+          success: false,
+          status: 401,
+          code: "KEY_REVOKED",
+          error: "Service Account API key has been revoked or deactivated.",
         };
       }
 
@@ -126,9 +151,9 @@ export async function resolveMcpAuthContext(req: Request): Promise<
       if (client.status !== "ACTIVE") {
         return {
           success: false,
-          status: 403,
-          code: "CLIENT_INACTIVE",
-          error: `MCP Client '${client.name}' is ${client.status}.`,
+          status: 401,
+          code: "CLIENT_REVOKED",
+          error: `MCP Client '${client.name}' is revoked or inactive.`,
         };
       }
 
@@ -172,7 +197,7 @@ export async function resolveMcpAuthContext(req: Request): Promise<
 
     // Case C: Standard Client API Key (cxa_mcp_sk_live_...)
     const client = await prisma.mcpClient.findFirst({
-      where: { clientSecretHash: tokenHash, status: "ACTIVE" },
+      where: { clientSecretHash: tokenHash },
       include: { owner: true },
     });
 
@@ -181,7 +206,16 @@ export async function resolveMcpAuthContext(req: Request): Promise<
         success: false,
         status: 401,
         code: "INVALID_MCP_KEY",
-        error: "Invalid or inactive CodeXa MCP API key.",
+        error: "Invalid or non-existent CodeXa MCP API key.",
+      };
+    }
+
+    if (client.status !== "ACTIVE") {
+      return {
+        success: false,
+        status: 401,
+        code: "KEY_REVOKED",
+        error: "This MCP Client API key has been revoked or deactivated.",
       };
     }
 
@@ -236,35 +270,37 @@ export async function resolveMcpAuthContext(req: Request): Promise<
     };
   }
 
-  // Case D: Fallback to active CodeXa Web Session (useful for internal portal testing)
-  const sessionResult = await getCurrentSessionResult();
-  if (sessionResult.status === "authenticated" && sessionResult.user && sessionResult.user.isActive) {
-    const u = sessionResult.user;
-    return {
-      success: true,
-      context: {
-        clientId: "codexa_web_portal",
-        clientName: "CodeXa Web Portal",
-        clientType: "INTERNAL_WEB",
-        scopes: ["*"], // Inherit full scope capacity, bounded by the user's RBAC role
-        allowedTools: ["*"],
-        actingUser: {
-          id: u.id,
-          email: u.email || "",
-          username: u.username || "",
-          fullName: u.displayName || u.username,
-          role: u.orgRole || u.role,
-          orgRole: u.orgRole || u.role,
-          department: (u as any).department || null,
+  // Case D: Optional Fallback to active CodeXa Web Session (only if explicitly enabled)
+  if (options?.allowWebSession) {
+    const sessionResult = await getCurrentSessionResult();
+    if (sessionResult.status === "authenticated" && sessionResult.user && sessionResult.user.isActive) {
+      const u = sessionResult.user;
+      return {
+        success: true,
+        context: {
+          clientId: "codexa_web_portal",
+          clientName: "CodeXa Web Portal",
+          clientType: "INTERNAL_WEB",
+          scopes: ["*"],
+          allowedTools: ["*"],
+          actingUser: {
+            id: u.id,
+            email: u.email || "",
+            username: u.username || "",
+            fullName: u.displayName || u.username,
+            role: u.orgRole || u.role,
+            orgRole: u.orgRole || u.role,
+            department: (u as any).department || null,
+          },
         },
-      },
-    };
+      };
+    }
   }
 
   return {
     success: false,
     status: 401,
     code: "AUTH_REQUIRED",
-    error: "Authentication required. Provide 'Authorization: Bearer <key>' or sign in to CodeXa portal.",
+    error: "Authentication required. Provide 'Authorization: Bearer <key>'.",
   };
 }

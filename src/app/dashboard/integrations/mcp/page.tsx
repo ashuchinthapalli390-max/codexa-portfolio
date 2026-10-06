@@ -370,37 +370,67 @@ export default function McpControlCenterPage() {
             {/* Quick Config Snippets */}
             <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="p-4 rounded-xl bg-[#080808] border border-[#1a1a1a]">
-                <div className="text-xs font-bold text-white mb-2 flex items-center gap-2">
-                  <Zap className="w-3.5 h-3.5 text-bright-red" />
-                  Claude Desktop (`claude_desktop_config.json`)
+                <div className="text-xs font-bold text-white mb-2 flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Globe className="w-3.5 h-3.5 text-bright-red" />
+                    Direct Remote MCP (Cursor / ChatGPT / Web Agents)
+                  </span>
+                  <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/30">
+                    Recommended
+                  </span>
+                </div>
+                <div className="text-xs text-[#888] space-y-2 mb-3">
+                  <p>Native remote HTTP / SSE client configuration:</p>
+                </div>
+                <pre className="text-[11px] font-mono text-[#aaa] bg-[#050505] p-3 rounded-lg overflow-x-auto border border-[#161616]">
+{`{
+  "mcpServers": {
+    "codexa": {
+      "url": "https://codxa-agency.online/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY_HERE"
+      }
+    }
+  }
+}`}
+                </pre>
+                <p className="text-[11px] text-[#666] mt-2">
+                  Generate your secret API key under the <b>Clients</b> tab. Write actions automatically queue for human approval.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-[#080808] border border-[#1a1a1a]">
+                <div className="text-xs font-bold text-white mb-2 flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Zap className="w-3.5 h-3.5 text-bright-red" />
+                    Claude Desktop (`claude_desktop_config.json`)
+                  </span>
+                  <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-[#222] text-[#888]">
+                    Optional Stdio Bridge
+                  </span>
+                </div>
+                <div className="text-xs text-[#888] space-y-2 mb-3">
+                  <p>For stdio-only clients, bridge to remote SSE via <code className="text-white">mcp-remote</code>:</p>
                 </div>
                 <pre className="text-[11px] font-mono text-[#aaa] bg-[#050505] p-3 rounded-lg overflow-x-auto border border-[#161616]">
 {`{
   "mcpServers": {
     "codexa": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-everything"],
-      "env": {
-        "CODEXA_URL": "https://codxa-agency.online/mcp",
-        "CODEXA_API_KEY": "cxa_mcp_sk_live_..."
-      }
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://codxa-agency.online/mcp",
+        "--header",
+        "Authorization: Bearer YOUR_API_KEY_HERE"
+      ]
     }
   }
 }`}
                 </pre>
-              </div>
-
-              <div className="p-4 rounded-xl bg-[#080808] border border-[#1a1a1a]">
-                <div className="text-xs font-bold text-white mb-2 flex items-center gap-2">
-                  <Globe className="w-3.5 h-3.5 text-bright-red" />
-                  ChatGPT / Remote Custom MCP Client
-                </div>
-                <div className="text-xs text-[#888] space-y-2">
-                  <p>1. Create an API Key in the <b>Clients</b> tab.</p>
-                  <p>2. Set Server URL to: <code className="text-white">https://codxa-agency.online/mcp</code></p>
-                  <p>3. Add Header: <code className="text-white">Authorization: Bearer cxa_mcp_sk_live_...</code></p>
-                  <p>4. All write actions will trigger the <b>Approvals</b> queue!</p>
-                </div>
+                <p className="text-[11px] text-[#666] mt-2">
+                  Tunnels local stdio to the remote CodeXa SSE endpoint. Never commit real keys.
+                </p>
               </div>
             </div>
           </div>

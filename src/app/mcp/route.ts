@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function OPTIONS(req: NextRequest) {
-  return apiOptions();
+  return apiOptions(req);
 }
 
 export async function GET(req: NextRequest) {
