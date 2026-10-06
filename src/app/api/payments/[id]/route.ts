@@ -118,6 +118,21 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       }
     }
 
+    // Fetch reminder history for administrative view
+    let reminderLogs: any[] = [];
+    if (canVerify || canViewAll) {
+      reminderLogs = await db.paymentReminderLog.findMany({
+        where: {
+          OR: [
+            { paymentRequestId: payment.id },
+            ...(payment.userId ? [{ internId: payment.userId }] : []),
+          ],
+        },
+        orderBy: { sentAt: "desc" },
+        take: 10,
+      });
+    }
+
     // Return official payment record with dynamically resolved payment account
     return NextResponse.json({
       payment: {
@@ -128,6 +143,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
           payeeName: process.env.DEFAULT_UPI_NAME || "CodeXa Agency",
         },
       },
+      reminderLogs,
       duplicateWarnings,
       isOwner,
       canVerify,

@@ -21,9 +21,13 @@ import {
   Calendar,
   Sparkles,
   Info,
+  Bell,
+  Send,
+  Mail,
+  RefreshCw,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { hasPermission, Permission } from "@/lib/permissions";
+import { hasPermission, Permission, getEffectiveRole } from "@/lib/permissions";
 
 interface LineItem {
   item: string;
@@ -39,6 +43,9 @@ export default function PaymentDetailPage() {
   const paymentId = params.id as string;
 
   const [payment, setPayment] = useState<any>(null);
+  const [reminderLogs, setReminderLogs] = useState<any[]>([]);
+  const [sendingReminder, setSendingReminder] = useState(false);
+  const [reminderMessage, setReminderMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [copiedUpi, setCopiedUpi] = useState(false);
   const [copiedRef, setCopiedRef] = useState(false);
@@ -73,10 +80,46 @@ export default function PaymentDetailPage() {
       }
       const data = await res.json();
       setPayment(data.payment);
+      if (data.reminderLogs) {
+        setReminderLogs(data.reminderLogs);
+      }
     } catch (err: any) {
       console.error("Error fetching payment:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSendReminder = async () => {
+    if (!payment?.id) return;
+    try {
+      setSendingReminder(true);
+      setReminderMessage(null);
+      const res = await fetch(`/api/payments/${payment.id}/reminder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force: false }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setReminderMessage({
+          type: "error",
+          text: data.error || "Failed to dispatch reminder.",
+        });
+      } else {
+        setReminderMessage({
+          type: "success",
+          text: "Payment reminder dispatched successfully via Resend Email and Web Push!",
+        });
+        fetchPayment();
+      }
+    } catch (err: any) {
+      setReminderMessage({
+        type: "error",
+        text: err.message || "Failed to trigger reminder.",
+      });
+    } finally {
+      setSendingReminder(false);
     }
   };
 
@@ -217,6 +260,8 @@ export default function PaymentDetailPage() {
   const isPendingVerification = payment.paymentStatus === "PENDING_VERIFICATION";
   const isApproved = payment.paymentStatus === "APPROVED";
   const isRejected = payment.paymentStatus === "REJECTED";
+  const role = user ? getEffectiveRole(user) : "";
+  const isPrivileged = ["FOUNDER", "CO_FOUNDER", "HR", "CEO", "CTO", "COO", "ADMIN"].includes(role);
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-12">
@@ -289,6 +334,158 @@ export default function PaymentDetailPage() {
           </button>
         )}
       </div>
+
+      {/* ─── MANDATORY PAYMENT REMINDER AUDIT & CONTROLS (ADMIN) ───────────── */}
+      {isPrivileged && (
+        <div className="p-5 sm:p-6 rounded-3xl bg-[#0f0f0f] border border-white/10 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-bright-red/10 border border-bright-red/30 text-bright-red">
+                <Bell className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-orbitron font-bold text-white text-sm flex items-center gap-2">
+                  Mandatory Service Payment Reminder Automation
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-black/50 text-zinc-400 border border-white/10">
+                    ₹450 Bill
+                  </span>
+                </h3>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Daily 9:00 AM IST automation via Resend transactional email &amp; Web Push. Stops automatically once verified.
+                </p>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2">
+              {!isApproved && (
+                <button
+                  onClick={handleSendReminder}
+                  disabled={sendingReminder}
+                  className="px-4 py-2 rounded-xl bg-bright-red hover:bg-bright-red/90 text-white text-xs font-bold transition-all shadow-[0_0_15px_rgba(239,35,60,0.3)] disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  {sendingReminder ? "Dispatching..." : "Send Reminder Now"}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Reminder Feedback Message */}
+          {reminderMessage && (
+            <div
+              className={`p-3 rounded-xl text-xs font-medium flex items-center gap-2 ${
+                reminderMessage.type === "success"
+                  ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-300"
+                  : "bg-crimson/15 border border-crimson/30 text-crimson"
+              }`}
+            >
+              {reminderMessage.type === "success" ? (
+                <Check className="w-4 h-4 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+              )}
+              <span>{reminderMessage.text}</span>
+            </div>
+          )}
+
+          {/* Key Metrics */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div className="p-3 rounded-2xl bg-[#141414] border border-white/5">
+              <div className="text-[11px] text-zinc-500">Service Fee Status</div>
+              <div className="font-bold text-white mt-1">
+                {isApproved ? (
+                  <span className="text-emerald-400">PAID &bull; CLEARED</span>
+                ) : (
+                  <span className="text-amber-400">PENDING (₹450)</span>
+                )}
+              </div>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-[#141414] border border-white/5">
+              <div className="text-[11px] text-zinc-500">Last Reminder Sent</div>
+              <div className="font-medium text-zinc-200 mt-1">
+                {payment.lastReminderAt
+                  ? new Date(payment.lastReminderAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
+                  : "No reminder yet"}
+              </div>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-[#141414] border border-white/5">
+              <div className="text-[11px] text-zinc-500">Total Reminder Count</div>
+              <div className="font-bold text-white mt-1">
+                {payment.reminderCount || reminderLogs.length || 0} Sent
+              </div>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-[#141414] border border-white/5">
+              <div className="text-[11px] text-zinc-500">Delivery Channels</div>
+              <div className="font-medium text-zinc-300 mt-1 flex items-center gap-2">
+                <span>Resend Email</span> &bull; <span>Web Push</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Audit History Logs */}
+          {reminderLogs && reminderLogs.length > 0 && (
+            <div className="space-y-2 pt-2">
+              <div className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+                Recent Dispatch Logs
+              </div>
+              <div className="overflow-x-auto rounded-xl border border-white/5">
+                <table className="w-full text-left text-[11px] text-zinc-300">
+                  <thead className="bg-[#141414] text-zinc-500 uppercase text-[10px]">
+                    <tr>
+                      <th className="py-2 px-3">Date (IST)</th>
+                      <th className="py-2 px-3">Source</th>
+                      <th className="py-2 px-3">Email Status</th>
+                      <th className="py-2 px-3">Web Push</th>
+                      <th className="py-2 px-3">Provider ID</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5 bg-[#101010]">
+                    {reminderLogs.map((log: any) => (
+                      <tr key={log.id}>
+                        <td className="py-2 px-3 font-mono text-zinc-400">{log.reminderDate}</td>
+                        <td className="py-2 px-3 font-medium text-white">{log.source}</td>
+                        <td className="py-2 px-3">
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              log.emailStatus === "SENT"
+                                ? "bg-emerald-500/10 text-emerald-400"
+                                : log.emailStatus === "SKIPPED"
+                                ? "bg-zinc-500/10 text-zinc-400"
+                                : "bg-crimson/15 text-crimson"
+                            }`}
+                          >
+                            {log.emailStatus}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3">
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              log.pushStatus === "SENT"
+                                ? "bg-emerald-500/10 text-emerald-400"
+                                : log.pushStatus === "UNAVAILABLE"
+                                ? "bg-zinc-500/10 text-zinc-400"
+                                : "bg-crimson/15 text-crimson"
+                            }`}
+                          >
+                            {log.pushStatus}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 font-mono text-[10px] text-zinc-500 truncate max-w-[150px]">
+                          {log.emailProviderId || "-"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ─── OFFICIAL CODEXA SERVICE BILL INVOICE CARD ─────────────────────── */}
       <div className="rounded-3xl bg-[#0d0d0d] border border-crimson/30 shadow-2xl overflow-hidden relative">

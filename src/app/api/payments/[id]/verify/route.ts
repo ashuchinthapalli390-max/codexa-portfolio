@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { hasPermission, Permission } from "@/lib/permissions";
 import { dataStore } from "@/lib/data-store";
 import { sendPaymentApprovedEmail, sendPaymentRejectedEmail } from "@/lib/email/notifications";
+import { sendMandatoryFeePaymentConfirmationEmail } from "@/services/payment-reminders";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -87,14 +88,25 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
       // Async email notification
       if (payment.userEmail) {
-        sendPaymentApprovedEmail({
-          referenceId: payment.referenceId,
-          recipientName: payment.userName || payment.userEmail,
-          recipientEmail: payment.userEmail,
-          title: payment.title,
-          amount: payment.fixedAmount,
-          utrNumber: payment.utrNumber || undefined,
-        }).catch(() => {});
+        if (payment.fixedAmount === 450 || payment.paymentPurpose === "INTERNSHIP_FEE") {
+          sendMandatoryFeePaymentConfirmationEmail({
+            studentName: payment.userName || payment.userEmail,
+            email: payment.userEmail,
+            domain: payment.domain || "Engineering Track",
+            amount: payment.fixedAmount,
+            transactionId: payment.utrNumber || payment.referenceId,
+            paidDate: new Date().toLocaleDateString("en-IN"),
+          }).catch(() => {});
+        } else {
+          sendPaymentApprovedEmail({
+            referenceId: payment.referenceId,
+            recipientName: payment.userName || payment.userEmail,
+            recipientEmail: payment.userEmail,
+            title: payment.title,
+            amount: payment.fixedAmount,
+            utrNumber: payment.utrNumber || undefined,
+          }).catch(() => {});
+        }
       }
 
       return NextResponse.json({

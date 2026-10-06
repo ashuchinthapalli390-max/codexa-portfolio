@@ -28,9 +28,11 @@ import {
   Settings,
   Users,
   Smartphone,
+  Bell,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { getEffectiveRole, hasPermission, Permission } from "@/lib/permissions";
+import { PushNotificationBanner } from "@/components/notifications/PushNotificationBanner";
 
 interface PaymentItem {
   id: string;
@@ -94,6 +96,31 @@ export default function PaymentsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [purposeFilter, setPurposeFilter] = useState("ALL");
+  const [remindingId, setRemindingId] = useState<string | null>(null);
+
+  const handleTriggerTableReminder = async (e: React.MouseEvent, paymentId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setRemindingId(paymentId);
+    try {
+      const res = await fetch(`/api/payments/${paymentId}/reminder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force: false }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(`Reminder failed: ${data.error || "Error dispatching reminder"}`);
+      } else {
+        alert("Reminder dispatched successfully via Resend Email and Web Push!");
+        fetchData();
+      }
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setRemindingId(null);
+    }
+  };
 
   // Verification Review Modal State
   const [selectedReviewPayment, setSelectedReviewPayment] = useState<PaymentItem | null>(null);
@@ -666,6 +693,9 @@ export default function PaymentsPage() {
       {/* ─── TAB 2 / REGULAR USER: PAYMENTS LIST ─────────────────────────── */}
       {(!isPrivileged || activeTab === "all" || activeTab === "my-payments") && (
         <div className="space-y-4">
+          {/* Web Push Permission CTA */}
+          <PushNotificationBanner />
+
           {/* Active Payment Action Banner for Interns / Regular Users */}
           {!isPrivileged && pendingPaymentItem && (
             <div className="p-4 sm:p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -822,19 +852,32 @@ export default function PaymentsPage() {
                           </div>
                         </td>
                         <td className="py-3 px-4 text-right">
-                          <Link
-                            href={`/dashboard/payments/${p.id}`}
-                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
-                              p.paymentStatus === "PENDING_PAYMENT"
-                                ? "bg-bright-red hover:bg-bright-red/90 text-white shadow-[0_0_12px_rgba(239,35,60,0.3)] font-semibold"
-                                : p.paymentStatus === "REJECTED"
-                                ? "bg-crimson/20 hover:bg-crimson/30 text-crimson border border-crimson/30"
-                                : "bg-[#181818] hover:bg-[#222222] text-zinc-300 border border-white/10"
-                            }`}
-                          >
-                            {p.paymentStatus === "PENDING_PAYMENT" ? "Pay Now" : p.paymentStatus === "REJECTED" ? "Resubmit" : "View"}
-                            <ChevronRight className="w-3.5 h-3.5" />
-                          </Link>
+                          <div className="flex items-center justify-end gap-2">
+                            {isPrivileged && p.paymentStatus === "PENDING_PAYMENT" && (
+                              <button
+                                onClick={(e) => handleTriggerTableReminder(e, p.id)}
+                                disabled={remindingId === p.id}
+                                title="Send Daily ₹450 Reminder via Resend & Push"
+                                className="px-2.5 py-1.5 rounded-xl bg-bright-red/10 hover:bg-bright-red/20 border border-bright-red/30 text-bright-red text-xs font-semibold flex items-center gap-1 transition-colors disabled:opacity-50"
+                              >
+                                <Bell className="w-3 h-3" />
+                                {remindingId === p.id ? "Sending..." : "Remind"}
+                              </button>
+                            )}
+                            <Link
+                              href={`/dashboard/payments/${p.id}`}
+                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
+                                !isPrivileged && p.paymentStatus === "PENDING_PAYMENT"
+                                  ? "bg-bright-red hover:bg-bright-red/90 text-white shadow-[0_0_12px_rgba(239,35,60,0.3)] font-semibold"
+                                  : p.paymentStatus === "REJECTED"
+                                  ? "bg-crimson/20 hover:bg-crimson/30 text-crimson border border-crimson/30"
+                                  : "bg-[#181818] hover:bg-[#222222] text-zinc-300 border border-white/10"
+                              }`}
+                            >
+                              {!isPrivileged && p.paymentStatus === "PENDING_PAYMENT" ? "Pay Now" : p.paymentStatus === "REJECTED" ? "Resubmit" : "View"}
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </Link>
+                          </div>
                         </td>
                       </tr>
                     ))}

@@ -66,6 +66,8 @@ model User {
   modelEntitlements     ModelEntitlement[]
   mcpClients            McpClient[]
   paymentRequests       PaymentRequest[]
+  paymentReminderLogs   PaymentReminderLog[]
+  pushSubscriptions     PushSubscription[]
 }
 
 // ─── TEAM PROFILES ────────────────────────────────────────────────────────────
@@ -1223,6 +1225,9 @@ model PaymentRequest {
 
   adminNotes         String?
 
+  lastReminderAt     DateTime?
+  reminderCount      Int                @default(0)
+
   createdById        String?
   createdByName      String?
 
@@ -1239,6 +1244,7 @@ model PaymentRequest {
   @@index([utrNumber])
   @@index([paymentDate])
   @@index([createdAt])
+  @@index([lastReminderAt])
 }
 
 model PaymentSubmission {
@@ -1304,6 +1310,52 @@ model PaymentSetting {
   verificationRoles   Json?    // ["FOUNDER", "CO_FOUNDER", "HR"]
   updatedById         String?
   updatedAt           DateTime @updatedAt
+}
+
+// ─── MANDATORY PAYMENT REMINDER AUDIT LOG ─────────────────────────────────────
+model PaymentReminderLog {
+  id               String   @id @default(cuid())
+  internId         String
+  paymentRequestId String?
+  paymentType      String   @default("MANDATORY_SERVICE_FEE") // "MANDATORY_SERVICE_FEE"
+  reminderDate     String   // "YYYY-MM-DD" in Asia/Kolkata IST
+  source           String   @default("DAILY_AUTOMATION") // "DAILY_AUTOMATION" | "ADMIN_MANUAL"
+
+  emailAttempted   Boolean  @default(false)
+  emailStatus      String   @default("PENDING") // "SENT" | "FAILED" | "SKIPPED"
+  emailProviderId  String?  // Resend email ID e.g. "re_1234..."
+
+  pushAttempted    Boolean  @default(false)
+  pushStatus       String   @default("UNAVAILABLE") // "SENT" | "FAILED" | "UNAVAILABLE"
+  pushError        String?
+
+  errorMessage     String?
+  sentAt           DateTime @default(now())
+  createdAt        DateTime @default(now())
+
+  user             User     @relation(fields: [internId], references: [id], onDelete: Cascade)
+
+  @@unique([internId, paymentType, reminderDate])
+  @@index([internId])
+  @@index([reminderDate])
+  @@index([paymentType])
+  @@index([sentAt])
+}
+
+// ─── WEB PUSH SUBSCRIPTIONS ──────────────────────────────────────────────────
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 
