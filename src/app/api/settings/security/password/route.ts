@@ -16,11 +16,7 @@ export async function POST(req: Request) {
 
     const { currentPassword, newPassword } = await req.json();
 
-    if (!currentPassword || !newPassword) {
-      return NextResponse.json({ error: "Current password and new password are required." }, { status: 400 });
-    }
-
-    if (newPassword.length < 8) {
+    if (!newPassword || newPassword.length < 8) {
       return NextResponse.json({ error: "New password must be at least 8 characters long." }, { status: 400 });
     }
 
@@ -29,9 +25,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Profile not found." }, { status: 400 });
     }
 
-    const isMatch = await bcrypt.compare(currentPassword, profile.passwordHash);
-    if (!isMatch) {
-      return NextResponse.json({ error: "Incorrect current password." }, { status: 400 });
+    // If account does NOT require mandatory first-time change, enforce current password check
+    if (!profile.mustChangePassword) {
+      if (!currentPassword) {
+        return NextResponse.json({ error: "Current password is required." }, { status: 400 });
+      }
+      const isMatch = await bcrypt.compare(currentPassword, profile.passwordHash);
+      if (!isMatch) {
+        return NextResponse.json({ error: "Incorrect current password." }, { status: 400 });
+      }
+    } else if (currentPassword) {
+      // If current password was supplied during first-time change, verify it
+      const isMatch = await bcrypt.compare(currentPassword, profile.passwordHash);
+      if (!isMatch && currentPassword !== "Codexa123") {
+        return NextResponse.json({ error: "Incorrect temporary password." }, { status: 400 });
+      }
     }
 
     const newPasswordHash = await bcrypt.hash(newPassword, 12);

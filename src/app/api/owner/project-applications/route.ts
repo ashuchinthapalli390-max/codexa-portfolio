@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentSessionResult } from "@/lib/auth";
+import { Permission, requirePermission } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -21,11 +22,9 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    if (auth.user.role !== "OWNER" && auth.user.role !== "ADMIN") {
-      return NextResponse.json(
-        { success: false, error: "Forbidden. Owner or Admin privileges required." },
-        { status: 403, headers: NO_CACHE_HEADERS }
-      );
+    const permCheck = await requirePermission(auth.user, Permission.VIEW_PAYMENTS);
+    if (!permCheck.authorized) {
+      return permCheck.response;
     }
 
     const { searchParams } = new URL(req.url);

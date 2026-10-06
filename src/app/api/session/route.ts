@@ -10,6 +10,7 @@
  */
 import { NextResponse } from "next/server";
 import { getCurrentSessionResult } from "@/lib/auth";
+import { getEffectiveRole, ROLE_PERMISSIONS } from "@/lib/permissions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,6 +56,8 @@ export async function GET() {
     }
 
     const user = result.user;
+    const effectiveRole = getEffectiveRole(user);
+    const userPermissions = Array.from(ROLE_PERMISSIONS[effectiveRole] || []);
 
     return NextResponse.json(
       {
@@ -65,10 +68,14 @@ export async function GET() {
           email: user.email,
           displayName: user.displayName,
           role: user.role,
+          orgRole: user.orgRole || effectiveRole,
+          effectiveRole,
+          mustChangePassword: Boolean(user.mustChangePassword),
           isActive: user.isActive,
           mediaUrl: user.mediaUrl,
           leadershipPosition: user.leadershipPosition,
           primaryRole: user.primaryRole,
+          permissions: userPermissions,
         },
       },
       {

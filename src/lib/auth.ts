@@ -26,7 +26,9 @@ export interface AuthenticatedUser {
   username: string | null;
   email: string | null;
   role: "OWNER" | "ADMIN" | "TEAM_MEMBER" | string;
+  orgRole?: string | null;
   isActive: boolean;
+  mustChangePassword?: boolean;
   displayName: string;
   mediaUrl: string | null;
   leadershipPosition?: string | null;
@@ -225,7 +227,9 @@ export async function validateSessionResult(rawToken?: string | null): Promise<S
       username: session.user.username ?? null,
       email: session.user.email ?? null,
       role: session.user.role,
+      orgRole: session.user.orgRole ?? (session.user.role === "OWNER" ? "FOUNDER" : session.user.role),
       isActive: session.user.isActive,
+      mustChangePassword: Boolean(session.user.mustChangePassword),
       displayName:
         session.user.profile?.displayName ??
         session.user.fullName ??

@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dataStore } from "@/lib/data-store";
 import { getCurrentUser } from "@/lib/auth";
+import { Permission, hasPermission, isOwner } from "@/lib/permissions";
 
 export const runtime = "nodejs";
 
@@ -37,11 +38,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       return NextResponse.json({ error: "Project not found." }, { status: 404 });
     }
 
-    const isOwner = user.role === "OWNER";
-    const isCreator = existing.createdBy === user.id;
+    const canEdit = hasPermission(user, Permission.EDIT_PROJECTS) || existing.createdBy === user.id;
 
-    if (!isOwner && !isCreator) {
-      return NextResponse.json({ error: "Forbidden. You can only edit your own projects." }, { status: 403 });
+    if (!canEdit) {
+      return NextResponse.json({ error: "Forbidden. You are not authorized to edit this project." }, { status: 403 });
     }
 
     const body = await req.json();
@@ -87,8 +87,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (body.showInTeamProjects !== undefined) updates.showInTeamProjects = Boolean(body.showInTeamProjects);
     if (collaboratorIds !== undefined) updates.collaboratorIds = collaboratorIds;
 
-    // Owner-only fields
-    if (isOwner) {
+    // Owner / Executive fields (Main project approval, featured, display order)
+    const isOwnerActor = isOwner(user) || hasPermission(user, Permission.APPROVE_PROJECTS);
+    if (isOwnerActor) {
       if (isFeatured !== undefined) updates.isFeatured = isFeatured;
       if (isMainProject !== undefined) updates.isMainProject = isMainProject;
       if (displayOrder !== undefined) updates.displayOrder = displayOrder;
@@ -97,13 +98,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const updated = await dataStore.updateProject(existing.id, updates);
 
     // Audit log if Main Project status changed
-    if (isOwner && isMainProject !== undefined && isMainProject !== existing.isMainProject) {
+    if (isOwnerActor && isMainProject !== undefined && isMainProject !== existing.isMainProject) {
       await dataStore.logAudit({
         actorId: user.id,
         actorName: user.displayName,
         targetId: existing.id,
         action: isMainProject ? "MAIN_PROJECT_APPROVED" : "MAIN_PROJECT_REMOVED",
-        details: `Owner ${isMainProject ? "approved" : "removed"} '${existing.title}' as official Main Project.`,
+        details: `Authorized user ${user.displayName} (${user.role}) ${isMainProject ? "approved" : "removed"} '${existing.title}' as official Main Project.`,
         ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
       });
     }
@@ -129,11 +130,10 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
       return NextResponse.json({ error: "Project not found." }, { status: 404 });
     }
 
-    const isOwner = user.role === "OWNER";
-    const isCreator = existing.createdBy === user.id;
+    const canDelete = hasPermission(user, Permission.DELETE_PROJECTS) || existing.createdBy === user.id;
 
-    if (!isOwner && !isCreator) {
-      return NextResponse.json({ error: "Forbidden. You can only delete your own projects." }, { status: 403 });
+    if (!canDelete) {
+      return NextResponse.json({ error: "Forbidden. You are not authorized to delete this project." }, { status: 403 });
     }
 
     await dataStore.deleteProject(existing.id);

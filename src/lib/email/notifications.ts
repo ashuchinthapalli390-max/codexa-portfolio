@@ -244,3 +244,195 @@ export async function sendClientPaidApplicationConfirmation(params: PaidApplicat
   });
 }
 
+// ─── 5. MANUAL UPI PAYMENT NOTIFICATIONS ─────────────────────────────────────
+
+export interface PaymentEmailParams {
+  referenceId: string;
+  recipientName: string;
+  recipientEmail: string;
+  title: string;
+  amount: number;
+  currency?: string;
+  dueDate?: string;
+  paymentDate?: string;
+  utrNumber?: string;
+  rejectionReason?: string;
+}
+
+/**
+ * Sends notice when a payment request is assigned to a user
+ */
+export async function sendPaymentRequestedEmail(params: PaymentEmailParams): Promise<SendEmailResult> {
+  const contentHtml = `
+    <div class="card-box">
+      <table style="width: 100%; font-size: 13px; color: #FFFFFF; line-height: 1.6;">
+        <tr>
+          <td style="color: #888888; width: 40%; padding: 4px 0;">Payment Reference:</td>
+          <td style="font-family: monospace; font-weight: bold; color: #EF233C;">${params.referenceId}</td>
+        </tr>
+        <tr>
+          <td style="color: #888888; padding: 4px 0;">Item / Purpose:</td>
+          <td style="font-weight: 600;">${params.title}</td>
+        </tr>
+        <tr>
+          <td style="color: #888888; padding: 4px 0;">Total Payable:</td>
+          <td style="font-size: 16px; font-weight: 700; color: #EF233C;">₹${params.amount.toLocaleString()}</td>
+        </tr>
+        ${params.dueDate ? `<tr><td style="color: #888888; padding: 4px 0;">Due Date:</td><td>${params.dueDate}</td></tr>` : ""}
+      </table>
+      <div style="margin-top: 16px; padding: 12px; background: #080808; border: 1px solid #222222; border-radius: 6px; font-size: 12px; color: #CCCCCC;">
+        Please log in to your CodeXa dashboard, scan the official UPI QR code or click your preferred UPI app, and upload your payment screenshot after completing payment.
+      </div>
+    </div>
+  `;
+
+  const html = renderEmailLayout({
+    badge: "PAYMENT DUE",
+    title: "New Payment Request",
+    subtitle: `Hello <strong>${params.recipientName}</strong>, a payment request has been issued for your account.`,
+    contentHtml,
+  });
+
+  return sendEmail({
+    from: notificationsFromEmail,
+    to: params.recipientEmail,
+    subject: `💳 [${params.referenceId}] Payment Request: ${params.title} (₹${params.amount}) — CodeXa Agency`,
+    html,
+  });
+}
+
+/**
+ * Sends notice when user submits payment proof
+ */
+export async function sendPaymentProofSubmittedEmail(params: PaymentEmailParams): Promise<SendEmailResult> {
+  const contentHtml = `
+    <div class="card-box">
+      <table style="width: 100%; font-size: 13px; color: #FFFFFF; line-height: 1.6;">
+        <tr>
+          <td style="color: #888888; width: 40%; padding: 4px 0;">Payment Reference:</td>
+          <td style="font-family: monospace; font-weight: bold; color: #EF233C;">${params.referenceId}</td>
+        </tr>
+        <tr>
+          <td style="color: #888888; padding: 4px 0;">Purpose:</td>
+          <td>${params.title}</td>
+        </tr>
+        <tr>
+          <td style="color: #888888; padding: 4px 0;">Amount:</td>
+          <td>₹${params.amount.toLocaleString()}</td>
+        </tr>
+        ${params.utrNumber ? `<tr><td style="color: #888888; padding: 4px 0;">Submitted UTR:</td><td style="font-family: monospace;">${params.utrNumber}</td></tr>` : ""}
+      </table>
+      <div style="margin-top: 14px; font-size: 12px; color: #888888;">
+        Your payment screenshot has been securely queued for verification by the CodeXa Accounts & Administration team. You will receive an update once verified.
+      </div>
+    </div>
+  `;
+
+  const html = renderEmailLayout({
+    badge: "UNDER VERIFICATION",
+    title: "Payment Proof Received",
+    subtitle: `Reference <strong>${params.referenceId}</strong> is now pending manual verification.`,
+    contentHtml,
+  });
+
+  return sendEmail({
+    from: notificationsFromEmail,
+    to: params.recipientEmail,
+    subject: `⏳ [${params.referenceId}] Payment Proof Submitted — Pending Verification`,
+    html,
+  });
+}
+
+/**
+ * Sends notice when admin approves payment
+ */
+export async function sendPaymentApprovedEmail(params: PaymentEmailParams): Promise<SendEmailResult> {
+  const contentHtml = `
+    <div class="card-box">
+      <div style="text-align: center; margin-bottom: 16px;">
+        <span style="display: inline-block; background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.4); color: #22c55e; padding: 6px 14px; border-radius: 999px; font-size: 12px; font-weight: 700; text-transform: uppercase;">
+          ✓ PAYMENT VERIFIED & APPROVED
+        </span>
+      </div>
+      <table style="width: 100%; font-size: 13px; color: #FFFFFF; line-height: 1.6;">
+        <tr>
+          <td style="color: #888888; width: 40%; padding: 4px 0;">Payment Reference:</td>
+          <td style="font-family: monospace; font-weight: bold; color: #22c55e;">${params.referenceId}</td>
+        </tr>
+        <tr>
+          <td style="color: #888888; padding: 4px 0;">Purpose:</td>
+          <td>${params.title}</td>
+        </tr>
+        <tr>
+          <td style="color: #888888; padding: 4px 0;">Amount Paid:</td>
+          <td style="font-size: 15px; font-weight: 700; color: #FFFFFF;">₹${params.amount.toLocaleString()}</td>
+        </tr>
+        ${params.utrNumber ? `<tr><td style="color: #888888; padding: 4px 0;">Verified UTR:</td><td style="font-family: monospace;">${params.utrNumber}</td></tr>` : ""}
+      </table>
+      <div style="margin-top: 14px; font-size: 12px; color: #888888;">
+        Your payment has been officially confirmed on the CodeXa platform. All associated access, tools, and credentials have been granted.
+      </div>
+    </div>
+  `;
+
+  const html = renderEmailLayout({
+    badge: "VERIFIED",
+    title: "Payment Approved",
+    subtitle: `Hello <strong>${params.recipientName}</strong>, your payment of ₹${params.amount} has been successfully verified.`,
+    contentHtml,
+  });
+
+  return sendEmail({
+    from: notificationsFromEmail,
+    to: params.recipientEmail,
+    subject: `✓ [${params.referenceId}] Payment Approved — CodeXa Agency`,
+    html,
+  });
+}
+
+/**
+ * Sends notice when admin rejects payment proof
+ */
+export async function sendPaymentRejectedEmail(params: PaymentEmailParams): Promise<SendEmailResult> {
+  const contentHtml = `
+    <div class="card-box">
+      <table style="width: 100%; font-size: 13px; color: #FFFFFF; line-height: 1.6;">
+        <tr>
+          <td style="color: #888888; width: 40%; padding: 4px 0;">Payment Reference:</td>
+          <td style="font-family: monospace; font-weight: bold; color: #EF233C;">${params.referenceId}</td>
+        </tr>
+        <tr>
+          <td style="color: #888888; padding: 4px 0;">Purpose:</td>
+          <td>${params.title}</td>
+        </tr>
+        <tr>
+          <td style="color: #888888; padding: 4px 0;">Amount:</td>
+          <td>₹${params.amount.toLocaleString()}</td>
+        </tr>
+      </table>
+      <div style="margin-top: 14px; padding: 12px; background: rgba(239, 35, 60, 0.1); border: 1px solid rgba(239, 35, 60, 0.3); border-radius: 6px; font-size: 13px; color: #FFFFFF;">
+        <strong style="color: #EF233C;">Reason for Rejection:</strong><br>
+        ${params.rejectionReason || "Payment proof could not be verified. Please ensure the screenshot is clear and shows the correct transaction details."}
+      </div>
+      <div style="margin-top: 14px; font-size: 12px; color: #888888;">
+        Please log in to your CodeXa dashboard, review your transaction details, and resubmit a clear payment screenshot.
+      </div>
+    </div>
+  `;
+
+  const html = renderEmailLayout({
+    badge: "REJECTED",
+    title: "Payment Proof Not Verified",
+    subtitle: `Hello <strong>${params.recipientName}</strong>, your payment proof requires resubmission.`,
+    contentHtml,
+    warningText: "Please review the rejection reason above and submit valid proof on your dashboard.",
+  });
+
+  return sendEmail({
+    from: notificationsFromEmail,
+    to: params.recipientEmail,
+    subject: `⚠️ [${params.referenceId}] Payment Proof Needs Resubmission — CodeXa Agency`,
+    html,
+  });
+}
+

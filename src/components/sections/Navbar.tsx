@@ -131,6 +131,13 @@ export function Navbar() {
           {/* Right Action buttons */}
           <div className="flex items-center gap-2.5">
             <Link
+              href="/apps"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-transparent hover:bg-neutral-900 border border-neutral-800 hover:border-crimson/40 text-[10px] font-orbitron font-bold uppercase tracking-wider text-neutral-300 hover:text-white transition-all"
+            >
+              Apps
+            </Link>
+
+            <Link
               href="/project-request"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-crimson hover:bg-bright-red border border-bright-red text-[10px] font-orbitron font-bold uppercase tracking-wider text-white transition-all shadow-neon"
             >

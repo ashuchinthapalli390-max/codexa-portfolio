@@ -1,13 +1,22 @@
 /**
  * /api/owner/accounts/[id]
- * PATCH: Owner changes role, activates/deactivates, resets password.
- * DELETE: Owner deletes account.
+ * PATCH: Edit user role, status, leadership position, or reset password (enforces RBAC + Founder protection)
+ * DELETE: Remove user account (strictly protects Founder and Co-Founder)
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSessionResult, revokeAllUserSessions } from "@/lib/auth";
 import { dataStore } from "@/lib/data-store";
 import bcrypt from "bcryptjs";
 import { sendPasswordChangedEmail, sendAccountStatusChangedEmail } from "@/lib/email";
+import {
+  Permission,
+  requirePermission,
+  canModifyTargetUser,
+  canChangeRole,
+  isProtectedAccount,
+  getEffectiveRole,
+  OrgRole,
+} from "@/lib/permissions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,11 +44,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     );
   }
 
-  if (auth.user.role !== "OWNER") {
-    return NextResponse.json(
-      { error: "Forbidden. Owner access required." },
-      { status: 403, headers: NO_CACHE_HEADERS }
-    );
+  const permCheck = await requirePermission(auth.user, Permission.EDIT_USERS);
+  if (!permCheck.authorized) {
+    return permCheck.response;
   }
 
   const currentUser = auth.user;
@@ -47,42 +54,45 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   try {
     const body = await req.json();
-    const { role, leadershipPosition, displayName, isActive, newPassword, isPublic } = body;
+    const { role, leadershipPosition, displayName, isActive, newPassword, isPublic, department } = body;
 
     const profileBefore = await dataStore.getProfileById(id);
     if (!profileBefore) {
       return NextResponse.json({ error: "Account not found." }, { status: 404, headers: NO_CACHE_HEADERS });
     }
 
-    const isTargetFounder =
-      profileBefore.email?.toLowerCase() === "ashuchinthapalli3900@gmail.com" ||
-      profileBefore.username?.toLowerCase() === "ashu" ||
-      profileBefore.role === "OWNER";
+    // Protection check for Founder and Co-Founder
+    const modifyCheck = canModifyTargetUser(currentUser, profileBefore, role ? "ROLE_CHANGE" : isActive === false ? "DEACTIVATE" : "EDIT");
+    if (!modifyCheck.allowed) {
+      return NextResponse.json(
+        { error: modifyCheck.reason || "Forbidden: You are not authorized to modify this account." },
+        { status: 403, headers: NO_CACHE_HEADERS }
+      );
+    }
 
-    if (isTargetFounder) {
-      if (role && role !== "OWNER") {
+    // Role change validation
+    if (role && role !== profileBefore.role) {
+      if (!canChangeRole(currentUser, profileBefore, role)) {
         return NextResponse.json(
-          { error: "The permanent Founder/Owner account (ashuchinthapalli3900@gmail.com) cannot be demoted." },
-          { status: 400, headers: NO_CACHE_HEADERS }
-        );
-      }
-      if (isActive === false) {
-        return NextResponse.json(
-          { error: "The permanent Founder/Owner account cannot be deactivated." },
-          { status: 400, headers: NO_CACHE_HEADERS }
+          { error: `Forbidden: Your role (${getEffectiveRole(currentUser)}) cannot assign role "${role}".` },
+          { status: 403, headers: NO_CACHE_HEADERS }
         );
       }
     }
 
     const updates: any = {};
-    if (role && ["OWNER", "CO_FOUNDER", "CEO", "ADMIN", "TEAM_MEMBER"].includes(role)) {
-      updates.role = role;
+    if (role) {
+      updates.role = role.toUpperCase();
+      updates.orgRole = role.toUpperCase();
     }
     if (leadershipPosition !== undefined) {
       updates.leadershipPosition = leadershipPosition || null;
     }
     if (displayName) {
       updates.displayName = displayName.trim();
+    }
+    if (department !== undefined) {
+      updates.department = department?.trim() || null;
     }
     if (isActive !== undefined) {
       updates.isActive = Boolean(isActive);
@@ -91,51 +101,37 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       updates.isPublic = Boolean(isPublic);
     }
 
-    // Handle password reset if provided
+    // Handle password reset
     if (newPassword && newPassword.length >= 8) {
       updates.passwordHash = await bcrypt.hash(newPassword, 12);
       updates.mustChangePassword = true;
-      // Revoke existing sessions on password reset
       await revokeAllUserSessions(id);
     }
 
-    if (isActive === false) {
-      // Revoke all active sessions immediately when account is deactivated
-      await revokeAllUserSessions(id);
-    }
-
-    const updatedProfile = await dataStore.updateProfile(id, updates);
-    if (!updatedProfile) {
-      return NextResponse.json({ error: "Account not found." }, { status: 404, headers: NO_CACHE_HEADERS });
-    }
-
-    // If status changed, notify the member
-    if (isActive !== undefined && profileBefore.isActive !== Boolean(isActive) && updatedProfile.email) {
-      sendAccountStatusChangedEmail({
-        email: updatedProfile.email,
-        name: updatedProfile.displayName,
-        isActive: Boolean(isActive),
-      }).catch((e) => console.error("[Account Status Email Error]", e));
-    }
-
-    // If password was reset by owner, notify the member
-    if (newPassword && updatedProfile.email) {
-      sendPasswordChangedEmail({
-        email: updatedProfile.email,
-        name: updatedProfile.displayName,
-      }).catch((e) => console.error("[Password Changed Email Error]", e));
+    const updated = await dataStore.updateProfile(id, updates);
+    if (!updated) {
+      return NextResponse.json({ error: "Failed to update profile." }, { status: 500, headers: NO_CACHE_HEADERS });
     }
 
     // Audit log
     await dataStore.logAudit({
-      action: newPassword ? "PASSWORD_RESET" : updates.role ? "ROLE_CHANGED" : "ACCOUNT_UPDATED",
       actorId: currentUser.id,
-      targetId: updatedProfile.id,
-      details: `Owner modified account @${updatedProfile.username}. Updates: ${JSON.stringify(updates)} ${newPassword ? "(Password Reset)" : ""}`,
+      actorName: currentUser.displayName,
+      targetId: id,
+      action: "ACCOUNT_UPDATED",
+      details: `${currentUser.displayName} updated account @${profileBefore.username}: ${Object.keys(updates).join(", ")}`,
       ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
     });
 
-    return NextResponse.json({ success: true, account: updatedProfile }, { headers: NO_CACHE_HEADERS });
+    if (isActive !== undefined && profileBefore.email) {
+      sendAccountStatusChangedEmail({
+        email: profileBefore.email,
+        name: profileBefore.displayName,
+        isActive: Boolean(isActive),
+      }).catch((e) => console.error("[Account Status Email Error]", e));
+    }
+
+    return NextResponse.json({ success: true, account: updated }, { headers: NO_CACHE_HEADERS });
   } catch (err: any) {
     console.error("[PATCH /api/owner/accounts/[id]]", err);
     return NextResponse.json({ error: "Failed to update account." }, { status: 500, headers: NO_CACHE_HEADERS });
@@ -159,19 +155,16 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     );
   }
 
-  if (auth.user.role !== "OWNER") {
-    return NextResponse.json(
-      { error: "Forbidden. Owner access required." },
-      { status: 403, headers: NO_CACHE_HEADERS }
-    );
+  const permCheck = await requirePermission(auth.user, Permission.DELETE_USERS);
+  if (!permCheck.authorized) {
+    return permCheck.response;
   }
 
   const currentUser = auth.user;
   const { id } = params;
 
-  // Cannot delete own account
   if (currentUser.id === id) {
-    return NextResponse.json({ error: "You cannot delete your own Owner account." }, { status: 400, headers: NO_CACHE_HEADERS });
+    return NextResponse.json({ error: "You cannot delete your own account." }, { status: 400, headers: NO_CACHE_HEADERS });
   }
 
   try {
@@ -180,13 +173,10 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
       return NextResponse.json({ error: "Account not found." }, { status: 404, headers: NO_CACHE_HEADERS });
     }
 
-    if (
-      profile.email?.toLowerCase() === "ashuchinthapalli3900@gmail.com" ||
-      profile.username?.toLowerCase() === "ashu" ||
-      profile.role === "OWNER"
-    ) {
+    const check = canModifyTargetUser(currentUser, profile, "DELETE");
+    if (!check.allowed) {
       return NextResponse.json(
-        { error: "The permanent Founder/Super Admin/Owner account (ashuchinthapalli3900@gmail.com) cannot be deleted." },
+        { error: check.reason || "Forbidden: Protected accounts cannot be deleted." },
         { status: 403, headers: NO_CACHE_HEADERS }
       );
     }
@@ -199,7 +189,9 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     await dataStore.logAudit({
       action: "ACCOUNT_DELETED",
       actorId: currentUser.id,
-      details: `Owner permanently removed account @${profile?.username || id}`,
+      actorName: currentUser.displayName,
+      targetId: id,
+      details: `${currentUser.displayName} permanently deleted account @${profile?.username || id}`,
       ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
     });
 

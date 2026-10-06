@@ -20,6 +20,8 @@ export interface Profile {
   passwordHash?: string;
   displayName: string;
   role: "OWNER" | "ADMIN" | "TEAM_MEMBER" | string;
+  orgRole?: string | null;
+  department?: string | null;
   memberType: "LEADERSHIP" | "CORE_TEAM" | string;
   leadershipPosition?: "FOUNDER" | "CO_FOUNDER" | "CEO" | "TEAM_LEAD" | string | null;
   primaryRole?: string | null;
@@ -405,6 +407,8 @@ function mapUserToProfile(user: any): Profile {
     passwordHash: user.passwordHash,
     displayName: profile?.displayName || user.fullName || user.username,
     role: user.role,
+    orgRole: user.orgRole || user.role,
+    department: user.department || null,
     memberType: profile?.memberType || (user.role === "OWNER" || user.role === "ADMIN" ? "LEADERSHIP" : "CORE_TEAM"),
     leadershipPosition: profile?.leadershipPosition || null,
     primaryRole: profile?.primaryRole || null,
@@ -678,6 +682,8 @@ export const dataStore = {
         fullName: data.displayName || data.username!,
         passwordHash,
         role: data.role || "TEAM_MEMBER",
+        orgRole: data.orgRole || data.role || "TEAM_MEMBER",
+        department: data.department || null,
         isActive: true,
         mustChangePassword: data.mustChangePassword ?? false,
         profile: {
@@ -726,6 +732,8 @@ export const dataStore = {
     const userUpdate: Prisma.UserUpdateInput = {};
     if (updates.displayName !== undefined) userUpdate.fullName = updates.displayName;
     if (updates.role !== undefined) userUpdate.role = updates.role;
+    if (updates.orgRole !== undefined) userUpdate.orgRole = updates.orgRole;
+    if (updates.department !== undefined) userUpdate.department = updates.department;
     if (updates.isActive !== undefined) userUpdate.isActive = updates.isActive;
     if (updates.passwordHash !== undefined) userUpdate.passwordHash = updates.passwordHash;
     if (updates.mustChangePassword !== undefined) userUpdate.mustChangePassword = updates.mustChangePassword;
@@ -2345,10 +2353,24 @@ export const dataStore = {
       };
     }
 
+    let finalAction = typeof actionOrData === "string" ? actionOrData : "AUDIT_EVENT";
+    let finalActorId = actorId || null;
+
+    // Resilient parameter order auto-detection: if first param is user CUID/ID and second is uppercase action
+    if (
+      typeof actionOrData === "string" &&
+      typeof actorId === "string" &&
+      (actorId.includes("_") || actorId === actorId.toUpperCase()) &&
+      (!actionOrData.includes("_") || actionOrData.startsWith("c"))
+    ) {
+      finalAction = actorId;
+      finalActorId = actionOrData;
+    }
+
     const created = await db.auditLog.create({
       data: {
-        action: actionOrData,
-        actorId: actorId || null,
+        action: finalAction,
+        actorId: finalActorId,
         details: details || null,
         ipAddress: ipAddress || null,
       },

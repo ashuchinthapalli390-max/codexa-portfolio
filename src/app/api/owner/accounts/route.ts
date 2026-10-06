@@ -1,13 +1,22 @@
 /**
  * /api/owner/accounts
- * OWNER-ONLY Account Creation & User Management.
- * Source of truth: PostgreSQL via Prisma
+ * GET: List all accounts (requires Permission.VIEW_USERS)
+ * POST: Create an internal account (requires Permission.CREATE_USERS + role authorization check)
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSessionResult } from "@/lib/auth";
+import { db } from "@/lib/db";
 import { dataStore } from "@/lib/data-store";
 import bcrypt from "bcryptjs";
 import { sendAccountCreatedEmail } from "@/lib/email";
+import {
+  Permission,
+  requirePermission,
+  canCreateRole,
+  getAllowedRolesToCreate,
+  getEffectiveRole,
+  OrgRole,
+} from "@/lib/permissions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,17 +44,19 @@ export async function GET() {
     );
   }
 
-  if (auth.user.role !== "OWNER") {
-    return NextResponse.json(
-      { error: "Forbidden. Owner access required." },
-      { status: 403, headers: NO_CACHE_HEADERS }
-    );
+  const permCheck = await requirePermission(auth.user, Permission.VIEW_USERS);
+  if (!permCheck.authorized) {
+    return permCheck.response;
   }
 
   try {
     const profiles = await dataStore.getProfiles();
     return NextResponse.json(
-      { success: true, accounts: profiles },
+      {
+        success: true,
+        accounts: profiles,
+        allowedRolesToCreate: getAllowedRolesToCreate(auth.user),
+      },
       { headers: NO_CACHE_HEADERS }
     );
   } catch (err: any) {
@@ -74,18 +85,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (auth.user.role !== "OWNER") {
-    return NextResponse.json(
-      { error: "Forbidden. Only the CodeXa Owner can create accounts." },
-      { status: 403, headers: NO_CACHE_HEADERS }
-    );
+  // 1. Enforce CREATE_USERS permission
+  const permCheck = await requirePermission(auth.user, Permission.CREATE_USERS);
+  if (!permCheck.authorized) {
+    return permCheck.response;
   }
 
   const currentUser = auth.user;
+  const actorRole = getEffectiveRole(currentUser);
 
   try {
     const body = await req.json();
-    const { fullName, username, email, role, temporaryPassword, headline, bio, leadershipPosition } = body;
+    const { fullName, username, email, role, temporaryPassword, headline, bio, leadershipPosition, department } = body;
 
     // Validation
     if (!fullName || !fullName.trim()) {
@@ -103,8 +114,23 @@ export async function POST(req: NextRequest) {
 
     const cleanUsername = username.toLowerCase().trim().replace(/[^a-z0-9_]/g, "");
     const cleanEmail = email.toLowerCase().trim();
-    const accountRole = ["OWNER", "CO_FOUNDER", "CEO", "TEAM_MEMBER", "ADMIN"].includes(role) ? role : "TEAM_MEMBER";
-    const memberType = ["OWNER", "CO_FOUNDER", "CEO", "ADMIN"].includes(accountRole) ? "LEADERSHIP" : "CORE_TEAM";
+    const requestedRole = (role || "EMPLOYEE").toUpperCase() as OrgRole;
+
+    // 2. Enforce Role Creator Boundaries (CTO/HR cannot create CEO or Founder)
+    if (!canCreateRole(currentUser, requestedRole)) {
+      const allowed = getAllowedRolesToCreate(currentUser);
+      return NextResponse.json(
+        {
+          error: `Forbidden. Your role (${actorRole}) is not permitted to create accounts with role "${requestedRole}". You may only create: ${allowed.join(", ")}.`,
+          allowedRoles: allowed,
+        },
+        { status: 403 }
+      );
+    }
+
+    const memberType = ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "COO", "OWNER", "ADMIN"].includes(requestedRole)
+      ? "LEADERSHIP"
+      : "CORE_TEAM";
 
     // Check duplicate in database
     const existing = await dataStore.getProfiles();
@@ -114,15 +140,17 @@ export async function POST(req: NextRequest) {
 
     const passwordHash = await bcrypt.hash(temporaryPassword, 12);
 
-    // Create profile in PostgreSQL with genuine clean fields (Zero dummy/filler text)
+    // Create profile in PostgreSQL with mustChangePassword = true
     const newProfile = await dataStore.createProfile({
       username: cleanUsername,
       email: cleanEmail,
       displayName: fullName.trim(),
       passwordHash,
-      role: accountRole,
+      role: requestedRole,
+      orgRole: requestedRole,
+      department: department?.trim() || null,
       memberType,
-      leadershipPosition: leadershipPosition || (accountRole === "OWNER" ? "FOUNDER" : accountRole === "CO_FOUNDER" ? "CO_FOUNDER" : accountRole === "CEO" ? "CEO" : null),
+      leadershipPosition: leadershipPosition || (["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "COO"].includes(requestedRole) ? requestedRole : null),
       headline: headline?.trim() || null,
       bio: bio?.trim() || null,
       skills: [],
@@ -132,27 +160,56 @@ export async function POST(req: NextRequest) {
       mustChangePassword: true,
     });
 
-    // Send Welcome email to the newly created member's email address
+    // Provision Employment Profile
+    let empRecord = null;
+    try {
+      const { generateCodeXaId } = await import("@/lib/cxa-ids");
+      const generatedId = await generateCodeXaId(requestedRole);
+      const isIntern = requestedRole === "INTERN";
+      const salaryNum = body.salaryOrStipend ? parseFloat(body.salaryOrStipend) : null;
+
+      empRecord = await db.employmentProfile.create({
+        data: {
+          userId: newProfile.id,
+          employeeId: generatedId,
+          employmentType: body.employmentType || (isIntern ? "INTERN" : "FULL_TIME"),
+          department: department?.trim() || "Engineering",
+          designation: headline?.trim() || (isIntern ? "Engineering Intern" : "Core Member"),
+          reportingTo: body.reportingTo?.trim() || (isIntern ? "CTO / Lead Mentor" : "Engineering Lead"),
+          joiningDate: body.joiningDate ? new Date(body.joiningDate) : new Date(),
+          status: "ACTIVE",
+          salaryCycle: isIntern ? "STIPEND_MONTHLY" : "MONTHLY",
+          basicSalary: !isIntern ? salaryNum : null,
+          stipend: isIntern ? salaryNum : null,
+          mentorName: body.mentorName?.trim() || null,
+          internshipDuration: isIntern ? (body.internshipDuration?.trim() || "3 Months") : null,
+        },
+      });
+    } catch (empErr) {
+      console.error("[Account Creation] Employment profile init error:", empErr);
+    }
+
+    // Send Welcome email
     sendAccountCreatedEmail({
       email: cleanEmail,
       name: fullName.trim(),
       username: cleanUsername,
     }).catch((e) => console.error("[Account Created Email Error]", e));
 
-    // Log audit entry
+    // Audit log
     await dataStore.logAudit({
       actorId: currentUser.id,
       actorName: currentUser.displayName,
       targetId: newProfile.id,
       action: "ACCOUNT_CREATED",
-      details: `Owner provisioned new ${accountRole} account for ${newProfile.displayName} (@${newProfile.username})`,
+      details: `${actorRole} (${currentUser.displayName}) provisioned new ${requestedRole} account for ${newProfile.displayName} (@${newProfile.username}) with mandatory password reset. Employee ID: ${empRecord?.employeeId || "Pending"}`,
       ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
     });
 
     return NextResponse.json({
       success: true,
-      account: newProfile,
-      message: `Account @${cleanUsername} created successfully.`,
+      account: { ...newProfile, employmentProfile: empRecord },
+      message: `Account @${cleanUsername} (${requestedRole}) created successfully.`,
     });
   } catch (err: any) {
     console.error("[POST /api/owner/accounts]", err);

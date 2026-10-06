@@ -19,7 +19,9 @@ model User {
   email                String    @unique
   fullName             String?
   passwordHash         String
-  role                 String    @default("TEAM_MEMBER") // "OWNER" | "ADMIN" | "TEAM_MEMBER"
+  role                 String    @default("TEAM_MEMBER") // "FOUNDER" | "CO_FOUNDER" | "CEO" | "CTO" | "HR" | "COO" | "EMPLOYEE" | "INTERN" | "OWNER" | "ADMIN" | "TEAM_MEMBER"
+  orgRole              String?   // Explicit organizational role e.g. "FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "COO", "EMPLOYEE", "INTERN"
+  department           String?   // e.g. "Executive", "Engineering", "People & Culture", "Operations"
   isActive             Boolean   @default(true)
   lastLoginAt          DateTime?
   profileMediaUrl      String?
@@ -51,6 +53,19 @@ model User {
   activityEvents      ActivityEvent[]
   auditLogs           AuditLog[]
   adminIdentities     AdminLoginIdentity[]
+
+  employmentProfile     EmploymentProfile?
+  payrolls              PayrollRecord[]
+  payslips              Payslip[]
+  attendanceRecords     AttendanceRecord[]
+  attendanceCorrections AttendanceCorrection[]
+  leaveRequests         LeaveRequest[]
+  documents             DocumentItem[]
+  offerLetters          OfferLetter[]
+  desktopLicenses       DesktopLicense[]
+  modelEntitlements     ModelEntitlement[]
+  mcpClients            McpClient[]
+  paymentRequests       PaymentRequest[]
 }
 
 // ─── TEAM PROFILES ────────────────────────────────────────────────────────────
@@ -603,4 +618,692 @@ model AdminLoginIdentity {
   @@index([email])
   @@index([firebaseUid])
 }
+
+// ─── REUSABLE APPROVAL SYSTEM ────────────────────────────────────────────────
+model ApprovalRequest {
+  id               String    @id @default(cuid())
+  type             String    // "PROJECT" | "PROFILE" | "STAFF_ACTION" | "PAYMENT" | string
+  relatedEntityId  String?
+  requestedBy      String
+  requestedByName  String?
+  requestedAt      DateTime  @default(now())
+  status           String    @default("PENDING") // "PENDING" | "APPROVED" | "REJECTED"
+  decidedBy        String?
+  decidedByName    String?
+  decidedAt        DateTime?
+  reason           String?
+  notes            String?
+  metadata         Json?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([status])
+  @@index([type])
+  @@index([requestedBy])
+}
+
+// ─── EMPLOYMENT PROFILE ──────────────────────────────────────────────────────
+model EmploymentProfile {
+  id                 String    @id @default(cuid())
+  userId             String    @unique
+  employeeId         String    @unique // e.g. "CXA-EMP-2026-001" or "CXA-INT-2026-001"
+  employmentType     String    @default("FULL_TIME") // "FULL_TIME" | "PART_TIME" | "INTERN" | "CONTRACT"
+  department         String    @default("Engineering")
+  designation        String    @default("Core Engineer")
+  reportingTo        String?   // Manager name or ID
+  joiningDate        DateTime  @default(now())
+  endDate            DateTime?
+  status             String    @default("ACTIVE") // "ACTIVE" | "PENDING" | "ON_LEAVE" | "SUSPENDED" | "COMPLETED" | "RESIGNED" | "TERMINATED"
+  salaryCycle        String    @default("MONTHLY") // "MONTHLY" | "STIPEND_MONTHLY"
+  basicSalary        Float?
+  allowance          Float?
+  stipend            Float?
+  bonus              Float?
+  deductions         Float?
+  mentorName         String?
+  internshipDuration String?   // e.g. "3 Months"
+  bankAccountMasked  String?   // e.g. "XXXX XXXX 4832"
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([status])
+  @@index([department])
+}
+
+// ─── PAYROLL RECORDS ──────────────────────────────────────────────────────────
+model PayrollRecord {
+  id             String    @id @default(cuid())
+  userId         String
+  period         String    // e.g. "October 2026"
+  month          Int
+  year           Int
+  basicAmount    Float     @default(0)
+  allowances     Float     @default(0)
+  bonus          Float     @default(0)
+  deductions     Float     @default(0)
+  netAmount      Float     @default(0)
+  status         String    @default("SCHEDULED") // "SCHEDULED" | "PENDING" | "UNDER_VERIFICATION" | "VERIFIED" | "APPROVED" | "PROCESSING" | "PAID" | "FAILED" | "ON_HOLD" | "CANCELLED"
+  paymentDate    DateTime?
+  dueDate        DateTime?
+  transactionRef String?
+  paymentMethod  String?   @default("BANK_TRANSFER")
+  verifiedBy     String?
+  verifiedAt     DateTime?
+  approvedBy     String?
+  approvedAt     DateTime?
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payslips Payslip[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([month, year])
+}
+
+// ─── PAYSLIPS ────────────────────────────────────────────────────────────────
+model Payslip {
+  id              String   @id @default(cuid())
+  payrollRecordId String
+  userId          String
+  slipNumber      String   @unique // e.g. "CXA-PAY-2026-10-001"
+  period          String
+  grossAmount     Float
+  deductions      Float    @default(0)
+  netAmount       Float
+  issuedAt        DateTime @default(now())
+  fileUrl         String?
+  status          String   @default("GENERATED")
+  createdAt       DateTime @default(now())
+
+  payroll PayrollRecord @relation(fields: [payrollRecordId], references: [id], onDelete: Cascade)
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([slipNumber])
+}
+
+// ─── ATTENDANCE SESSIONS & RECORDS ───────────────────────────────────────────
+model AttendanceWindow {
+  id            String    @id @default(cuid())
+  date          DateTime
+  startTime     DateTime
+  endTime       DateTime
+  status        String    @default("ACTIVE") // "ACTIVE" | "CLOSED" | "CANCELLED"
+  eligibleRoles Json?     // e.g. ["EMPLOYEE", "INTERN"]
+  createdById   String
+  createdByName String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  records AttendanceRecord[]
+
+  @@index([date])
+  @@index([status])
+}
+
+model AttendanceRecord {
+  id         String            @id @default(cuid())
+  userId     String
+  windowId   String?
+  date       DateTime
+  status     String            @default("PRESENT") // "PRESENT" | "ABSENT" | "LATE" | "LEAVE" | "EXCUSED"
+  markedAt   DateTime          @default(now())
+  source     String            @default("MOBILE") // "MOBILE" | "MANUAL" | "SYSTEM"
+  editedBy   String?
+  editReason String?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  user   User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  window AttendanceWindow? @relation(fields: [windowId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([date])
+  @@index([status])
+}
+
+model AttendanceCorrection {
+  id              String    @id @default(cuid())
+  userId          String
+  date            DateTime
+  currentStatus   String    @default("ABSENT")
+  requestedStatus String    @default("PRESENT")
+  reason          String
+  status          String    @default("PENDING") // "PENDING" | "APPROVED" | "REJECTED"
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  reviewNotes     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+}
+
+model LeaveRequest {
+  id          String    @id @default(cuid())
+  userId      String
+  startDate   DateTime
+  endDate     DateTime
+  leaveType   String    @default("CASUAL") // "CASUAL" | "SICK" | "EMERGENCY" | "ACADEMIC"
+  reason      String
+  status      String    @default("PENDING") // "PENDING" | "APPROVED" | "REJECTED"
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  reviewNotes String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+}
+
+// ─── DOCUMENTS & OFFER LETTERS ────────────────────────────────────────────────
+model DocumentItem {
+  id               String   @id @default(cuid())
+  userId           String
+  title            String
+  documentType     String   // "OFFER_LETTER" | "ID_CARD" | "PAYSLIP" | "INTERNSHIP_CERTIFICATE" | "COMPLETION_CERTIFICATE" | "EXPERIENCE_CERTIFICATE" | "AGREEMENT" | "NDA" | "POLICY"
+  documentNumber   String?  @unique
+  fileUrl          String?
+  status           String   @default("ACTIVE") // "ACTIVE" | "REVOKED" | "EXPIRED"
+  issuedBy         String?
+  issuedAt         DateTime @default(now())
+  verificationCode String?  @unique
+  metadata         Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([documentType])
+  @@index([verificationCode])
+}
+
+model OfferLetter {
+  id               String   @id @default(cuid())
+  userId           String
+  offerNumber      String   @unique // e.g. "CXA/OFFER/2026/001"
+  issueDate        DateTime @default(now())
+  joiningDate      DateTime
+  role             String
+  department       String
+  duration         String?  // for interns e.g. "3 Months"
+  salaryOrStipend  Float?
+  status           String   @default("ISSUED") // "ISSUED" | "ACCEPTED" | "REJECTED" | "CANCELLED"
+  issuedBy         String
+  verificationCode String   @unique // e.g. "CXA-V-7F82A1"
+  terms            String?
+  content          Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([verificationCode])
+}
+
+// ─── MOBILE APP CONFIGURATION (WEBSITE CONTROL) ──────────────────────────────
+model MobileAppConfig {
+  id                String   @id @default(cuid())
+  targetType        String   @default("GLOBAL") // "GLOBAL" | "ROLE" | "USER"
+  targetId          String?  // Role name or User ID if targeted
+  attendanceEnabled Boolean  @default(true)
+  dmEnabled         Boolean  @default(true)
+  postsEnabled      Boolean  @default(true)
+  commentsEnabled   Boolean  @default(true)
+  pushEnabled       Boolean  @default(true)
+  dmRoleMatrix      Json?    // Role-to-role DM permissions matrix
+  minVersion        String   @default("1.0.0")
+  currentVersion    String   @default("1.0.0")
+  downloadUrl       String   @default("")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([targetType])
+}
+
+// ─── DESKTOP LICENSING & DEVICE ACTIVATION ────────────────────────────────────
+model DesktopLicense {
+  id               String   @id @default(cuid())
+  userId           String
+  licenseKeyHash   String   @unique
+  keyDisplayPrefix String   // e.g. "CXA-DESK-AB12..."
+  status           String   @default("ACTIVE") // "ACTIVE" | "REVOKED" | "SUSPENDED" | "EXPIRED"
+  deviceLimit      Int      @default(2)
+  expiresAt        DateTime?
+  createdById      String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activations DeviceActivation[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model DeviceActivation {
+  id           String   @id @default(cuid())
+  licenseId    String
+  userId       String
+  deviceName   String
+  deviceIdHash String
+  status       String   @default("ACTIVE") // "ACTIVE" | "DEACTIVATED"
+  ipAddress    String?
+  activatedAt  DateTime @default(now())
+  lastSeenAt   DateTime @default(now())
+
+  license DesktopLicense @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+
+  @@index([licenseId])
+  @@index([userId])
+}
+
+model ModelEntitlement {
+  id           String   @id @default(cuid())
+  userId       String
+  modelName    String   // e.g. "Coding AI", "Research Agent", "Document AI"
+  enabled      Boolean  @default(true)
+  dailyLimit   Int      @default(100)
+  monthlyLimit Int      @default(3000)
+  tokenLimit   Int?     @default(1000000)
+  costLimit    Float?   @default(50.0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, modelName])
+  @@index([userId])
+}
+
+// ─── CENTRALIZED FEATURE FLAGS ───────────────────────────────────────────────
+model FeatureFlag {
+  id          String   @id @default(cuid())
+  flagKey     String   @unique // e.g. "MOBILE_ATTENDANCE", "MOBILE_DM", "DESKTOP_AI"
+  name        String
+  description String?
+  isEnabled   Boolean  @default(true)
+  targetType  String   @default("GLOBAL") // "GLOBAL" | "ROLE" | "USER"
+  targetValue String?  @default("ALL")
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([flagKey])
+}
+
+// ─── MODEL CONTEXT PROTOCOL (MCP) INTEGRATION LAYER ─────────────────────────
+
+model McpClient {
+  id               String    @id @default(cuid())
+  clientId         String    @unique // e.g. "cxa_mcp_client_a8f9..."
+  clientSecretHash String?   // Hashed client secret for OAuth/API Key verification
+  apiKeyPrefix     String?   // e.g. "cxa_mcp_sk_live_..."
+  name             String    // e.g. "ChatGPT - Ashu", "Codex Agent"
+  description      String?
+  clientType       String    @default("OAUTH") // "OAUTH" | "SERVICE_ACCOUNT" | "API_KEY"
+  ownerUserId      String?
+  createdById      String?
+  scopes           Json      // string array of allowed scopes e.g. ["users:read", "accounts:create"]
+  allowedTools     Json      // string array e.g. ["*"] or list of specific tools
+  ipRestrictions   String?
+  status           String    @default("ACTIVE") // "ACTIVE" | "SUSPENDED" | "REVOKED" | "EXPIRED"
+  lastConnectedAt  DateTime?
+  expiresAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  owner            User?           @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
+  sessions         McpSession[]
+  scopeGrants      McpScopeGrant[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([ownerUserId])
+}
+
+model McpScopeGrant {
+  id        String    @id @default(cuid())
+  clientId  String
+  scope     String
+  grantedBy String
+  grantedAt DateTime  @default(now())
+  expiresAt DateTime?
+
+  client    McpClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([scope])
+}
+
+model McpSession {
+  id           String    @id @default(cuid())
+  sessionToken String    @unique // Hash of session/access token
+  clientId     String
+  userId       String?   // Authenticated CodeXa User identity
+  scopes       Json
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  client       McpClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([sessionToken])
+  @@index([clientId])
+}
+
+model McpToolPolicy {
+  id              String   @id @default(cuid())
+  toolName        String   @unique // e.g. "codeXa_create_bulk_accounts"
+  category        String   @default("users") // "users" | "employees" | "projects" | "attendance" | "payroll" | "email" | "documents" | "apps" | "analytics"
+  isEnabled       Boolean  @default(true)
+  allowedRoles    Json     // string[] of roles allowed e.g. ["FOUNDER", "CO_FOUNDER", "HR"]
+  approvalLevel   Int      @default(0) // 0: None, 1: Low-Risk, 2: Sensitive Write, 3: High-Risk, 4: Critical
+  bulkThreshold   Int      @default(10) // Operations affecting > threshold require elevated approval
+  rateLimitPerMin Int      @default(60)
+  requiredScope   String   // e.g. "accounts:create"
+  description     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([toolName])
+  @@index([category])
+}
+
+model McpApproval {
+  id              String    @id @default(cuid())
+  toolName        String
+  clientId        String?
+  requestedById   String
+  riskLevel       Int       @default(2) // 1, 2, 3
+  summary         String
+  parameters      Json      // Sanitized input payload
+  affectedCount   Int       @default(1)
+  status          String    @default("PENDING") // "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED"
+  approvedById    String?
+  approvedByName  String?
+  approvedAt      DateTime?
+  rejectedById    String?
+  rejectedByName  String?
+  rejectedAt      DateTime?
+  reviewNotes     String?
+  expiresAt       DateTime  // e.g. now + 10 minutes
+  executionStatus String?   @default("QUEUED") // "QUEUED" | "EXECUTED" | "FAILED"
+  executionResult Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status])
+  @@index([clientId])
+  @@index([requestedById])
+  @@index([toolName])
+  @@index([expiresAt])
+}
+
+model McpToolCall {
+  id            String    @id @default(cuid())
+  requestId     String    @unique // e.g. "req_mcp_..."
+  clientId      String?
+  actorId       String?   // User ID or Service ID
+  actorName     String?
+  toolName      String
+  category      String?
+  riskLevel     Int       @default(0)
+  status        String    // "SUCCESS" | "FAILED" | "APPROVAL_REQUIRED" | "DENIED" | "RATE_LIMITED"
+  durationMs    Int       @default(0)
+  target        String?   // e.g. "CXA-EMP-2026-001" or "35 Interns"
+  approvalId    String?
+  errorMessage  String?
+  safeParams    Json?     // Parameters with passwords/tokens redacted
+  resultSummary String?
+  createdAt     DateTime  @default(now())
+
+  @@index([toolName])
+  @@index([status])
+  @@index([actorId])
+  @@index([clientId])
+  @@index([createdAt])
+}
+
+model McpJob {
+  id              String       @id @default(cuid())
+  jobCode         String       @unique // e.g. "JOB-MCP-1028"
+  jobType         String       // "BULK_ACCOUNTS" | "BULK_EMAIL" | "BULK_OFFER_LETTERS" | "BULK_PROJECT_ASSIGN"
+  status          String       @default("QUEUED") // "QUEUED" | "RUNNING" | "COMPLETED" | "PARTIAL" | "FAILED" | "CANCELLED"
+  actorId         String
+  actorName       String?
+  clientId        String?
+  approvalId      String?
+  totalCount      Int          @default(0)
+  processedCount  Int          @default(0)
+  successCount    Int          @default(0)
+  failedCount     Int          @default(0)
+  skippedCount    Int          @default(0)
+  parameters      Json?
+  resultSummary   Json?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  items           McpJobItem[]
+
+  @@index([jobCode])
+  @@index([clientId])
+  @@index([status])
+  @@index([actorId])
+}
+
+model McpJobItem {
+  id               String   @id @default(cuid())
+  jobId            String
+  itemIndex        Int
+  targetIdentifier String   // e.g. email, username, or ID
+  status           String   @default("PENDING") // "PENDING" | "SUCCESS" | "FAILED" | "SKIPPED"
+  resultData       Json?
+  errorMessage     String?
+  createdAt        DateTime @default(now())
+
+  job              McpJob   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([status])
+}
+
+model ServiceAccount {
+  id          String   @id @default(cuid())
+  serviceId   String   @unique // e.g. "cxa_sa_hr_automation"
+  name        String   // "CodeXa HR Automation"
+  description String?
+  orgRole     String   @default("HR") // The maximum role privilege bounded by this SA
+  scopes      Json     // Granted scopes
+  apiKeyHash  String   // SHA-256 hash of service key
+  keyPrefix   String   // e.g. "cxa_sa_live_..."
+  status      String   @default("ACTIVE") // "ACTIVE" | "SUSPENDED" | "REVOKED"
+  createdById String
+  lastUsedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([serviceId])
+  @@index([status])
+}
+
+model ExternalMcpServer {
+  id             String   @id @default(cuid())
+  name           String   // e.g. "Official GitHub MCP Server"
+  serverUrl      String
+  authType       String   @default("BEARER") // "BEARER" | "API_KEY" | "OAUTH" | "NONE"
+  credentialHash String?  // Securely stored credential
+  status         String   @default("RESTRICTED") // "TRUSTED" | "RESTRICTED" | "DISABLED"
+  allowedRoles   Json     // e.g. ["FOUNDER", "CO_FOUNDER", "CTO"]
+  allowedTools   Json     // e.g. ["*"]
+  createdById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status])
+}
+
+model McpControl {
+  id                      String   @id @default("mcp_emergency_control")
+  isMcpEnabled            Boolean  @default(true)
+  isReadToolsEnabled      Boolean  @default(true)
+  isWriteToolsEnabled     Boolean  @default(true)
+  isBulkActionsEnabled    Boolean  @default(true)
+  isEmailActionsEnabled   Boolean  @default(true)
+  isPaymentActionsEnabled Boolean  @default(true)
+  updatedById             String?
+  updatedAt               DateTime @updatedAt
+}
+
+// ─── MANUAL UPI PAYMENT VERIFICATION SYSTEM ──────────────────────────────────
+model PaymentRequest {
+  id                 String             @id @default(cuid())
+  referenceId        String             @unique // e.g. "CXA-PAY-2026-0001"
+
+  userId             String
+  userName           String?
+  userEmail          String?
+  userRole           String?            // "INTERN" | "EMPLOYEE" | "TEAM_MEMBER"
+  employeeId         String?            // e.g. "CXA-EMP-2026-001"
+  internId           String?            // e.g. "CXA-INT-2026-001"
+  domain             String?            // e.g. "Development" | "Design" | "Cybersecurity"
+
+  paymentPurpose     String             @default("INTERNSHIP_FEE") // "INTERNSHIP_FEE" | "ID_CARD" | "AI_TOOLS" | "REGISTRATION" | "EMPLOYEE_PAYMENT" | "SERVICE_PAYMENT" | "OTHER"
+  title              String             // e.g. "Internship Service Fee"
+  description        String?            // e.g. "Mandatory ID Card (₹150) + AI Dev Tools Pack (₹300)"
+  lineItems          Json?              // Detailed bill breakdown
+
+  fixedAmount        Float              // e.g. 450.0
+  currency           String             @default("INR")
+
+  paymentStatus      String             @default("PENDING_PAYMENT") // "PENDING_PAYMENT" | "PENDING_VERIFICATION" | "APPROVED" | "REJECTED" | "CANCELLED"
+
+  dueDate            DateTime?
+
+  paymentAccountId   String?
+  selectedUpiMethod  String?            // "PHONEPE" | "GPAY" | "PAYTM" | "GENERIC_UPI" | "QR_SCAN"
+  upiIdUsed          String?            // The UPI ID paid to
+
+  // Current active submission fields
+  transactionId      String?
+  utrNumber          String?
+  paymentDate        DateTime?
+  paymentTime        String?
+  upiApp             String?            // "PhonePe" | "Google Pay" | "Paytm" | "BHIM" | "CRED" | "Other"
+  proofImageUrl      String?
+  proofImageMimeType String?
+  proofImageHash     String?            // SHA-256 hash for duplicate screenshot detection
+  userNote           String?
+  submittedAt        DateTime?
+
+  verifiedBy         String?
+  verifiedByName     String?
+  verifiedAt         DateTime?
+
+  rejectedBy         String?
+  rejectedByName     String?
+  rejectedAt         DateTime?
+  rejectionReason    String?
+
+  adminNotes         String?
+
+  createdById        String?
+  createdByName      String?
+
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentAccount     PaymentAccount?    @relation(fields: [paymentAccountId], references: [id], onDelete: SetNull)
+  submissions        PaymentSubmission[]
+
+  @@index([userId])
+  @@index([referenceId])
+  @@index([paymentStatus])
+  @@index([utrNumber])
+  @@index([paymentDate])
+  @@index([createdAt])
+}
+
+model PaymentSubmission {
+  id                 String         @id @default(cuid())
+  paymentRequestId   String
+  submissionNumber   Int            @default(1)
+
+  proofImageUrl      String
+  proofImageMimeType String?
+  proofImageHash     String?        // SHA-256 hash
+
+  transactionId      String?
+  utrNumber          String?
+  paymentDate        DateTime
+  paymentTime        String?
+  upiApp             String?
+  userNote           String?
+
+  status             String         @default("PENDING_VERIFICATION") // "PENDING_VERIFICATION" | "APPROVED" | "REJECTED"
+  submittedAt        DateTime       @default(now())
+
+  reviewedBy         String?
+  reviewedByName     String?
+  reviewedAt         DateTime?
+  rejectionReason    String?
+  adminNotes         String?
+
+  paymentRequest     PaymentRequest @relation(fields: [paymentRequestId], references: [id], onDelete: Cascade)
+
+  @@index([paymentRequestId])
+  @@index([utrNumber])
+  @@index([status])
+  @@index([submittedAt])
+}
+
+model PaymentAccount {
+  id           String           @id @default(cuid())
+  name         String           // e.g. "CodeXa Primary UPI"
+  upiId        String           // e.g. "codexa@upi"
+  payeeName    String           @default("CodeXa Agency")
+  qrCodeUrl    String?
+  isActive     Boolean          @default(true)
+  isDefault    Boolean          @default(false)
+  purpose      String           @default("ALL") // "ALL" | "INTERNSHIP_FEE" | "SERVICES" | "ID_CARD"
+  instructions String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  payments     PaymentRequest[]
+
+  @@index([isActive])
+}
+
+model PaymentSetting {
+  id                  String   @id @default("cxa_payment_settings")
+  upiDisplayName      String   @default("CodeXa Agency")
+  defaultUpiId        String   @default("codexa@upi")
+  qrCodeUrl           String?
+  paymentInstructions String   @default("Scan the QR code or click your preferred UPI app. Pay the exact amount and upload your payment screenshot with UTR number.")
+  proofUploadEnabled  Boolean  @default(true)
+  isUtrRequired       Boolean  @default(false) // UTR recommended / optional by default
+  allowResubmission   Boolean  @default(true)
+  verificationRoles   Json?    // ["FOUNDER", "CO_FOUNDER", "HR"]
+  updatedById         String?
+  updatedAt           DateTime @updatedAt
+}
+
 

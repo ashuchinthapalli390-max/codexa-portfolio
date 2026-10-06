@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentSessionResult } from "@/lib/auth";
+import { Permission, requirePermission, isOwner } from "@/lib/permissions";
 
 export async function PATCH(
   req: NextRequest,
@@ -13,8 +14,9 @@ export async function PATCH(
       return NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
     }
 
-    if (auth.user.role !== "OWNER" && auth.user.role !== "ADMIN") {
-      return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
+    const permCheck = await requirePermission(auth.user, Permission.VERIFY_PAYMENTS);
+    if (!permCheck.authorized) {
+      return permCheck.response;
     }
 
     const id = params.id;
@@ -59,8 +61,8 @@ export async function DELETE(
   try {
     const auth = await getCurrentSessionResult();
 
-    if (auth.status !== "authenticated" || auth.user.role !== "OWNER") {
-      return NextResponse.json({ success: false, error: "Forbidden: Owner only." }, { status: 403 });
+    if (auth.status !== "authenticated" || !isOwner(auth.user)) {
+      return NextResponse.json({ success: false, error: "Forbidden: Founder and Co-Founder only." }, { status: 403 });
     }
 
     const id = params.id;

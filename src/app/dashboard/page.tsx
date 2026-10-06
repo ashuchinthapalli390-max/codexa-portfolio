@@ -94,7 +94,7 @@ export default function DashboardOverviewPage() {
     >
       <div className="space-y-8">
         
-        {/* ─── QUICK METRICS ──────────────────────────────────────────────── */}
+        {/* ─── QUICK METRICS (SECTION 52) ─────────────────────────────── */}
         {loading ? (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[1, 2, 3, 4].map((i) => (
@@ -108,59 +108,107 @@ export default function DashboardOverviewPage() {
             animate="animate"
             className="grid grid-cols-2 lg:grid-cols-4 gap-4"
           >
+            {/* Metric 1 */}
             <motion.div variants={staggerItem}>
               <Link
-                href="/dashboard/projects"
+                href="/dashboard/attendance"
                 className="block p-5 rounded-2xl bg-[#0A0A0A] border border-crimson/20 hover:border-bright-red/50 transition-all group shadow-lg"
               >
-                <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold">My Builds</span>
+                <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold">
+                  Attendance Rate
+                </span>
                 <div className="text-3xl font-orbitron font-black text-white mt-1 group-hover:text-bright-red transition-colors">
-                  <MotionNumber value={myProjects.length} />
+                  88.5%
                 </div>
-                <p className="text-[10px] font-mono text-emerald-400 mt-1">Active Projects</p>
+                <p className="text-[10px] font-mono text-emerald-400 mt-1">75% Req &bull; Eligible</p>
               </Link>
             </motion.div>
 
+            {/* Metric 2 */}
             <motion.div variants={staggerItem}>
               <Link
-                href="/dashboard/feed"
+                href="/dashboard/payroll"
                 className="block p-5 rounded-2xl bg-[#0A0A0A] border border-crimson/20 hover:border-bright-red/50 transition-all group shadow-lg"
               >
-                <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold">Team Feed</span>
-                <div className="text-3xl font-orbitron font-black text-white mt-1 group-hover:text-bright-red transition-colors">
-                  <MotionNumber value={latestPosts.length} />
+                <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold">
+                  Next Payroll
+                </span>
+                <div className="text-2xl font-orbitron font-black text-emerald-400 mt-1">
+                  05 Nov
                 </div>
-                <p className="text-[10px] font-mono text-bright-red mt-1">Published Updates</p>
+                <p className="text-[10px] font-mono text-[#AAA] mt-1">Expected Payout</p>
               </Link>
             </motion.div>
 
+            {/* Metric 3 */}
             <motion.div variants={staggerItem}>
               <Link
-                href="/dashboard/profile"
+                href="/dashboard/apps"
                 className="block p-5 rounded-2xl bg-[#0A0A0A] border border-crimson/20 hover:border-bright-red/50 transition-all group shadow-lg"
               >
-                <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold">Profile Setup</span>
-                <div className="text-3xl font-orbitron font-black text-emerald-400 mt-1 font-mono">
-                  <MotionNumber value={completionPct} suffix="%" />
-                </div>
-                <p className="text-[10px] font-mono text-[#AAA] mt-1">Digital Identity</p>
-              </Link>
-            </motion.div>
-
-            <motion.div variants={staggerItem}>
-              <Link
-                href="/team"
-                className="block p-5 rounded-2xl bg-[#0A0A0A] border border-crimson/20 hover:border-bright-red/50 transition-all group shadow-lg"
-              >
-                <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold">Network</span>
+                <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold">
+                  App Ecosystem
+                </span>
                 <div className="text-2xl font-orbitron font-black text-white mt-1 uppercase">
-                  ACTIVE
+                  Connected
                 </div>
-                <p className="text-[10px] font-mono text-crimson mt-1">Team Directory &bull; Public</p>
+                <p className="text-[10px] font-mono text-purple-400 mt-1">Mobile &bull; AI Desktop</p>
+              </Link>
+            </motion.div>
+
+            {/* Metric 4 */}
+            <motion.div variants={staggerItem}>
+              <Link
+                href="/dashboard/documents"
+                className="block p-5 rounded-2xl bg-[#0A0A0A] border border-crimson/20 hover:border-bright-red/50 transition-all group shadow-lg"
+              >
+                <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold">
+                  Document Vault
+                </span>
+                <div className="text-2xl font-orbitron font-black text-white mt-1 uppercase">
+                  Verified
+                </div>
+                <p className="text-[10px] font-mono text-crimson mt-1">Offer &bull; Payslips &bull; NDA</p>
               </Link>
             </motion.div>
           </motion.div>
         )}
+
+        {/* ─── TODAY'S ACTIONS PANEL (SECTION 52) ────────────────────────── */}
+        <div className="p-5 sm:p-6 rounded-3xl bg-neutral-900/60 border border-neutral-800 backdrop-blur-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <span className="text-[10px] font-mono uppercase tracking-widest text-bright-red font-bold">
+              Today&apos;s Agency Actions & Quick Shortcuts
+            </span>
+            <h4 className="text-sm font-orbitron font-bold text-white uppercase">
+              Control Center Direct Navigation
+            </h4>
+            <p className="text-xs text-neutral-400 font-sans">
+              Manage team records, verify pending disbursements, and control mobile attendance sessions.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/dashboard/attendance"
+              className="px-3.5 py-2 rounded-xl bg-neutral-950 border border-neutral-800 hover:border-crimson/50 text-xs font-mono text-neutral-300 hover:text-white transition-all"
+            >
+              Attendance Sessions
+            </Link>
+            <Link
+              href="/dashboard/payroll"
+              className="px-3.5 py-2 rounded-xl bg-neutral-950 border border-neutral-800 hover:border-crimson/50 text-xs font-mono text-neutral-300 hover:text-white transition-all"
+            >
+              Payroll Ledger
+            </Link>
+            <Link
+              href="/dashboard/apps"
+              className="px-3.5 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-all shadow-md shadow-crimson/20"
+            >
+              App Controls
+            </Link>
+          </div>
+        </div>
 
         {/* ─── MAIN TWO-COLUMN CONTENT AREA ───────────────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

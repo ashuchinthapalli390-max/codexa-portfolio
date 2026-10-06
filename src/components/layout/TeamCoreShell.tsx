@@ -29,9 +29,35 @@ import {
   ToggleRight
 } from "lucide-react";
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
-import { isOwner, isCeoOrAdmin } from "@/lib/permissions";
+import { 
+  hasPermission, 
+  getEffectiveRole, 
+  getRoleDisplayName, 
+  Permission, 
+  isOwner, 
+  isCeoOrAdmin 
+} from "@/lib/permissions";
 import { NotificationItem } from "@/lib/data-store";
 import { useAuth } from "@/context/AuthContext";
+import { MandatoryPasswordChangeModal } from "@/components/auth/MandatoryPasswordChangeModal";
+import {
+  CreditCard,
+  BarChart3,
+  Mail,
+  UserPlus,
+  FileText,
+  Activity,
+  CheckCircle2,
+  Briefcase,
+  GraduationCap,
+  Calendar,
+  Smartphone,
+  Cpu,
+  FileCheck,
+  Sliders,
+  Award,
+  Receipt,
+} from "lucide-react";
 
 interface TeamCoreShellProps {
   children: React.ReactNode;
@@ -115,27 +141,149 @@ export function TeamCoreShell({
     );
   }
 
-  const isUserOwner = isOwner(currentUser);
-  const isUserExecutive = isCeoOrAdmin(currentUser);
+  const effectiveRole = getEffectiveRole(currentUser);
+  const displayRoleTitle = getRoleDisplayName(effectiveRole);
 
-  const mainNavItems = [
-    { label: "Overview", href: "/dashboard", icon: LayoutDashboard },
-    { label: "Team Core Feed", href: "/dashboard/feed", icon: Share2 },
-    { label: "Team Directory", href: "/team", icon: Users },
-    { label: "DIRECT MESSAGES", href: "/dashboard/messages", icon: MessageSquare, badge: unreadMessagesCount || undefined },
-    { label: "My Profile", href: "/dashboard/profile", icon: User },
-    { label: "Security & 2FA", href: "/dashboard/settings/security", icon: Shield },
-    { label: "Notifications", href: "/dashboard/notifications", icon: Bell, badge: unreadNotifsCount || undefined },
-  ];
+  interface NavItem {
+    label: string;
+    href: string;
+    icon: any;
+    badge?: number | string;
+  }
 
-  const executiveNavItems = [
-    { label: isUserOwner ? "Founder Console" : "Executive Center", href: isUserOwner ? "/owner" : "/admin", icon: Shield },
-    ...(isUserOwner ? [{ label: "Accounts & Security", href: "/owner?tab=accounts", icon: Key }] : []),
-    { label: "All Projects Pipeline", href: isUserOwner ? "/owner?tab=all-projects" : "/admin?tab=projects", icon: FolderGit2 },
-    ...(isUserOwner ? [{ label: "Homepage Control", href: "/owner?tab=homepage", icon: ToggleRight }] : []),
-    { label: "Inquiries Console", href: isUserOwner ? "/owner?tab=inquiries" : "/admin?tab=inquiries", icon: Inbox },
-    ...(isUserOwner ? [{ label: "Audit & Security Logs", href: "/owner?tab=audit", icon: Clock }] : []),
-  ];
+  // Build role-tailored primary navigation per Section 56
+  const getNavItems = (): NavItem[] => {
+    switch (effectiveRole) {
+      case "FOUNDER":
+      case "CO_FOUNDER":
+        return [
+          { label: "Dashboard", href: "/owner", icon: LayoutDashboard },
+          { label: "AI & MCP", href: "/dashboard/integrations/mcp", icon: Cpu },
+          { label: "Crew", href: "/owner?tab=accounts", icon: Users },
+          { label: "Employees", href: "/dashboard/employees", icon: Briefcase },
+          { label: "Interns", href: "/dashboard/interns", icon: GraduationCap },
+          { label: "Users", href: "/dashboard/accounts", icon: UserPlus },
+          { label: "Profiles", href: "/team", icon: User },
+          { label: "Projects", href: "/owner?tab=all-projects", icon: FolderGit2 },
+          { label: "Approvals", href: "/dashboard/approvals", icon: CheckCircle2 },
+          { label: "Attendance", href: "/dashboard/attendance", icon: Clock },
+          { label: "UPI Verification", href: "/dashboard/payments", icon: Receipt },
+          { label: "Payroll", href: "/dashboard/payroll", icon: CreditCard },
+          { label: "Payroll Calendar", href: "/dashboard/payroll/calendar", icon: Calendar },
+          { label: "Documents", href: "/dashboard/documents", icon: FileText },
+          { label: "Email", href: "/dashboard/email", icon: Mail },
+          { label: "Analytics", href: "/owner?tab=overview", icon: BarChart3 },
+          { label: "Mobile Controls", href: "/dashboard/apps", icon: Smartphone },
+          { label: "Desktop Access", href: "/dashboard/apps", icon: Key },
+          { label: "Feature Flags", href: "/dashboard/features", icon: Sliders },
+          { label: "Audit Logs", href: "/owner?tab=audit", icon: Clock },
+          { label: "Settings", href: "/dashboard/settings/security", icon: Shield },
+        ];
+
+      case "CEO":
+        return [
+          { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+          { label: "AI & MCP Activity", href: "/dashboard/integrations/mcp?tab=activity", icon: Cpu },
+          { label: "Crew", href: "/dashboard/accounts", icon: Users },
+          { label: "Employees", href: "/dashboard/employees", icon: Briefcase },
+          { label: "Interns", href: "/dashboard/interns", icon: GraduationCap },
+          { label: "Profiles", href: "/team", icon: User },
+          { label: "Projects", href: "/admin?tab=projects", icon: FolderGit2 },
+          { label: "Approvals", href: "/dashboard/approvals", icon: CheckCircle2 },
+          { label: "Attendance Analytics", href: "/dashboard/attendance", icon: Clock },
+          { label: "UPI Payments", href: "/dashboard/payments", icon: Receipt },
+          { label: "Payroll Summary", href: "/dashboard/payroll", icon: CreditCard },
+          { label: "Analytics", href: "/admin", icon: BarChart3 },
+          { label: "Reports", href: "/admin?tab=inquiries", icon: FileText },
+          { label: "Security Settings", href: "/dashboard/settings/security", icon: Shield },
+        ];
+
+      case "CTO":
+        return [
+          { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+          { label: "AI & MCP", href: "/dashboard/integrations/mcp", icon: Cpu },
+          { label: "Projects", href: "/admin?tab=projects", icon: FolderGit2 },
+          { label: "Project Approvals", href: "/dashboard/approvals?type=PROJECT", icon: CheckCircle2 },
+          { label: "Employees", href: "/dashboard/employees", icon: Briefcase },
+          { label: "Interns", href: "/dashboard/interns", icon: GraduationCap },
+          { label: "Create Account", href: "/dashboard/accounts?action=create", icon: UserPlus },
+          { label: "Attendance Control", href: "/dashboard/attendance", icon: Clock },
+          { label: "Payments & Dues", href: "/dashboard/payments", icon: Receipt },
+          { label: "Email", href: "/dashboard/email", icon: Mail },
+          { label: "Desktop Access", href: "/dashboard/apps", icon: Key },
+          { label: "AI Access", href: "/dashboard/apps", icon: Cpu },
+          { label: "Technical Analytics", href: "/admin?tab=projects", icon: BarChart3 },
+          { label: "Security Settings", href: "/dashboard/settings/security", icon: Shield },
+        ];
+
+      case "HR":
+        return [
+          { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+          { label: "AI & MCP Approvals", href: "/dashboard/integrations/mcp?tab=approvals", icon: Cpu },
+          { label: "Employees", href: "/dashboard/employees", icon: Briefcase },
+          { label: "Interns", href: "/dashboard/interns", icon: GraduationCap },
+          { label: "Profiles", href: "/team", icon: User },
+          { label: "Attendance", href: "/dashboard/attendance", icon: Clock },
+          { label: "UPI Verification", href: "/dashboard/payments", icon: Receipt },
+          { label: "Payroll", href: "/dashboard/payroll", icon: CreditCard },
+          { label: "Documents", href: "/dashboard/documents", icon: FileCheck },
+          { label: "Offer Letters", href: "/dashboard/documents", icon: Award },
+          { label: "Email", href: "/dashboard/email", icon: Mail },
+          { label: "HR Analytics", href: "/admin", icon: BarChart3 },
+          { label: "Security Settings", href: "/dashboard/settings/security", icon: Shield },
+        ];
+
+      case "COO":
+        return [
+          { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+          { label: "AI & MCP Activity", href: "/dashboard/integrations/mcp?tab=activity", icon: Cpu },
+          { label: "Projects", href: "/admin?tab=projects", icon: FolderGit2 },
+          { label: "Crew", href: "/dashboard/accounts", icon: Users },
+          { label: "Employees", href: "/dashboard/employees", icon: Briefcase },
+          { label: "Interns", href: "/dashboard/interns", icon: GraduationCap },
+          { label: "Profiles", href: "/team", icon: User },
+          { label: "Attendance Summary", href: "/dashboard/attendance", icon: Clock },
+          { label: "UPI Payments", href: "/dashboard/payments", icon: Receipt },
+          { label: "Payroll Summary", href: "/dashboard/payroll", icon: CreditCard },
+          { label: "Reports", href: "/admin?tab=inquiries", icon: FileText },
+          { label: "Email", href: "/dashboard/email", icon: Mail },
+          { label: "Security Settings", href: "/dashboard/settings/security", icon: Shield },
+        ];
+
+      case "INTERN":
+        return [
+          { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+          { label: "My Profile", href: "/dashboard/profile", icon: User },
+          { label: "Internship Details", href: "/dashboard/interns", icon: GraduationCap },
+          { label: "Fees & Dues", href: "/dashboard/payments", icon: Receipt },
+          { label: "Attendance Summary", href: "/dashboard/attendance", icon: Clock },
+          { label: "Stipend Records", href: "/dashboard/payroll", icon: CreditCard },
+          { label: "Offer Letter", href: "/dashboard/documents", icon: Award },
+          { label: "Documents", href: "/dashboard/documents", icon: FileCheck },
+          { label: "Assigned Projects", href: "/dashboard/projects", icon: FolderGit2 },
+          { label: "App Center", href: "/dashboard/apps", icon: Smartphone },
+          { label: "Settings", href: "/dashboard/settings/security", icon: Shield },
+        ];
+
+      case "EMPLOYEE":
+      default:
+        return [
+          { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+          { label: "My Profile", href: "/dashboard/profile", icon: User },
+          { label: "Employment Details", href: "/dashboard/employees", icon: Briefcase },
+          { label: "Payments & Dues", href: "/dashboard/payments", icon: Receipt },
+          { label: "Attendance Summary", href: "/dashboard/attendance", icon: Clock },
+          { label: "Payroll & Payslips", href: "/dashboard/payroll", icon: CreditCard },
+          { label: "Documents", href: "/dashboard/documents", icon: FileCheck },
+          { label: "Assigned Projects", href: "/dashboard/projects", icon: FolderGit2 },
+          { label: "App Center", href: "/dashboard/apps", icon: Smartphone },
+          { label: "Settings", href: "/dashboard/settings/security", icon: Shield },
+        ];
+    }
+  };
+
+  const navItems = getNavItems();
+
 
   return (
     <div className="min-h-screen bg-[#070707] text-white flex flex-col selection:bg-crimson selection:text-white">
@@ -255,7 +403,7 @@ export function TeamCoreShell({
               <p className="font-orbitron font-bold text-xs text-white group-hover:text-bright-red transition-colors leading-tight">
                 {currentUser?.displayName || "Member"}
               </p>
-              <p className="text-[9px] font-mono text-crimson">@{currentUser?.username}</p>
+              <p className="text-[9px] font-mono text-crimson">{displayRoleTitle}</p>
             </div>
           </Link>
 
@@ -270,6 +418,9 @@ export function TeamCoreShell({
         </div>
       </header>
 
+      {/* ─── MANDATORY PASSWORD CHANGE OVERLAY ───────────────────────────── */}
+      <MandatoryPasswordChangeModal />
+
       {/* ─── MAIN APP BODY (Sidebar + Page Content) ──────────────────────── */}
       <div className="flex-1 flex overflow-hidden">
         
@@ -277,25 +428,26 @@ export function TeamCoreShell({
         <aside
           className={`${
             mobileMenuOpen ? "fixed inset-y-0 left-0 z-50 w-64" : "hidden"
-          } md:flex w-60 border-r border-crimson/15 bg-[#080808] flex-col justify-between p-4 flex-shrink-0`}
+          } md:flex w-60 border-r border-crimson/15 bg-[#080808] flex-col justify-between p-4 flex-shrink-0 overflow-y-auto`}
         >
           <div className="space-y-6">
             
-            {/* Core Navigation */}
+            {/* Dynamic Role Navigation */}
             <div className="space-y-1">
-              <span className="text-[9px] font-orbitron text-[#666] uppercase px-3 font-bold tracking-widest">
-                Team Core
+              <span className="text-[9px] font-orbitron text-bright-red uppercase px-3 font-bold tracking-widest flex items-center gap-1.5">
+                <Shield className="w-3 h-3" />
+                <span>{effectiveRole === "FOUNDER" || effectiveRole === "CO_FOUNDER" ? "Executive Console" : `${effectiveRole} Workspace`}</span>
               </span>
               <nav className="space-y-1 pt-1.5">
-                {mainNavItems.map((item) => {
+                {navItems.map((item) => {
                   const Icon = item.icon;
-                  const isActive = pathname === item.href;
+                  const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href.split("?")[0]));
                   return (
                     <Link
-                      key={item.href}
+                      key={item.href + item.label}
                       href={item.href}
                       onClick={() => setMobileMenuOpen(false)}
-                      className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl font-orbitron text-xs font-semibold uppercase tracking-wider transition-all ${
+                      className={`flex items-center justify-between px-3 py-2 rounded-xl font-orbitron text-xs font-semibold uppercase tracking-wider transition-all ${
                         isActive
                           ? "bg-crimson text-white border border-bright-red shadow-[0_0_15px_rgba(217,4,41,0.3)]"
                           : "text-[#888] hover:text-white hover:bg-[#121212] border border-transparent"
@@ -303,9 +455,9 @@ export function TeamCoreShell({
                     >
                       <div className="flex items-center gap-2.5">
                         <Icon className="w-4 h-4" />
-                        <span>{item.label}</span>
+                        <span className="truncate">{item.label}</span>
                       </div>
-                      {item.badge !== undefined && item.badge > 0 && (
+                      {item.badge !== undefined && Boolean(item.badge) && (
                         <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-deep-red/40 text-bright-red border border-crimson/30">
                           {item.badge}
                         </span>
@@ -315,38 +467,6 @@ export function TeamCoreShell({
                 })}
               </nav>
             </div>
-
-            {/* Executive Management Section (if Owner or CEO) */}
-            {isUserExecutive && (
-              <div className="space-y-1 pt-3 border-t border-crimson/15">
-                <span className="text-[9px] font-orbitron text-bright-red uppercase px-3 font-bold tracking-widest flex items-center gap-1.5">
-                  <Shield className="w-3 h-3" /> Management
-                </span>
-                <nav className="space-y-1 pt-1.5">
-                  {executiveNavItems.map((item) => {
-                    const Icon = item.icon;
-                    const isActive = pathname === item.href || pathname.startsWith(item.href.split("?")[0]);
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={() => setMobileMenuOpen(false)}
-                        className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl font-orbitron text-xs font-semibold uppercase tracking-wider transition-all ${
-                          isActive
-                            ? "bg-deep-red/30 text-white border border-crimson/50"
-                            : "text-[#777] hover:text-white hover:bg-[#121212] border border-transparent"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <Icon className="w-4 h-4 text-bright-red" />
-                          <span>{item.label}</span>
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </nav>
-              </div>
-            )}
           </div>
 
           {/* User Profile Pill at Bottom */}
@@ -355,7 +475,7 @@ export function TeamCoreShell({
               <CodeXaAvatar src={currentUser?.mediaUrl} size="xs" />
               <div className="leading-tight">
                 <p className="text-xs font-orbitron font-bold text-white truncate max-w-[110px]">{currentUser?.displayName}</p>
-                <p className="text-[9px] font-mono text-crimson">{currentUser?.role}</p>
+                <p className="text-[9px] font-mono text-crimson truncate max-w-[110px]">{displayRoleTitle}</p>
               </div>
             </Link>
           </div>

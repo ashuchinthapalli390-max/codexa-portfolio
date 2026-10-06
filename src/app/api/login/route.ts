@@ -103,7 +103,8 @@ export async function POST(req: Request) {
       details: `User @${profile.username} logged in successfully (Single-Factor).`,
     });
 
-    const redirectUrl = profile.role === "OWNER" ? "/owner" : profile.role === "ADMIN" ? "/admin" : "/dashboard";
+    const isTopExecutive = profile.role === "OWNER" || profile.role === "FOUNDER" || profile.role === "CO_FOUNDER";
+    const redirectUrl = isTopExecutive ? "/owner" : profile.role === "ADMIN" ? "/admin" : "/dashboard";
 
     return NextResponse.json({
       success: true,
@@ -117,6 +118,8 @@ export async function POST(req: Request) {
         email: profile.email,
         displayName: profile.displayName,
         role: profile.role,
+        orgRole: profile.orgRole || profile.role,
+        mustChangePassword: profile.mustChangePassword ?? false,
         createdAt: Date.now(),
       },
       message: "Identity verified. Access authorized.",

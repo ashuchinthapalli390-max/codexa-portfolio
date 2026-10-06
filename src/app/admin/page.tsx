@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -25,14 +25,24 @@ import { TeamCoreShell } from "@/components/layout/TeamCoreShell";
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
 import { Profile, Project, Inquiry, Post } from "@/lib/data-store";
 import { useAuth } from "@/context/AuthContext";
+import { isExecutive } from "@/lib/permissions";
 
 type AdminTab = "overview" | "inquiries" | "projects" | "members" | "feed";
 
-export default function AdminWorkspacePage() {
+function AdminWorkspaceContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedTab = searchParams.get("tab") as AdminTab | null;
+
   const { user: currentUser, status } = useAuth();
-  const [activeTab, setActiveTab] = useState<AdminTab>("overview");
+  const [activeTab, setActiveTab] = useState<AdminTab>(requestedTab || "overview");
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (requestedTab) {
+      setActiveTab(requestedTab);
+    }
+  }, [requestedTab]);
 
   // Real Data
   const [teamMembers, setTeamMembers] = useState<Profile[]>([]);
@@ -62,7 +72,7 @@ export default function AdminWorkspacePage() {
       return;
     }
     if (status === "authenticated" && currentUser) {
-      if (currentUser.role !== "ADMIN" && currentUser.role !== "OWNER") {
+      if (!isExecutive(currentUser) && currentUser.role !== "ADMIN" && currentUser.role !== "OWNER") {
         router.replace("/dashboard");
         return;
       }
@@ -597,3 +607,18 @@ export default function AdminWorkspacePage() {
     </TeamCoreShell>
   );
 }
+
+export default function AdminWorkspacePage() {
+  return (
+    <Suspense
+      fallback={
+        <TeamCoreShell title="Executive Center">
+          <div className="p-12 text-center text-xs text-[#888]">Loading workspace...</div>
+        </TeamCoreShell>
+      }
+    >
+      <AdminWorkspaceContent />
+    </Suspense>
+  );
+}
+

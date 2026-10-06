@@ -9,6 +9,10 @@ export interface AuthenticatedUser {
   email: string | null;
   displayName: string;
   role: "OWNER" | "ADMIN" | "TEAM_MEMBER" | string;
+  orgRole?: string | null;
+  effectiveRole?: string | null;
+  mustChangePassword?: boolean;
+  permissions?: string[];
   isActive: boolean;
   mediaUrl?: string | null;
   leadershipPosition?: string | null;

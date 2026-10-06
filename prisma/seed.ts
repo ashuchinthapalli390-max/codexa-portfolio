@@ -144,7 +144,13 @@ async function main() {
   await bootstrapOfficialLeadership();
   console.log("  ✓ Leadership identities initialized / synced.");
 
-  // ─── 8. SEED CONFIRMATION OUTPUT (safe — no secrets printed) ────────────────
+  // ─── 8. BOOTSTRAP OFFICIAL CREW ACCOUNTS (CO_FOUNDER, CEO, CTO, HR, COO) ───
+  console.log("  → Bootstrapping CodeXa Crew Accounts (Co-Founder, CEO, CTO, HR, COO)...");
+  const { seedCrewAccounts } = await import("../scripts/seed-crew-accounts");
+  await seedCrewAccounts();
+  console.log("  ✓ Crew accounts initialized / synced.");
+
+  // ─── 9. SEED CONFIRMATION OUTPUT (safe — no secrets printed) ────────────────
   console.log("");
   console.log(`  DATABASE connected: yes`);
   console.log(`  OWNER user exists: ${owner ? "yes" : "no"}`);
