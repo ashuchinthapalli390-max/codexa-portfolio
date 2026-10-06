@@ -43,10 +43,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     // Record in media_assets table
+    const sourceType = uploadResult.storageBucket === "avatars" 
+      ? "SUPABASE_STORAGE" 
+      : uploadResult.storageBucket === "vercel-blob" 
+        ? "VERCEL_BLOB" 
+        : "INLINE";
+
     const asset = await dataStore.createMediaAsset({
       ownerUserId: user.id,
       mediaType: "AVATAR",
-      sourceType: "SUPABASE_STORAGE",
+      sourceType,
       storageBucket: uploadResult.storageBucket,
       storagePath: uploadResult.storagePath,
       publicUrl: uploadResult.publicUrl,
@@ -59,7 +65,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     let updatedProfile = null;
     if (setAsAvatar) {
       updatedProfile = await dataStore.updateProfileAvatar(user.id, {
-        avatarSource: "SUPABASE_STORAGE",
+        avatarSource: sourceType,
         avatarPath: uploadResult.publicUrl,
         avatarUrl: uploadResult.publicUrl,
         avatarStoragePath: uploadResult.storagePath,

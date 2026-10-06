@@ -157,6 +157,31 @@ export async function supabaseDelete(
 
 // ─── STORAGE HELPERS ────────────────────────────────────────────────────────
 
+export async function supabaseEnsureBucket(bucket: string, isPublic = true): Promise<boolean> {
+  if (!isSupabaseConfigured() || !SUPABASE_SERVICE_KEY) return false;
+  try {
+    const url = `${SUPABASE_URL}/storage/v1/bucket`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: bucket,
+        name: bucket,
+        public: isPublic,
+        file_size_limit: 10485760, // 10 MB
+        allowed_mime_types: ["image/jpeg", "image/png", "image/webp", "image/gif"],
+      }),
+    });
+    return res.ok || res.status === 409 || res.status === 400;
+  } catch {
+    return false;
+  }
+}
+
 export async function supabaseUploadFile(
   bucket: string,
   filePath: string,
@@ -182,6 +207,26 @@ export async function supabaseUploadFile(
 
     if (!res.ok) {
       const err = await res.text();
+      // If bucket does not exist, auto-create public bucket and retry upload
+      if (res.status === 404 || err.toLowerCase().includes("not found") || err.toLowerCase().includes("bucket")) {
+        const created = await supabaseEnsureBucket(bucket, true);
+        if (created) {
+          const retryRes = await fetch(url, {
+            method: "POST",
+            headers: {
+              "apikey": SUPABASE_SERVICE_KEY,
+              "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+              "Content-Type": contentType,
+              "x-upsert": "true",
+            },
+            body: fileBody as any,
+          });
+          if (retryRes.ok) {
+            const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${filePath}`;
+            return { data: { publicUrl, path: filePath }, error: null };
+          }
+        }
+      }
       return { data: null, error: err };
     }
 
@@ -191,3 +236,4 @@ export async function supabaseUploadFile(
     return { data: null, error: err.message };
   }
 }
+

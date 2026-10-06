@@ -21,10 +21,18 @@ export interface ProfileMediaInfo {
  */
 export function getProfileImageStyle(profile: ProfileMediaInfo, defaultFallback = "") {
   const time = profile.updatedAt ? new Date(profile.updatedAt).getTime() : null;
-  const cacheBuster = time ? `?v=${time}` : "";
-  
   const src = profile.profileMediaUrl || profile.mediaUrl || defaultFallback;
-  const finalSrc = src ? `${src}${cacheBuster}` : "";
+  let finalSrc = "";
+  if (src) {
+    if (src.startsWith("data:") || src.startsWith("blob:")) {
+      finalSrc = src;
+    } else if (time) {
+      const sep = src.includes("?") ? "&" : "?";
+      finalSrc = `${src}${sep}v=${time}`;
+    } else {
+      finalSrc = src;
+    }
+  }
 
   const zoom = profile.zoom !== undefined && profile.zoom !== null 
     ? profile.zoom 
