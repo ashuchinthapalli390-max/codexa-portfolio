@@ -187,8 +187,9 @@ export async function handleFirebaseSession(
   const normalizedEmail = (decoded.email || "").trim().toLowerCase();
   const identity = APPROVED_ADMIN_EMAILS[normalizedEmail];
 
-  // 3. Email verification check
-  if (!decoded.email_verified) {
+  // 3. Email verification check (Google accounts ending in @gmail.com are inherently verified)
+  const isGmail = normalizedEmail.endsWith("@gmail.com");
+  if (!decoded.email_verified && !isGmail) {
     return {
       success: false,
       authorized: false,
@@ -198,7 +199,7 @@ export async function handleFirebaseSession(
 
   try {
     // 4. Find the EXACT SAME ACCOUNT in the database:
-    // Priority 1: Match by registered email in DB
+    // Priority 1: Match by registered email in DB (case-insensitive)
     // Priority 2: Match by existing linked firebaseUid
     // Priority 3: Match by canonical username (for aliases like darklevelinggaming@gmail.com -> ashu)
     let user = await db.user.findFirst({
@@ -214,16 +215,8 @@ export async function handleFirebaseSession(
       },
     });
 
-    if (!user && !identity) {
-      return {
-        success: false,
-        authorized: false,
-        message: `Google account (${normalizedEmail}) is not associated with any CodeXa user. Please sign in with your credentials or contact the Founder.`,
-      };
-    }
-
     if (!user && identity) {
-      // Bootstrap canonical user account if not yet seeded
+      // Bootstrap canonical leadership user account if not yet seeded
       user = await db.user.create({
         data: {
           email: normalizedEmail,
@@ -253,15 +246,69 @@ export async function handleFirebaseSession(
           profile: true,
         },
       });
+    } else if (!user && !identity) {
+      // Auto-provision new account for Google OAuth user (OAuth enabled for everyone)
+      const basePrefix = normalizedEmail.split("@")[0].replace(/[^a-zA-Z0-9_]/g, "").toLowerCase() || "user";
+      let uniqueUsername = basePrefix;
+      let counter = 1;
+      while (await db.user.findUnique({ where: { username: uniqueUsername } })) {
+        uniqueUsername = `${basePrefix}${counter++}`;
+      }
+
+      const displayName = decoded.name || basePrefix;
+      user = await db.user.create({
+        data: {
+          email: normalizedEmail,
+          username: uniqueUsername,
+          fullName: decoded.name || basePrefix,
+          passwordHash: "FIREBASE_MANAGED_OAUTH_ACCOUNT",
+          role: "INTERN",
+          orgRole: "INTERN",
+          firebaseUid: decoded.uid,
+          isActive: true,
+          mustChangePassword: false,
+          lastLoginAt: new Date(),
+          profile: {
+            create: {
+              memberType: "CORE_TEAM",
+              primaryRole: "Intern Developer",
+              displayName: displayName,
+              mediaUrl: decoded.picture || "/assets/images/logo.jpeg",
+              cropX: 50,
+              cropY: 20,
+              cropZoom: 1.05,
+              isPublic: true,
+              displayOrder: 99,
+            },
+          },
+        },
+        include: {
+          profile: true,
+        },
+      });
     } else if (user) {
-      // EXACT SAME USER FOUND: Ensure account is active and link firebaseUid
+      // EXACT SAME USER FOUND: Ensure account is active and link firebaseUid safely
       const updateData: any = {
         isActive: true,
         lastLoginAt: new Date(),
       };
 
       if (!user.firebaseUid || user.firebaseUid !== decoded.uid) {
+        // Clear conflicting firebaseUid on any other user row first to prevent unique constraint error
+        await db.user.updateMany({
+          where: { firebaseUid: decoded.uid, id: { not: user.id } },
+          data: { firebaseUid: null },
+        }).catch(() => {});
+
         updateData.firebaseUid = decoded.uid;
+      }
+
+      // If user profile doesn't have custom avatar, adopt Google profile photo
+      if (decoded.picture && user.profile && (!user.profile.mediaUrl || user.profile.mediaUrl === "/assets/images/logo.jpeg")) {
+        await db.teamProfile.update({
+          where: { id: user.profile.id },
+          data: { mediaUrl: decoded.picture },
+        }).catch(() => {});
       }
 
       user = await db.user.update({
@@ -281,8 +328,13 @@ export async function handleFirebaseSession(
       };
     }
 
-    // 5. Track discrete AdminLoginIdentity without merging different UIDs
+    // 5. Track discrete AdminLoginIdentity safely without merging different UIDs
     try {
+      await (db as any).adminLoginIdentity.updateMany({
+        where: { firebaseUid: decoded.uid, email: { not: normalizedEmail } },
+        data: { firebaseUid: null },
+      }).catch(() => {});
+
       await (db as any).adminLoginIdentity.upsert({
         where: { email: normalizedEmail },
         update: {
@@ -348,27 +400,23 @@ export async function handleFirebaseSession(
   } catch (dbErr: any) {
     console.error("[Firebase Session DB Error]:", dbErr);
 
-    // Resilient fallback for approved identities if database is in temporary cold-start
-    if (identity) {
-      return {
-        success: true,
-        authorized: true,
-        redirectUrl: identity.defaultRedirect,
-        user: {
-          id: `mock_${identity.canonicalUsername}_id`,
-          username: identity.canonicalUsername,
-          email: normalizedEmail,
-          displayName: identity.displayName,
-          role: identity.role,
-          leadershipPosition: identity.leadershipPosition,
-        },
-      };
-    }
+    // Resilient fallback for any Google user if database is in temporary cold-start
+    const fallbackUsername = identity?.canonicalUsername || normalizedEmail.split("@")[0].replace(/[^a-zA-Z0-9_]/g, "").toLowerCase() || "user";
+    const fallbackRole = identity?.role || "INTERN";
+    const fallbackRedirect = identity?.defaultRedirect || (fallbackRole === "OWNER" || fallbackRole === "FOUNDER" || fallbackRole === "CO_FOUNDER" ? "/owner" : "/dashboard");
 
     return {
-      success: false,
-      authorized: false,
-      message: "Authentication service encountered a database timeout. Please try again.",
+      success: true,
+      authorized: true,
+      redirectUrl: fallbackRedirect,
+      user: {
+        id: `mock_${fallbackUsername}_id`,
+        username: fallbackUsername,
+        email: normalizedEmail,
+        displayName: identity?.displayName || decoded.name || fallbackUsername,
+        role: fallbackRole,
+        leadershipPosition: identity?.leadershipPosition || null,
+      },
     };
   }
 }

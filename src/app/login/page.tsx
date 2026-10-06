@@ -295,7 +295,7 @@ function LoginForm() {
         if (res.status === 403 || !data.authorized) {
           setUnauthorizedMessage(
             data.error ||
-            "Your account is not authorized for the CodeXa admin console. Please contact the Founder or Super Admin."
+            "Authentication failed. Please check your account or contact the Founder."
           );
         } else {
           setErrorMessage(data.error || "Authentication token validation failed.");
@@ -693,7 +693,7 @@ function LoginForm() {
                       SIGN IN TO CODEXA
                     </h2>
                     <p className="text-xs text-[#888] font-light">
-                      Single Sign-On for authorized founders, executives & team members.
+                      Single Sign-On with Google OAuth for leadership, interns & team members.
                     </p>
                   </div>
 
