@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSessionResult } from "@/lib/auth";
-import { Permission, requirePermission } from "@/lib/permissions";
+import { Permission, requirePermission, canAccessMcp } from "@/lib/permissions";
 import { getPendingMcpApprovals, decideMcpApproval } from "@/lib/mcp/approvals";
 import { executeMcpTool } from "@/lib/mcp/registry";
 
@@ -16,6 +16,10 @@ export async function GET() {
   const auth = await getCurrentSessionResult();
   if (auth.status !== "authenticated") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!canAccessMcp(auth.user)) {
+    return NextResponse.json({ error: "Forbidden: MCP Approvals are restricted to Founder and Co-Founder." }, { status: 403 });
   }
 
   const approvals = await getPendingMcpApprovals();
@@ -45,8 +49,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const permCheck = await requirePermission(auth.user, Permission.APPROVE_MCP_ACTIONS);
-  if (!permCheck.authorized) return permCheck.response;
+  if (!canAccessMcp(auth.user)) {
+    return NextResponse.json({ error: "Forbidden: MCP Approvals are restricted to Founder and Co-Founder." }, { status: 403 });
+  }
 
   try {
     const body = await req.json();

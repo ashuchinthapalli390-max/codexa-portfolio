@@ -239,14 +239,18 @@ export default function InternsPage() {
                 <span className="text-neutral-500 block text-[10px]">Status</span>
                 <span className="text-emerald-400 font-bold">{selectedIntern.status}</span>
               </div>
-              {selectedIntern.stipend && (
-                <div className="p-3 rounded-xl bg-neutral-950 border border-neutral-800 col-span-2">
-                  <span className="text-neutral-500 block text-[10px]">Monthly Stipend</span>
+              <div className="p-3 rounded-xl bg-neutral-950 border border-neutral-800 col-span-2">
+                <span className="text-neutral-500 block text-[10px]">Monthly Stipend</span>
+                {selectedIntern.stipend ? (
                   <span className="text-emerald-400 font-bold text-sm">
                     ₹{selectedIntern.stipend.toLocaleString()} INR
                   </span>
-                </div>
-              )}
+                ) : (
+                  <span className="text-neutral-400 font-semibold text-xs">
+                    Not Assigned (Pending HR Update)
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* LIFECYCLE CONTROLS (Complete / Offboard) */}

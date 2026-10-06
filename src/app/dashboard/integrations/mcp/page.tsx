@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import { TeamCoreShell } from "@/components/layout/TeamCoreShell";
 import { useAuth } from "@/context/AuthContext";
-import { getEffectiveRole, OrgRole } from "@/lib/permissions";
+import { getEffectiveRole, OrgRole, canAccessMcp } from "@/lib/permissions";
 
 type TabType =
   | "overview"
@@ -45,8 +45,9 @@ type TabType =
   | "security";
 
 export default function McpControlCenterPage() {
-  const { user } = useAuth();
+  const { user, status } = useAuth();
   const effectiveRole = getEffectiveRole(user as any);
+  const isAuthorized = canAccessMcp(user as any);
 
   const [activeTab, setActiveTab] = useState<TabType>("overview");
   const [loading, setLoading] = useState(true);
@@ -87,6 +88,10 @@ export default function McpControlCenterPage() {
   };
 
   const loadAllData = useCallback(async () => {
+    if (!isAuthorized) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const [cRes, tRes, aRes, jRes, actRes, saRes, ctrlRes] = await Promise.all([
@@ -109,11 +114,37 @@ export default function McpControlCenterPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isAuthorized]);
 
   useEffect(() => {
-    loadAllData();
-  }, [loadAllData]);
+    if (status === "authenticated" && isAuthorized) {
+      loadAllData();
+    } else if (status === "authenticated" && !isAuthorized) {
+      setLoading(false);
+    }
+  }, [status, isAuthorized, loadAllData]);
+
+  if (status === "authenticated" && !isAuthorized) {
+    return (
+      <TeamCoreShell title="Access Restricted">
+        <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6">
+          <div className="w-16 h-16 rounded-2xl bg-crimson/10 border border-crimson/30 flex items-center justify-center mb-4 shadow-[0_0_20px_rgba(217,4,41,0.2)]">
+            <Lock className="w-8 h-8 text-bright-red" />
+          </div>
+          <h1 className="text-2xl font-bold font-orbitron text-white mb-2">403 — Access Restricted</h1>
+          <p className="text-sm text-[#888] max-w-md mb-6 leading-relaxed">
+            MCP Connections, AI Tools, Policies, Jobs, Activity, and Security controls are restricted exclusively to Founders and Co-Founders.
+          </p>
+          <a
+            href="/dashboard"
+            className="px-5 py-2.5 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-all shadow-lg shadow-crimson/30"
+          >
+            Return to Dashboard
+          </a>
+        </div>
+      </TeamCoreShell>
+    );
+  }
 
   // Handle Create Client
   const handleCreateClient = async (e: React.FormEvent) => {

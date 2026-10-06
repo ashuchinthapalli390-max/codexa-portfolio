@@ -272,13 +272,11 @@ export const ROLE_PERMISSIONS: Record<string, Set<Permission>> = {
     Permission.VIEW_PAYMENT_ANALYTICS,
     Permission.VIEW_DOCUMENTS,
     Permission.SEND_EMAIL,
-    Permission.VIEW_PAYMENT_ANALYTICS,
     Permission.VIEW_ANALYTICS,
     Permission.VIEW_PROJECT_ANALYTICS,
     Permission.VIEW_HR_ANALYTICS,
     Permission.VIEW_REPORTS,
     Permission.VIEW_AUDIT_LOGS,
-    Permission.VIEW_MCP_ACTIVITY,
   ]),
 
   // CTO: Technical & project authority, intern/employee account creation & management, desktop/AI licensing
@@ -318,11 +316,6 @@ export const ROLE_PERMISSIONS: Record<string, Set<Permission>> = {
     Permission.SEND_EMAIL,
     Permission.VIEW_PROJECT_ANALYTICS,
     Permission.VIEW_REPORTS,
-    Permission.MANAGE_MCP_CONNECTIONS,
-    Permission.VIEW_MCP_ACTIVITY,
-    Permission.MANAGE_MCP_POLICIES,
-    Permission.APPROVE_MCP_ACTIONS,
-    Permission.EXECUTE_MCP_JOBS,
   ]),
 
   // HR: People & staff operations, intern/employee accounts, attendance, payroll & offer letters
@@ -370,8 +363,6 @@ export const ROLE_PERMISSIONS: Record<string, Set<Permission>> = {
     Permission.SEND_EMAIL,
     Permission.VIEW_HR_ANALYTICS,
     Permission.VIEW_REPORTS,
-    Permission.VIEW_MCP_ACTIVITY,
-    Permission.APPROVE_MCP_ACTIONS,
   ]),
 
   // COO: Broad read-only operational visibility, operational email (No analytics)
@@ -394,7 +385,6 @@ export const ROLE_PERMISSIONS: Record<string, Set<Permission>> = {
     Permission.VIEW_DOCUMENTS,
     Permission.SEND_EMAIL,
     Permission.VIEW_REPORTS,
-    Permission.VIEW_MCP_ACTIVITY,
   ]),
 
   // Admin: Legacy elevated permissions
@@ -640,6 +630,16 @@ export function isOwner(user?: UserPermissionContext | null): boolean {
   if (!user) return false;
   const role = getEffectiveRole(user);
   return role === "FOUNDER" || role === "CO_FOUNDER";
+}
+
+/**
+ * Access to MCP Connections, Tools, Policies, Jobs, Activity, and Security
+ * is strictly restricted to Founder and Co-Founder.
+ */
+export function canAccessMcp(user?: UserPermissionContext | null): boolean {
+  if (!user) return false;
+  const role = getEffectiveRole(user);
+  return role === "FOUNDER" || role === "CO_FOUNDER" || role === "OWNER";
 }
 
 export function isCeo(user?: UserPermissionContext | null): boolean {

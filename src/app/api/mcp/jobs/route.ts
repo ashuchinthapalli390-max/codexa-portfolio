@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentSessionResult } from "@/lib/auth";
-import { Permission, requirePermission } from "@/lib/permissions";
+import { Permission, requirePermission, canAccessMcp } from "@/lib/permissions";
 import { cancelMcpJob } from "@/lib/mcp/jobs";
 
 export const runtime = "nodejs";
@@ -18,8 +18,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const permCheck = await requirePermission(auth.user, Permission.VIEW_MCP_ACTIVITY);
-  if (!permCheck.authorized) return permCheck.response;
+  if (!canAccessMcp(auth.user)) {
+    return NextResponse.json({ error: "Forbidden: MCP Jobs are restricted to Founder and Co-Founder." }, { status: 403 });
+  }
 
   const url = new URL(req.url);
   const status = url.searchParams.get("status");
@@ -63,8 +64,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const permCheck = await requirePermission(auth.user, Permission.EXECUTE_MCP_JOBS);
-  if (!permCheck.authorized) return permCheck.response;
+  if (!canAccessMcp(auth.user)) {
+    return NextResponse.json({ error: "Forbidden: MCP Jobs are restricted to Founder and Co-Founder." }, { status: 403 });
+  }
 
   try {
     const body = await req.json();

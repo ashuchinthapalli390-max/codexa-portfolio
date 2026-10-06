@@ -64,7 +64,10 @@ export default function PaymentDetailPage() {
   const fetchPayment = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/payments/${paymentId}`);
+      const res = await fetch(`/api/payments/${paymentId}`, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" },
+      });
       if (!res.ok) {
         throw new Error("Failed to load payment");
       }

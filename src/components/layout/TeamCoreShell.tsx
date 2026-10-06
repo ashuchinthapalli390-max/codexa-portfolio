@@ -157,7 +157,7 @@ export function TeamCoreShell({
       case "CO_FOUNDER":
         return [
           { label: "Dashboard", href: "/owner", icon: LayoutDashboard },
-          { label: "AI & MCP", href: "/dashboard/integrations/mcp", icon: Cpu },
+          { label: "MCP Connections", href: "/dashboard/integrations/mcp", icon: Cpu },
           { label: "Crew", href: "/owner?tab=accounts", icon: Users },
           { label: "Employees", href: "/dashboard/employees", icon: Briefcase },
           { label: "Interns", href: "/dashboard/interns", icon: GraduationCap },
@@ -166,10 +166,12 @@ export function TeamCoreShell({
           { label: "Projects", href: "/owner?tab=all-projects", icon: FolderGit2 },
           { label: "Approvals", href: "/dashboard/approvals", icon: CheckCircle2 },
           { label: "Attendance", href: "/dashboard/attendance", icon: Clock },
-          { label: "UPI Verification", href: "/dashboard/payments", icon: Receipt },
+          { label: "Payments", href: "/dashboard/payments", icon: Receipt },
+          { label: "Payment Verification", href: "/dashboard/payments?tab=queue", icon: CheckCircle2 },
           { label: "Payroll", href: "/dashboard/payroll", icon: CreditCard },
           { label: "Payroll Calendar", href: "/dashboard/payroll/calendar", icon: Calendar },
           { label: "Documents", href: "/dashboard/documents", icon: FileText },
+          { label: "Offer Letters", href: "/dashboard/documents?tab=OFFER_LETTERS", icon: Award },
           { label: "Email", href: "/dashboard/email", icon: Mail },
           { label: "Analytics", href: "/owner?tab=overview", icon: BarChart3 },
           { label: "Mobile Controls", href: "/dashboard/apps", icon: Smartphone },
@@ -182,7 +184,6 @@ export function TeamCoreShell({
       case "CEO":
         return [
           { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-          { label: "AI & MCP Activity", href: "/dashboard/integrations/mcp?tab=activity", icon: Cpu },
           { label: "Crew", href: "/dashboard/accounts", icon: Users },
           { label: "Employees", href: "/dashboard/employees", icon: Briefcase },
           { label: "Interns", href: "/dashboard/interns", icon: GraduationCap },
@@ -200,7 +201,6 @@ export function TeamCoreShell({
       case "CTO":
         return [
           { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-          { label: "AI & MCP", href: "/dashboard/integrations/mcp", icon: Cpu },
           { label: "Projects", href: "/admin?tab=projects", icon: FolderGit2 },
           { label: "Project Approvals", href: "/dashboard/approvals?type=PROJECT", icon: CheckCircle2 },
           { label: "Employees", href: "/dashboard/employees", icon: Briefcase },
@@ -218,7 +218,6 @@ export function TeamCoreShell({
       case "HR":
         return [
           { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-          { label: "AI & MCP Approvals", href: "/dashboard/integrations/mcp?tab=approvals", icon: Cpu },
           { label: "Employees", href: "/dashboard/employees", icon: Briefcase },
           { label: "Interns", href: "/dashboard/interns", icon: GraduationCap },
           { label: "Profiles", href: "/team", icon: User },
@@ -226,7 +225,7 @@ export function TeamCoreShell({
           { label: "UPI Verification", href: "/dashboard/payments", icon: Receipt },
           { label: "Payroll", href: "/dashboard/payroll", icon: CreditCard },
           { label: "Documents", href: "/dashboard/documents", icon: FileCheck },
-          { label: "Offer Letters", href: "/dashboard/documents", icon: Award },
+          { label: "Offer Letters", href: "/dashboard/documents?tab=OFFER_LETTERS", icon: Award },
           { label: "Email", href: "/dashboard/email", icon: Mail },
           { label: "HR Analytics", href: "/admin", icon: BarChart3 },
           { label: "Security Settings", href: "/dashboard/settings/security", icon: Shield },
@@ -235,7 +234,6 @@ export function TeamCoreShell({
       case "COO":
         return [
           { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-          { label: "AI & MCP Activity", href: "/dashboard/integrations/mcp?tab=activity", icon: Cpu },
           { label: "Projects", href: "/admin?tab=projects", icon: FolderGit2 },
           { label: "Crew", href: "/dashboard/accounts", icon: Users },
           { label: "Employees", href: "/dashboard/employees", icon: Briefcase },
@@ -254,13 +252,9 @@ export function TeamCoreShell({
           { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
           { label: "My Profile", href: "/dashboard/profile", icon: User },
           { label: "Internship Details", href: "/dashboard/interns", icon: GraduationCap },
-          { label: "Fees & Dues", href: "/dashboard/payments", icon: Receipt },
-          { label: "Attendance Summary", href: "/dashboard/attendance", icon: Clock },
-          { label: "Stipend Records", href: "/dashboard/payroll", icon: CreditCard },
-          { label: "Offer Letter", href: "/dashboard/documents", icon: Award },
-          { label: "Documents", href: "/dashboard/documents", icon: FileCheck },
-          { label: "Assigned Projects", href: "/dashboard/projects", icon: FolderGit2 },
-          { label: "App Center", href: "/dashboard/apps", icon: Smartphone },
+          { label: "Payments", href: "/dashboard/payments", icon: Receipt },
+          { label: "Offer Letter", href: "/dashboard/documents?tab=OFFER_LETTERS", icon: Award },
+          { label: "Documents", href: "/dashboard/documents?tab=ALL", icon: FileCheck },
           { label: "Settings", href: "/dashboard/settings/security", icon: Shield },
         ];
 

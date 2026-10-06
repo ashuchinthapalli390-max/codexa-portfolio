@@ -192,10 +192,14 @@ export default function PayrollPage() {
               {isSelfOnly ? "My Net Compensation" : "Total Payroll Cycle"}
             </span>
             <span className="text-2xl font-orbitron font-black text-white">
-              ₹{summary.totalAmount.toLocaleString()}
+              {isSelfOnly && (!summary.count || summary.totalAmount === 0)
+                ? "Not Configured"
+                : `₹${(summary.totalAmount || 0).toLocaleString()}`}
             </span>
             <span className="text-[10px] font-mono text-neutral-500 block">
-              {summary.count} Entries Tracked
+              {isSelfOnly && (!summary.count || summary.totalAmount === 0)
+                ? "Pending HR Update"
+                : `${summary.count || 0} Entries Tracked`}
             </span>
           </div>
 

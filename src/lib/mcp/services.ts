@@ -245,8 +245,8 @@ export const usersService = {
             joiningDate: data.joiningDate ? new Date(data.joiningDate) : new Date(),
             reportingTo: data.reportingManager || null,
             status: "ACTIVE",
-            basicSalary: !isIntern ? data.salaryOrStipend || 45000 : undefined,
-            stipend: isIntern ? data.salaryOrStipend || 15000 : undefined,
+            basicSalary: !isIntern ? (data.salaryOrStipend ?? null) : undefined,
+            stipend: isIntern ? (data.salaryOrStipend ?? null) : undefined,
             internshipDuration: isIntern ? "3 Months" : undefined,
             bankAccountMasked: "XXXX XXXX 4832",
           },
@@ -1234,8 +1234,8 @@ export const documentsService = {
         joiningDate: user.employmentProfile?.joiningDate || new Date(),
         duration: isIntern ? (user.employmentProfile?.internshipDuration || "3 Months") : undefined,
         salaryOrStipend: isIntern
-          ? (user.employmentProfile?.stipend || 15000)
-          : (user.employmentProfile?.basicSalary || 45000),
+          ? (user.employmentProfile?.stipend ?? null)
+          : (user.employmentProfile?.basicSalary ?? null),
         status: "ISSUED",
         issuedBy: actorUser.fullName || actorUser.username,
       },

@@ -88,6 +88,7 @@ export default function PaymentsPage() {
   const [settingsData, setSettingsData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -125,6 +126,14 @@ export default function PaymentsPage() {
   const canManageSettings = hasPermission(user, Permission.MANAGE_PAYMENT_SETTINGS);
   const isPrivileged = canVerify || canManage || canViewAll;
 
+  const pendingPaymentItem = useMemo(() => {
+    return payments.find((p) => p.paymentStatus === "PENDING_PAYMENT");
+  }, [payments]);
+
+  const pendingVerificationItem = useMemo(() => {
+    return payments.find((p) => p.paymentStatus === "PENDING_VERIFICATION");
+  }, [payments]);
+
   // Set default tab based on role
   useEffect(() => {
     const tabParam = searchParams.get("tab");
@@ -140,13 +149,31 @@ export default function PaymentsPage() {
   const fetchData = async () => {
     try {
       setRefreshing(true);
+      setError(null);
       if (isPrivileged) {
-        // Fetch queue, all payments, and analytics
+        // Fetch queue, all payments, and analytics with fresh data
         const [queueRes, allRes, analyticsRes, settingsRes] = await Promise.all([
-          fetch("/api/payments/verification"),
-          fetch(`/api/payments?status=${statusFilter}&purpose=${purposeFilter}&q=${encodeURIComponent(searchQuery)}`),
-          fetch("/api/payments/analytics"),
-          fetch("/api/payments/settings"),
+          fetch(`/api/payments/verification?purpose=${purposeFilter}&q=${encodeURIComponent(searchQuery)}`, {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache" },
+          }),
+          fetch(
+            `/api/payments?status=${statusFilter}&purpose=${purposeFilter}&q=${encodeURIComponent(
+              searchQuery
+            )}`,
+            {
+              cache: "no-store",
+              headers: { "Cache-Control": "no-cache" },
+            }
+          ),
+          fetch("/api/payments/analytics", {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache" },
+          }),
+          fetch("/api/payments/settings", {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache" },
+          }),
         ]);
 
         if (queueRes.ok) {
@@ -157,6 +184,9 @@ export default function PaymentsPage() {
         if (allRes.ok) {
           const aData = await allRes.json();
           setPayments(aData.payments || []);
+        } else {
+          const errData = await allRes.json().catch(() => ({}));
+          setError(errData.error || "Failed to load payment records.");
         }
 
         if (analyticsRes.ok) {
@@ -169,15 +199,27 @@ export default function PaymentsPage() {
           setSettingsData(sData);
         }
       } else {
-        // Regular user: fetch own payments
-        const res = await fetch("/api/payments");
+        // Regular user: fetch own payments with filter and search support
+        const res = await fetch(
+          `/api/payments?status=${statusFilter}&purpose=${purposeFilter}&q=${encodeURIComponent(
+            searchQuery
+          )}`,
+          {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache" },
+          }
+        );
         if (res.ok) {
           const data = await res.json();
           setPayments(data.payments || []);
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          setError(errData.error || "Failed to load your payment records.");
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error fetching payment data:", err);
+      setError(err?.message || "Network error loading payments.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -185,10 +227,12 @@ export default function PaymentsPage() {
   };
 
   useEffect(() => {
-    if (status === "authenticated") {
+    if (status !== "authenticated") return;
+    const timer = setTimeout(() => {
       fetchData();
-    }
-  }, [status, statusFilter, purposeFilter]);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [status, statusFilter, purposeFilter, searchQuery]);
 
   // Open Review Details Modal for an item
   const openReviewModal = async (item: PaymentItem) => {
@@ -540,7 +584,12 @@ export default function PaymentsPage() {
             <span className="text-xs text-zinc-500">Ordered by earliest submitted</span>
           </div>
 
-          {verificationQueue.length === 0 ? (
+          {loading ? (
+            <div className="p-12 text-center rounded-2xl bg-[#0f0f0f] border border-white/5 space-y-3">
+              <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" />
+              <p className="text-xs text-zinc-400">Loading verification queue...</p>
+            </div>
+          ) : verificationQueue.length === 0 ? (
             <div className="p-12 text-center rounded-2xl bg-[#0f0f0f] border border-white/5">
               <CheckCircle2 className="w-10 h-10 text-emerald-500/50 mx-auto mb-3" />
               <p className="text-sm text-zinc-300 font-medium">All Caught Up!</p>
@@ -617,9 +666,51 @@ export default function PaymentsPage() {
       {/* ─── TAB 2 / REGULAR USER: PAYMENTS LIST ─────────────────────────── */}
       {(!isPrivileged || activeTab === "all" || activeTab === "my-payments") && (
         <div className="space-y-4">
+          {/* Active Payment Action Banner for Interns / Regular Users */}
+          {!isPrivileged && pendingPaymentItem && (
+            <div className="p-4 sm:p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start sm:items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-400">
+                  <CreditCard className="w-5 h-5 shrink-0" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-2">
+                    <span>Payment Action Required</span>
+                    <span className="font-mono text-white bg-black/40 px-2 py-0.5 rounded border border-white/10">
+                      {pendingPaymentItem.referenceId}
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-300 mt-1">
+                    {pendingPaymentItem.title}: <strong className="text-emerald-400 font-mono">₹{pendingPaymentItem.fixedAmount}</strong>
+                  </p>
+                  <p className="text-[11px] text-zinc-400">
+                    Mandatory ID Card (₹150) + AI Dev Tools Pack (Shared) (₹300)
+                  </p>
+                </div>
+              </div>
+              <Link
+                href={`/dashboard/payments/${pendingPaymentItem.id}`}
+                className="px-5 py-2.5 rounded-xl bg-bright-red hover:bg-bright-red/90 text-white text-xs font-bold shrink-0 text-center shadow-[0_0_15px_rgba(239,35,60,0.4)] transition-all flex items-center justify-center gap-1.5"
+              >
+                Pay Now via UPI &rarr;
+              </Link>
+            </div>
+          )}
+
+          {!isPrivileged && pendingVerificationItem && (
+            <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/30 flex items-center gap-3 text-xs text-blue-300">
+              <Clock className="w-5 h-5 text-blue-400 shrink-0 animate-pulse" />
+              <div>
+                <strong>Payment Proof Under Manual Verification:</strong> Your payment reference{" "}
+                <span className="font-mono font-bold text-white">{pendingVerificationItem.referenceId}</span> (₹
+                {pendingVerificationItem.fixedAmount}) has been submitted and is currently queued for manual confirmation by our accounts team.
+              </div>
+            </div>
+          )}
+
           {/* Filter Bar */}
           <div className="p-4 rounded-2xl bg-[#0f0f0f] border border-white/10 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-            <div className="flex-1 relative">
+            <div className="flex-1 relative min-w-[200px]">
               <Search className="w-4 h-4 text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
@@ -630,11 +721,11 @@ export default function PaymentsPage() {
               />
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="bg-[#161616] border border-white/10 text-xs text-zinc-300 rounded-xl px-3 py-2 focus:outline-none"
+                className="w-full sm:w-auto bg-[#161616] border border-white/10 text-xs text-zinc-300 rounded-xl px-3 py-2 focus:outline-none"
               >
                 <option value="ALL">All Statuses</option>
                 <option value="PENDING_PAYMENT">Pending Payment</option>
@@ -646,7 +737,7 @@ export default function PaymentsPage() {
               <select
                 value={purposeFilter}
                 onChange={(e) => setPurposeFilter(e.target.value)}
-                className="bg-[#161616] border border-white/10 text-xs text-zinc-300 rounded-xl px-3 py-2 focus:outline-none"
+                className="w-full sm:w-auto bg-[#161616] border border-white/10 text-xs text-zinc-300 rounded-xl px-3 py-2 focus:outline-none"
               >
                 <option value="ALL">All Purposes</option>
                 <option value="INTERNSHIP_FEE">Internship Service Fee</option>
@@ -659,7 +750,23 @@ export default function PaymentsPage() {
           </div>
 
           {/* Table */}
-          {payments.length === 0 ? (
+          {loading ? (
+            <div className="p-12 text-center rounded-2xl bg-[#0f0f0f] border border-white/5 space-y-3">
+              <div className="w-8 h-8 border-2 border-bright-red border-t-transparent rounded-full animate-spin mx-auto" />
+              <p className="text-xs text-zinc-400">Loading payment records...</p>
+            </div>
+          ) : error ? (
+            <div className="p-8 text-center rounded-2xl bg-crimson/10 border border-crimson/30 space-y-3">
+              <AlertTriangle className="w-8 h-8 text-crimson mx-auto" />
+              <p className="text-sm text-white font-semibold">{error}</p>
+              <button
+                onClick={fetchData}
+                className="px-4 py-2 rounded-xl bg-bright-red hover:bg-bright-red/90 text-white text-xs font-semibold"
+              >
+                Retry Loading
+              </button>
+            </div>
+          ) : payments.length === 0 ? (
             <div className="p-12 text-center rounded-2xl bg-[#0f0f0f] border border-white/5">
               <CreditCard className="w-10 h-10 text-zinc-600 mx-auto mb-3" />
               <p className="text-sm text-zinc-300 font-medium">No Payment Records</p>

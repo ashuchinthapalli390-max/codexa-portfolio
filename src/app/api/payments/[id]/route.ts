@@ -105,9 +105,29 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       }
     }
 
-    // Return official payment record
+    // Ensure paymentAccount is dynamically resolved to latest active config if missing
+    let resolvedAccount = payment.paymentAccount;
+    if (!resolvedAccount) {
+      resolvedAccount = await db.paymentAccount.findFirst({
+        where: { isActive: true, isDefault: true },
+      });
+      if (!resolvedAccount) {
+        resolvedAccount = await db.paymentAccount.findFirst({
+          where: { isActive: true },
+        });
+      }
+    }
+
+    // Return official payment record with dynamically resolved payment account
     return NextResponse.json({
-      payment,
+      payment: {
+        ...payment,
+        paymentAccount: resolvedAccount || {
+          name: "CodeXa Official",
+          upiId: process.env.DEFAULT_UPI_ID || "shaikashu33@fam",
+          payeeName: process.env.DEFAULT_UPI_NAME || "CodeXa Agency",
+        },
+      },
       duplicateWarnings,
       isOwner,
       canVerify,

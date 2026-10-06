@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSessionResult } from "@/lib/auth";
-import { Permission, requirePermission, getEffectiveRole } from "@/lib/permissions";
+import { Permission, requirePermission, getEffectiveRole, canAccessMcp } from "@/lib/permissions";
 import { getMcpControls, updateMcpControls } from "@/lib/mcp/controls";
 import { dataStore } from "@/lib/data-store";
 
@@ -16,6 +16,10 @@ export async function GET() {
   const auth = await getCurrentSessionResult();
   if (auth.status !== "authenticated") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!canAccessMcp(auth.user)) {
+    return NextResponse.json({ error: "Forbidden. Access restricted to Founder and Co-Founder." }, { status: 403 });
   }
 
   const controls = await getMcpControls();
