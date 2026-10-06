@@ -201,6 +201,7 @@ export async function sendSingleInternReminder(params: {
         where: {
           OR: [
             { paymentPurpose: "INTERNSHIP_FEE" },
+            { paymentPurpose: "INTERNSHIP_SERVICE_BILL" },
             { fixedAmount: MANDATORY_INTERNSHIP_SERVICE_FEE },
             { title: { contains: "SERVICE BILL", mode: "insensitive" } },
           ],
@@ -379,6 +380,7 @@ export async function processMandatoryPaymentReminders(): Promise<ReminderJobSum
         where: {
           OR: [
             { paymentPurpose: "INTERNSHIP_FEE" },
+            { paymentPurpose: "INTERNSHIP_SERVICE_BILL" },
             { fixedAmount: MANDATORY_INTERNSHIP_SERVICE_FEE },
             { title: { contains: "SERVICE BILL", mode: "insensitive" } },
           ],
@@ -401,7 +403,12 @@ export async function processMandatoryPaymentReminders(): Promise<ReminderJobSum
         continue;
       }
 
-      // Check Payment Status
+      // Check Payment Status or Paid Flag
+      if (intern.internServicePaymentPaid) {
+        summary.paidSkipped++;
+        continue;
+      }
+
       const currentStatus = (activePayment?.paymentStatus || "PENDING_PAYMENT").toUpperCase();
       if (currentStatus === "APPROVED" || currentStatus === "PAID" || currentStatus === "WAIVED") {
         summary.paidSkipped++;

@@ -33,6 +33,8 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { getEffectiveRole, hasPermission, Permission } from "@/lib/permissions";
 import { PushNotificationBanner } from "@/components/notifications/PushNotificationBanner";
+import { InternAutomaticPaymentFlow } from "@/components/payments/InternAutomaticPaymentFlow";
+import { FounderPaymentSettingsTab } from "@/components/payments/FounderPaymentSettingsTab";
 
 interface PaymentItem {
   id: string;
@@ -97,6 +99,7 @@ export default function PaymentsPage() {
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [purposeFilter, setPurposeFilter] = useState("ALL");
   const [remindingId, setRemindingId] = useState<string | null>(null);
+  const [adminMetrics, setAdminMetrics] = useState<any>(null);
 
   const handleTriggerTableReminder = async (e: React.MouseEvent, paymentId: string) => {
     e.preventDefault();
@@ -224,6 +227,15 @@ export default function PaymentsPage() {
         if (settingsRes.ok) {
           const sData = await settingsRes.json();
           setSettingsData(sData);
+        }
+
+        if (effectiveRole === "FOUNDER" || effectiveRole === "CO_FOUNDER") {
+          fetch("/api/admin/payments", { cache: "no-store" })
+            .then((r) => r.json())
+            .then((d) => {
+              if (d.metrics) setAdminMetrics(d.metrics);
+            })
+            .catch(() => {});
         }
       } else {
         // Regular user: fetch own payments with filter and search support
@@ -484,6 +496,50 @@ export default function PaymentsPage() {
     }
   };
 
+  // INTERN ROLE DEDICATED VIEW
+  if (effectiveRole === "INTERN") {
+    return (
+      <div className="space-y-6">
+        <InternAutomaticPaymentFlow onStatusChange={() => fetchData()} />
+      </div>
+    );
+  }
+
+  const handleAdminOverride = async (action: "DISPUTE" | "RETRY_VERIFY" | "INVALIDATE") => {
+    if (!selectedReviewPayment) return;
+    const confirmMsg =
+      action === "INVALIDATE"
+        ? "Are you sure you want to invalidate this payment and revoke intern access?"
+        : action === "DISPUTE"
+        ? "Mark this payment as disputed?"
+        : "Re-run automatic verification against settlement feed?";
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      setReviewLoading(true);
+      const res = await fetch(`/api/admin/payments/${selectedReviewPayment.id}/override`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          reason: reviewAdminNotes || "Admin action from review console",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "Override operation failed");
+      } else {
+        alert(data.message || "Operation completed successfully");
+        setSelectedReviewPayment(null);
+        fetchData();
+      }
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setReviewLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* ─── HEADER ────────────────────────────────────────────────────────── */}
@@ -525,6 +581,44 @@ export default function PaymentsPage() {
           )}
         </div>
       </div>
+
+      {/* ─── FOUNDER & CO-FOUNDER OVERVIEW METRICS (REQUIREMENT 44) ──────────── */}
+      {(effectiveRole === "FOUNDER" || effectiveRole === "CO_FOUNDER") && adminMetrics && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          <div className="p-3.5 rounded-2xl bg-[#0f0f0f] border border-white/10">
+            <span className="text-[10px] font-mono uppercase text-zinc-500 block">Total Interns</span>
+            <span className="text-lg font-orbitron font-bold text-white">{adminMetrics.totalInternPayments}</span>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-[#0f0f0f] border border-white/10">
+            <span className="text-[10px] font-mono uppercase text-amber-400 block">Pending</span>
+            <span className="text-lg font-orbitron font-bold text-amber-400">{adminMetrics.pending}</span>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-[#0f0f0f] border border-white/10">
+            <span className="text-[10px] font-mono uppercase text-blue-400 block">Verifying</span>
+            <span className="text-lg font-orbitron font-bold text-blue-400">{adminMetrics.verifying}</span>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-[#0f0f0f] border border-white/10">
+            <span className="text-[10px] font-mono uppercase text-emerald-400 block">Successful</span>
+            <span className="text-lg font-orbitron font-bold text-emerald-400">{adminMetrics.successful}</span>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-[#0f0f0f] border border-white/10">
+            <span className="text-[10px] font-mono uppercase text-rose-400 block">Failed</span>
+            <span className="text-lg font-orbitron font-bold text-rose-400">{adminMetrics.failed}</span>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-[#0f0f0f] border border-white/10">
+            <span className="text-[10px] font-mono uppercase text-zinc-400 block">Expired</span>
+            <span className="text-lg font-orbitron font-bold text-zinc-300">{adminMetrics.expired}</span>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-[#0f0f0f] border border-white/10">
+            <span className="text-[10px] font-mono uppercase text-zinc-400 block">Expected</span>
+            <span className="text-sm font-orbitron font-bold text-white">₹{adminMetrics.expectedCollection}</span>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-[#0f0f0f] border border-emerald-500/30 bg-emerald-950/10">
+            <span className="text-[10px] font-mono uppercase text-emerald-400 block">Verified</span>
+            <span className="text-sm font-orbitron font-bold text-emerald-400">₹{adminMetrics.verifiedCollection}</span>
+          </div>
+        </div>
+      )}
 
       {/* ─── PRIVILEGED TABS ────────────────────────────────────────────────── */}
       {isPrivileged && (
@@ -1138,66 +1232,8 @@ export default function PaymentsPage() {
       )}
 
       {/* ─── TAB 5: UPI SETTINGS & ACCOUNTS ─────────────────────────────────── */}
-      {isPrivileged && canManageSettings && activeTab === "settings" && settingsData && (
-        <div className="max-w-3xl mx-auto p-6 rounded-2xl bg-[#0f0f0f] border border-white/10 space-y-6">
-          <div className="border-b border-white/10 pb-4">
-            <h2 className="text-base font-orbitron font-bold text-white flex items-center gap-2">
-              <Settings className="w-5 h-5 text-purple-400" />
-              Official CodeXa UPI Settings
-            </h2>
-            <p className="text-xs text-zinc-400 mt-1">
-              Configure the agency&apos;s official receiving UPI ID, display name, and verification policy.
-            </p>
-          </div>
-
-          <div className="space-y-4 text-xs">
-            <div>
-              <label className="block font-medium text-zinc-400 mb-1">UPI Display Name</label>
-              <input
-                type="text"
-                value={settingsData.settings?.upiDisplayName || "CodeXa Agency"}
-                disabled
-                className="w-full p-2.5 bg-[#161616] border border-white/10 rounded-xl text-zinc-300"
-              />
-            </div>
-
-            <div>
-              <label className="block font-medium text-zinc-400 mb-1">Default UPI ID</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={settingsData.settings?.defaultUpiId || "shaikashu33@fam"}
-                  disabled
-                  className="w-full p-2.5 bg-[#161616] border border-white/10 rounded-xl font-mono text-zinc-300"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block font-medium text-zinc-400 mb-1">Active Accounts</label>
-              <div className="space-y-2">
-                {(settingsData.accounts || []).map((acc: any) => (
-                  <div key={acc.id} className="p-3 rounded-xl bg-[#141414] border border-white/5 flex items-center justify-between">
-                    <div>
-                      <span className="font-semibold text-white">{acc.name}</span>
-                      <span className="font-mono text-bright-red ml-2">{acc.upiId}</span>
-                    </div>
-                    {acc.isDefault && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400">
-                        Default
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="p-4 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-200">
-              <strong className="block mb-1">Manual Verification Policy:</strong>
-              No automated payment gateway is active. Every incoming transaction must be confirmed manually by Founder, Co-Founder, or HR before being approved.
-            </div>
-          </div>
-        </div>
+      {isPrivileged && canManageSettings && activeTab === "settings" && (
+        <FounderPaymentSettingsTab />
       )}
 
       {/* ─── MODAL: ADMIN REVIEW & DECIDE ──────────────────────────────────── */}
@@ -1375,6 +1411,36 @@ export default function PaymentsPage() {
               </button>
 
               <div className="flex items-center gap-3">
+                {/* Emergency Founder/Co-Founder Overrides (Requirement 28) */}
+                {(effectiveRole === "FOUNDER" || effectiveRole === "CO_FOUNDER") && (
+                  <div className="flex items-center gap-2 mr-2">
+                    <button
+                      type="button"
+                      onClick={() => handleAdminOverride("DISPUTE")}
+                      disabled={reviewLoading}
+                      className="px-3 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-mono"
+                    >
+                      Dispute
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAdminOverride("RETRY_VERIFY")}
+                      disabled={reviewLoading}
+                      className="px-3 py-2 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 text-xs font-mono"
+                    >
+                      Re-Verify
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAdminOverride("INVALIDATE")}
+                      disabled={reviewLoading}
+                      className="px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs font-mono"
+                    >
+                      Invalidate
+                    </button>
+                  </div>
+                )}
+
                 {reviewAction !== "REJECT" ? (
                   <button
                     onClick={() => setReviewAction("REJECT")}

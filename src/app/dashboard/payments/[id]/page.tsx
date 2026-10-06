@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { hasPermission, Permission, getEffectiveRole } from "@/lib/permissions";
+import { InternAutomaticPaymentFlow } from "@/components/payments/InternAutomaticPaymentFlow";
 
 interface LineItem {
   item: string;
@@ -259,9 +260,26 @@ export default function PaymentDetailPage() {
   const isPendingPayment = payment.paymentStatus === "PENDING_PAYMENT";
   const isPendingVerification = payment.paymentStatus === "PENDING_VERIFICATION";
   const isApproved = payment.paymentStatus === "APPROVED";
-  const isRejected = payment.paymentStatus === "REJECTED";
+  const isRejected = payment.paymentStatus === "REJECTED" || payment.paymentStatus === "FAILED";
   const role = user ? getEffectiveRole(user) : "";
   const isPrivileged = ["FOUNDER", "CO_FOUNDER", "HR", "CEO", "CTO", "COO", "ADMIN"].includes(role);
+
+  if (role === "INTERN" || !isPrivileged) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6 pb-12">
+        <div className="flex items-center justify-between">
+          <Link
+            href="/dashboard/payments"
+            className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white transition-colors"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            <span>Back to Payments</span>
+          </Link>
+        </div>
+        <InternAutomaticPaymentFlow onStatusChange={() => fetchPayment()} />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-12">

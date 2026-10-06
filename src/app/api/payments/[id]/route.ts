@@ -30,6 +30,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       },
       include: {
         paymentAccount: true,
+        attempts: {
+          orderBy: { createdAt: "desc" },
+          take: 5,
+        },
         submissions: {
           orderBy: { submissionNumber: "desc" },
         },

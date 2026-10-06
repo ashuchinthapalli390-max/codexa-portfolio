@@ -13,7 +13,9 @@ import {
   CheckCircle2,
   ExternalLink,
   MessageSquare,
-  Bell
+  Bell,
+  CreditCard,
+  Clock,
 } from "lucide-react";
 import { TeamCoreShell } from "@/components/layout/TeamCoreShell";
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
@@ -22,6 +24,7 @@ import { DashboardStatSkeleton, FeedSkeleton } from "@/components/ui/Skeletons";
 import { staggerContainer, staggerItem, cardRevealVariants, buttonHoverVariants, buttonPressVariants } from "@/lib/motion";
 import { MotionNumber } from "@/components/motion/MotionNumber";
 import { useAuth } from "@/context/AuthContext";
+import { getEffectiveRole } from "@/lib/permissions";
 
 export default function DashboardOverviewPage() {
   const { user: currentUser } = useAuth();
@@ -29,13 +32,38 @@ export default function DashboardOverviewPage() {
   const [latestPosts, setLatestPosts] = useState<Post[]>([]);
   const [myProjects, setMyProjects] = useState<Project[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [internPayment, setInternPayment] = useState<any>(null);
+  const [paymentTimerSeconds, setPaymentTimerSeconds] = useState<number>(0);
   const [loading, setLoading] = useState(true);
+
+  const effectiveRole = getEffectiveRole(currentUser);
 
   useEffect(() => {
     if (currentUser) {
       loadDashboardData(currentUser);
+      if (effectiveRole === "INTERN") {
+        fetch("/api/payments/me")
+          .then((r) => r.json())
+          .then((data) => {
+            if (data.payment) {
+              setInternPayment(data);
+              if (data.activeAttempt?.expiresAt) {
+                const diff = Math.max(
+                  0,
+                  Math.floor(
+                    (new Date(data.activeAttempt.expiresAt).getTime() -
+                      new Date().getTime()) /
+                      1000
+                  )
+                );
+                setPaymentTimerSeconds(diff);
+              }
+            }
+          })
+          .catch(() => {});
+      }
     }
-  }, [currentUser]);
+  }, [currentUser, effectiveRole]);
 
   const loadDashboardData = (user: any) => {
     setLoading(true);
@@ -124,36 +152,103 @@ export default function DashboardOverviewPage() {
               </Link>
             </motion.div>
 
-            {/* Metric 2 */}
+            {/* Metric 2: Internship Payment for Interns or Payroll for Staff */}
             <motion.div variants={staggerItem}>
-              <Link
-                href="/dashboard/payroll"
-                className="block p-5 rounded-2xl bg-[#0A0A0A] border border-crimson/20 hover:border-bright-red/50 transition-all group shadow-lg"
-              >
-                <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold">
-                  Next Payroll
-                </span>
-                <div className="text-2xl font-orbitron font-black text-emerald-400 mt-1">
-                  05 Nov
-                </div>
-                <p className="text-[10px] font-mono text-[#AAA] mt-1">Expected Payout</p>
-              </Link>
+              {effectiveRole === "INTERN" ? (
+                <Link
+                  href="/dashboard/payments"
+                  className="block p-5 rounded-2xl bg-[#0A0A0A] border border-crimson/20 hover:border-bright-red/50 transition-all group shadow-lg"
+                >
+                  <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold flex items-center justify-between">
+                    <span>Internship Payment</span>
+                    {internPayment?.internServicePaymentPaid || internPayment?.payment?.paymentStatus === "APPROVED" ? (
+                      <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 text-[9px] font-mono">
+                        VERIFIED
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.2 rounded bg-bright-red/20 text-bright-red text-[9px] font-mono">
+                        MANDATORY
+                      </span>
+                    )}
+                  </span>
+                  <div className="text-xl sm:text-2xl font-orbitron font-black text-white mt-1 group-hover:text-bright-red transition-colors truncate">
+                    {internPayment?.internServicePaymentPaid || internPayment?.payment?.paymentStatus === "APPROVED"
+                      ? "₹450 Paid"
+                      : internPayment?.activeAttempt?.status === "VERIFYING" || internPayment?.payment?.paymentStatus === "PENDING_VERIFICATION"
+                      ? "Verifying..."
+                      : internPayment?.activeAttempt?.status === "PAYMENT_STARTED" && paymentTimerSeconds > 0
+                      ? "In Progress"
+                      : "₹450 Due"}
+                  </div>
+                  <div className="flex items-center justify-between mt-1 text-[10px] font-mono">
+                    <span
+                      className={
+                        internPayment?.internServicePaymentPaid || internPayment?.payment?.paymentStatus === "APPROVED"
+                          ? "text-emerald-400"
+                          : internPayment?.activeAttempt?.status === "VERIFYING"
+                          ? "text-amber-400"
+                          : internPayment?.activeAttempt?.status === "PAYMENT_STARTED" && paymentTimerSeconds > 0
+                          ? "text-amber-400 font-bold"
+                          : "text-bright-red font-bold"
+                      }
+                    >
+                      {internPayment?.internServicePaymentPaid || internPayment?.payment?.paymentStatus === "APPROVED"
+                        ? "Payment Successful"
+                        : internPayment?.activeAttempt?.status === "VERIFYING"
+                        ? "Verification in progress"
+                        : internPayment?.activeAttempt?.status === "PAYMENT_STARTED" && paymentTimerSeconds > 0
+                        ? `${Math.floor(paymentTimerSeconds / 60)}:${(paymentTimerSeconds % 60).toString().padStart(2, "0")} remaining`
+                        : "Pending Payment"}
+                    </span>
+                    {!(internPayment?.internServicePaymentPaid || internPayment?.payment?.paymentStatus === "APPROVED") && (
+                      <span className="text-bright-red font-bold underline uppercase">
+                        [ PAY NOW ]
+                      </span>
+                    )}
+                  </div>
+                </Link>
+              ) : (
+                <Link
+                  href="/dashboard/payroll"
+                  className="block p-5 rounded-2xl bg-[#0A0A0A] border border-crimson/20 hover:border-bright-red/50 transition-all group shadow-lg"
+                >
+                  <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold">
+                    Next Payroll
+                  </span>
+                  <div className="text-2xl font-orbitron font-black text-emerald-400 mt-1">
+                    05 Nov
+                  </div>
+                  <p className="text-[10px] font-mono text-[#AAA] mt-1">Expected Payout</p>
+                </Link>
+              )}
             </motion.div>
 
-            {/* Metric 3 */}
+            {/* Metric 3: Stipend (Not Assigned for Interns) or App Ecosystem for Staff */}
             <motion.div variants={staggerItem}>
-              <Link
-                href="/dashboard/apps"
-                className="block p-5 rounded-2xl bg-[#0A0A0A] border border-crimson/20 hover:border-bright-red/50 transition-all group shadow-lg"
-              >
-                <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold">
-                  App Ecosystem
-                </span>
-                <div className="text-2xl font-orbitron font-black text-white mt-1 uppercase">
-                  Connected
+              {effectiveRole === "INTERN" ? (
+                <div className="block p-5 rounded-2xl bg-[#0A0A0A] border border-white/10 transition-all group shadow-lg">
+                  <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold">
+                    Stipend
+                  </span>
+                  <div className="text-xl sm:text-2xl font-orbitron font-black text-zinc-400 mt-1">
+                    Not Assigned
+                  </div>
+                  <p className="text-[10px] font-mono text-zinc-500 mt-1">Development Internship</p>
                 </div>
-                <p className="text-[10px] font-mono text-purple-400 mt-1">Mobile &bull; AI Desktop</p>
-              </Link>
+              ) : (
+                <Link
+                  href="/dashboard/apps"
+                  className="block p-5 rounded-2xl bg-[#0A0A0A] border border-crimson/20 hover:border-bright-red/50 transition-all group shadow-lg"
+                >
+                  <span className="text-[10px] font-orbitron text-[#888] uppercase font-semibold">
+                    App Ecosystem
+                  </span>
+                  <div className="text-2xl font-orbitron font-black text-white mt-1 uppercase">
+                    Connected
+                  </div>
+                  <p className="text-[10px] font-mono text-purple-400 mt-1">Mobile &bull; AI Desktop</p>
+                </Link>
+              )}
             </motion.div>
 
             {/* Metric 4 */}
