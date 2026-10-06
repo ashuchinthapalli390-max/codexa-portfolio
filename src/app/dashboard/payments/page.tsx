@@ -791,7 +791,6 @@ export default function PaymentsPage() {
                   >
                     <option value="INTERN">Engineering Interns (INTERN)</option>
                     <option value="EMPLOYEE">Core Employees (EMPLOYEE)</option>
-                    <option value="TEAM_MEMBER">Team Members</option>
                   </select>
                 </div>
 

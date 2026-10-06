@@ -19,7 +19,7 @@ model User {
   email                String    @unique
   fullName             String?
   passwordHash         String
-  role                 String    @default("TEAM_MEMBER") // "FOUNDER" | "CO_FOUNDER" | "CEO" | "CTO" | "HR" | "COO" | "EMPLOYEE" | "INTERN" | "OWNER" | "ADMIN" | "TEAM_MEMBER"
+  role                 String    @default("EMPLOYEE") // "FOUNDER" | "CO_FOUNDER" | "CEO" | "CTO" | "HR" | "COO" | "EMPLOYEE" | "INTERN" | "OWNER" | "ADMIN"
   orgRole              String?   // Explicit organizational role e.g. "FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "COO", "EMPLOYEE", "INTERN"
   department           String?   // e.g. "Executive", "Engineering", "People & Culture", "Operations"
   isActive             Boolean   @default(true)
@@ -1179,7 +1179,7 @@ model PaymentRequest {
   userId             String
   userName           String?
   userEmail          String?
-  userRole           String?            // "INTERN" | "EMPLOYEE" | "TEAM_MEMBER"
+  userRole           String?            // "INTERN" | "EMPLOYEE"
   employeeId         String?            // e.g. "CXA-EMP-2026-001"
   internId           String?            // e.g. "CXA-INT-2026-001"
   domain             String?            // e.g. "Development" | "Design" | "Cybersecurity"

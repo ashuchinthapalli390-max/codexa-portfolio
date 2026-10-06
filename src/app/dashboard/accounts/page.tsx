@@ -4,10 +4,10 @@ import React, { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { TeamCoreShell } from "@/components/layout/TeamCoreShell";
 import { useAuth } from "@/context/AuthContext";
-import { hasPermission, Permission, getEffectiveRole, getRoleDisplayName } from "@/lib/permissions";
+import { hasPermission, Permission, getEffectiveRole, getRoleDisplayName, isProtectedAccount } from "@/lib/permissions";
 import { CreateAccountModal } from "@/components/dashboard/CreateAccountModal";
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
-import { Users, UserPlus, Filter, Shield, AlertCircle, RefreshCw, Key, CheckCircle2, Lock } from "lucide-react";
+import { Users, UserPlus, Filter, Shield, AlertCircle, RefreshCw, Key, CheckCircle2, Lock, Trash2, UserX, UserCheck } from "lucide-react";
 
 function AccountsContent() {
   const searchParams = useSearchParams();
@@ -22,6 +22,8 @@ function AccountsContent() {
 
   const canCreate = hasPermission(user, Permission.CREATE_USERS);
   const canViewUsers = hasPermission(user, Permission.VIEW_USERS);
+  const canDelete = hasPermission(user, Permission.DELETE_USERS);
+  const canEdit = hasPermission(user, Permission.EDIT_USERS);
   const actorRole = user ? getEffectiveRole(user) : "EMPLOYEE";
 
   useEffect(() => {
@@ -40,6 +42,43 @@ function AccountsContent() {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteAccount = async (acc: any) => {
+    if (!confirm(`Are you sure you want to permanently remove member @${acc.username}? This action is irreversible.`)) return;
+    try {
+      const res = await fetch(`/api/owner/accounts/${acc.id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setAccounts((prev) => prev.filter((a) => a.id !== acc.id));
+      } else {
+        alert(data.error || "Failed to remove member.");
+      }
+    } catch {
+      alert("Network error removing member.");
+    }
+  };
+
+  const handleToggleStatus = async (acc: any) => {
+    const nextStatus = !acc.isActive;
+    try {
+      const res = await fetch(`/api/owner/accounts/${acc.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: nextStatus }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setAccounts((prev) => prev.map((a) => (a.id === acc.id ? { ...a, isActive: nextStatus } : a)));
+      } else {
+        alert(data.error || "Failed to update account status.");
+      }
+    } catch {
+      alert("Network error updating status.");
     }
   };
 
@@ -70,7 +109,7 @@ function AccountsContent() {
       return ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "COO", "OWNER", "ADMIN"].includes(acc.role);
     }
     if (roleFilter === "EMPLOYEES") {
-      return acc.role === "EMPLOYEE" || acc.role === "TEAM_MEMBER";
+      return acc.role === "EMPLOYEE";
     }
     if (roleFilter === "INTERNS") {
       return acc.role === "INTERN";
@@ -198,6 +237,36 @@ function AccountsContent() {
                       </div>
                     )}
                   </div>
+
+                  {/* Actions for Authorized Roles (CTO, HR, Owner, CEO) */}
+                  {!isProtectedAccount(acc) && acc.id !== user?.id && (canEdit || canDelete) && (
+                    <div className="pt-3 border-t border-white/5 flex items-center justify-end gap-2">
+                      {canEdit && (
+                        <button
+                          onClick={() => handleToggleStatus(acc)}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-orbitron font-bold uppercase transition-colors inline-flex items-center gap-1 ${
+                            acc.isActive
+                              ? "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 hover:bg-yellow-500/20"
+                              : "bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20"
+                          }`}
+                          title={acc.isActive ? "Deactivate Account" : "Activate Account"}
+                        >
+                          {acc.isActive ? <UserX className="w-3 h-3" /> : <UserCheck className="w-3 h-3" />}
+                          <span>{acc.isActive ? "Disable" : "Enable"}</span>
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          onClick={() => handleDeleteAccount(acc)}
+                          className="px-2.5 py-1 rounded-lg bg-crimson/15 text-bright-red border border-crimson/30 hover:bg-crimson hover:text-white text-[10px] font-orbitron font-bold uppercase transition-all inline-flex items-center gap-1"
+                          title="Remove Member"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Remove</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}

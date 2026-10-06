@@ -416,7 +416,7 @@ export async function bootstrapOfficialLeadership() {
           email: "lead@codexa.agency",
           fullName: "Team Lead",
           passwordHash: defaultPw,
-          role: "TEAM_MEMBER",
+          role: "EMPLOYEE",
           isActive: true,
         },
       });

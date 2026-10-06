@@ -5,10 +5,17 @@ import { dataStore } from "@/lib/data-store";
 export async function GET() {
   try {
     const settings = await dataStore.getSiteSettings();
-    return NextResponse.json({
-      success: true,
-      settings,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        settings,
+      },
+      {
+        headers: {
+          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+        },
+      }
+    );
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: "Failed to fetch site settings." },

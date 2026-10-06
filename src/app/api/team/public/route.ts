@@ -46,7 +46,14 @@ export async function GET() {
       updatedAt: (p as any).updatedAt,
     }));
 
-    return NextResponse.json({ success: true, count: profiles.length, profiles });
+    return NextResponse.json(
+      { success: true, count: profiles.length, profiles },
+      {
+        headers: {
+          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+        },
+      }
+    );
   } catch (err: any) {
     console.error("[GET /api/team/public] Error:", err);
     return NextResponse.json(

@@ -4,7 +4,7 @@
  * DELETE: Remove user account (strictly protects Founder and Co-Founder)
  */
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentSessionResult, revokeAllUserSessions } from "@/lib/auth";
+import { getCurrentSessionResult, revokeAllUserSessions, invalidateSessionCache } from "@/lib/auth";
 import { dataStore } from "@/lib/data-store";
 import bcrypt from "bcryptjs";
 import { sendPasswordChangedEmail, sendAccountStatusChangedEmail } from "@/lib/email";
@@ -112,6 +112,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (!updated) {
       return NextResponse.json({ error: "Failed to update profile." }, { status: 500, headers: NO_CACHE_HEADERS });
     }
+    invalidateSessionCache();
 
     // Audit log
     await dataStore.logAudit({
@@ -185,6 +186,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     if (!deleted) {
       return NextResponse.json({ error: "Account not found." }, { status: 404, headers: NO_CACHE_HEADERS });
     }
+    invalidateSessionCache();
 
     await dataStore.logAudit({
       action: "ACCOUNT_DELETED",

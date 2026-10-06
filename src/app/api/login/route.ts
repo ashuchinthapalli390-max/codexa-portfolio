@@ -51,7 +51,7 @@ export async function POST(req: Request) {
     if (!isValidPassword && profile.role === "ADMIN" && process.env.ADMIN_PASSWORD && password === process.env.ADMIN_PASSWORD) {
       isValidPassword = true;
     }
-    if (!isValidPassword && profile.role === "TEAM_MEMBER" && process.env.TEAM_PASSWORD && password === process.env.TEAM_PASSWORD) {
+    if (!isValidPassword && (profile.role === "EMPLOYEE" || profile.role === "INTERN" || profile.role === "TEAM_MEMBER") && process.env.TEAM_PASSWORD && password === process.env.TEAM_PASSWORD) {
       isValidPassword = true;
     }
 

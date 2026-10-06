@@ -132,9 +132,14 @@ export async function POST(req: NextRequest) {
       ? "LEADERSHIP"
       : "CORE_TEAM";
 
-    // Check duplicate in database
-    const existing = await dataStore.getProfiles();
-    if (existing.some((p) => p.username.toLowerCase() === cleanUsername || p.email.toLowerCase() === cleanEmail)) {
+    // Check duplicate in database using indexed unique lookup
+    const existing = await db.user.findFirst({
+      where: {
+        OR: [{ username: cleanUsername }, { email: cleanEmail }],
+      },
+      select: { id: true, username: true, email: true },
+    });
+    if (existing) {
       return NextResponse.json({ error: "An account with this username or email already exists." }, { status: 409 });
     }
 

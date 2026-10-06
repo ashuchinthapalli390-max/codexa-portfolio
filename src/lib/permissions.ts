@@ -226,13 +226,13 @@ export function getRoleDisplayName(role: OrgRole | string | null | undefined): s
       return "Chief Operating Officer (COO)";
     case "EMPLOYEE":
     case "TEAM_MEMBER":
-      return "Core Engineer";
+      return "Employee";
     case "INTERN":
-      return "Engineering Intern";
+      return "Intern";
     case "ADMIN":
       return "Administrator";
     default:
-      return "Team Member";
+      return "Employee";
   }
 }
 
@@ -281,12 +281,15 @@ export const ROLE_PERMISSIONS: Record<string, Set<Permission>> = {
     Permission.VIEW_MCP_ACTIVITY,
   ]),
 
-  // CTO: Technical & project authority, intern/employee account creation, desktop/AI licensing
+  // CTO: Technical & project authority, intern/employee account creation & management, desktop/AI licensing
   CTO: new Set<Permission>([
     Permission.VIEW_DASHBOARD,
     Permission.VIEW_EXECUTIVE_CENTER,
     Permission.VIEW_USERS,
     Permission.CREATE_USERS, // Restricted to INTERN / EMPLOYEE via canCreateRole
+    Permission.EDIT_USERS,   // Restricted to INTERN / EMPLOYEE via canModifyTargetUser
+    Permission.DISABLE_USERS,// Restricted to INTERN / EMPLOYEE via canModifyTargetUser
+    Permission.DELETE_USERS, // Restricted to INTERN / EMPLOYEE via canModifyTargetUser
     Permission.VIEW_CREW,
     Permission.VIEW_EMPLOYEES,
     Permission.MANAGE_EMPLOYEES,
@@ -317,6 +320,7 @@ export const ROLE_PERMISSIONS: Record<string, Set<Permission>> = {
     Permission.VIEW_REPORTS,
     Permission.MANAGE_MCP_CONNECTIONS,
     Permission.VIEW_MCP_ACTIVITY,
+    Permission.MANAGE_MCP_POLICIES,
     Permission.APPROVE_MCP_ACTIONS,
     Permission.EXECUTE_MCP_JOBS,
   ]),
@@ -327,7 +331,9 @@ export const ROLE_PERMISSIONS: Record<string, Set<Permission>> = {
     Permission.VIEW_EXECUTIVE_CENTER,
     Permission.VIEW_USERS,
     Permission.CREATE_USERS, // Restricted to INTERN / EMPLOYEE via canCreateRole
-    Permission.EDIT_USERS,
+    Permission.EDIT_USERS,   // Restricted to INTERN / EMPLOYEE via canModifyTargetUser
+    Permission.DISABLE_USERS,// Restricted to INTERN / EMPLOYEE via canModifyTargetUser
+    Permission.DELETE_USERS, // Restricted to INTERN / EMPLOYEE via canModifyTargetUser
     Permission.VIEW_CREW,
     Permission.MANAGE_CREW,
     Permission.VIEW_EMPLOYEES,
@@ -595,7 +601,7 @@ export function canModifyTargetUser(
     if (isTargetFounder && (action === "DELETE" || action === "ROLE_CHANGE" || action === "DEACTIVATE")) {
       return {
         allowed: false,
-        reason: "The permanent Founder account (ashuchinthapalli3900@gmail.com) cannot be deleted, demoted, or deactivated.",
+        reason: "The permanent Founder account cannot be deleted, demoted, or deactivated.",
       };
     }
   }
@@ -603,6 +609,17 @@ export function canModifyTargetUser(
   // Prevent self-promotion: actor cannot change their own role unless Founder
   if (action === "ROLE_CHANGE" && isSelf(actor, target) && !isActorTop) {
     return { allowed: false, reason: "Self-promotion is strictly forbidden." };
+  }
+
+  // CTO and HR boundary: may only manage, edit, deactivate, or delete Employees and Interns
+  if (actorRole === "CTO" || actorRole === "HR") {
+    const targetRole = getEffectiveRole(target);
+    if (targetRole !== "EMPLOYEE" && targetRole !== "INTERN") {
+      return {
+        allowed: false,
+        reason: `${actorRole} can only manage, edit, deactivate, or delete Employees and Interns.`,
+      };
+    }
   }
 
   return { allowed: true };

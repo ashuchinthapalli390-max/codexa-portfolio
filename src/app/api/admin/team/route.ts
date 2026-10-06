@@ -129,7 +129,7 @@ export async function POST(req: NextRequest) {
           email: `${username}@codexa.agency`,
           fullName: displayName.trim(),
           passwordHash,
-          role: "TEAM_MEMBER",
+          role: "EMPLOYEE",
           isActive: true,
         },
       });

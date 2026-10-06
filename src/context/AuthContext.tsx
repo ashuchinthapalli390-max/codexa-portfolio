@@ -8,7 +8,7 @@ export interface AuthenticatedUser {
   username: string | null;
   email: string | null;
   displayName: string;
-  role: "OWNER" | "ADMIN" | "TEAM_MEMBER" | string;
+  role: "FOUNDER" | "CO_FOUNDER" | "CEO" | "CTO" | "HR" | "COO" | "EMPLOYEE" | "INTERN" | "OWNER" | "ADMIN" | string;
   orgRole?: string | null;
   effectiveRole?: string | null;
   mustChangePassword?: boolean;

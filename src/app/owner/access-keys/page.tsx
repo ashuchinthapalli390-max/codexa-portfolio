@@ -36,7 +36,8 @@ type UIModal = "create" | "reveal" | "revoke" | "regenerate" | null;
 const ROLE_COLORS: Record<string, string> = {
   OWNER: "text-[#FF6B35] border-[#FF6B35]/30 bg-[#FF6B35]/5",
   ADMIN: "text-[#9B59B6] border-[#9B59B6]/30 bg-[#9B59B6]/5",
-  TEAM_MEMBER: "text-[#4ECDC4] border-[#4ECDC4]/30 bg-[#4ECDC4]/5",
+  EMPLOYEE: "text-[#4ECDC4] border-[#4ECDC4]/30 bg-[#4ECDC4]/5",
+  INTERN: "text-[#3498DB] border-[#3498DB]/30 bg-[#3498DB]/5",
 };
 
 function Badge({ role }: { role: string }) {
@@ -63,7 +64,7 @@ export default function AccessKeysPage() {
   const [form, setForm] = useState({
     userId: "",
     label: "",
-    role: "TEAM_MEMBER",
+    role: "EMPLOYEE",
     maxUses: "",
     expiresAt: "",
   });
@@ -123,7 +124,7 @@ export default function AccessKeysPage() {
       if (res.ok && data.success) {
         setRevealedKey(data.rawKey);
         setModal("reveal");
-        setForm({ userId: "", label: "", role: "TEAM_MEMBER", maxUses: "", expiresAt: "" });
+        setForm({ userId: "", label: "", role: "EMPLOYEE", maxUses: "", expiresAt: "" });
         loadKeys();
       } else {
         setFormError(data.error ?? "Failed to create key.");
@@ -441,9 +442,14 @@ export default function AccessKeysPage() {
                   onChange={(e) => setForm({ ...form, role: e.target.value })}
                   className="w-full bg-[#111] border border-[rgba(217,4,41,0.2)] rounded-lg px-4 py-3 text-sm text-[#F7F7F7] outline-none focus:border-[rgba(217,4,41,0.5)]"
                 >
-                  <option value="TEAM_MEMBER">Team Member</option>
+                  <option value="EMPLOYEE">Employee</option>
+                  <option value="INTERN">Intern</option>
+                  <option value="HR">HR</option>
+                  <option value="COO">COO</option>
+                  <option value="CTO">CTO</option>
+                  <option value="CEO">CEO</option>
                   <option value="ADMIN">Admin (Read-Only)</option>
-                  <option value="OWNER">Owner</option>
+                  <option value="OWNER">Owner / Founder</option>
                 </select>
               </div>
 

@@ -68,6 +68,7 @@ import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
 import { CodeXaMediaSelectorModal } from "@/components/ui/CodeXaMediaSelectorModal";
 import { MotionNumber } from "@/components/motion/MotionNumber";
 import { useAuth } from "@/context/AuthContext";
+import { isProtectedAccount } from "@/lib/permissions";
 
 type OwnerTab = 
   | "overview" 
@@ -189,7 +190,7 @@ function OwnerDashboardContent() {
     fullName: "",
     username: "",
     email: "",
-    role: "TEAM_MEMBER",
+    role: "EMPLOYEE",
     leadershipPosition: "",
     temporaryPassword: "",
     headline: "",
@@ -220,7 +221,7 @@ function OwnerDashboardContent() {
     githubUrl: "",
     linkedinUrl: "",
     portfolioUrl: "",
-    role: "TEAM_MEMBER",
+    role: "EMPLOYEE",
     leadershipPosition: "",
     memberType: "CORE_TEAM",
     isActive: true,
@@ -602,7 +603,7 @@ function OwnerDashboardContent() {
       githubUrl: member.githubUrl || "",
       linkedinUrl: member.linkedinUrl || "",
       portfolioUrl: member.portfolioUrl || "",
-      role: member.role || "TEAM_MEMBER",
+      role: member.role || "EMPLOYEE",
       leadershipPosition: member.leadershipPosition || "",
       memberType: member.memberType || "CORE_TEAM",
       isActive: member.isActive ?? true,
@@ -679,7 +680,7 @@ function OwnerDashboardContent() {
             fullName: "",
             username: "",
             email: "",
-            role: "TEAM_MEMBER",
+            role: "EMPLOYEE",
             leadershipPosition: "",
             temporaryPassword: "",
             headline: "",
@@ -1804,9 +1805,13 @@ function OwnerDashboardContent() {
                                 onChange={(e) => handleChangeRole(acc, e.target.value)}
                                 className="bg-[#141414] border border-crimson/20 rounded-lg px-2 py-1 text-[9px] font-orbitron text-white outline-none"
                               >
-                                <option value="TEAM_MEMBER">TEAM_MEMBER</option>
-                                <option value="CO_FOUNDER">CO_FOUNDER</option>
+                                <option value="EMPLOYEE">EMPLOYEE</option>
+                                <option value="INTERN">INTERN</option>
+                                <option value="HR">HR</option>
+                                <option value="COO">COO</option>
+                                <option value="CTO">CTO</option>
                                 <option value="CEO">CEO</option>
+                                <option value="CO_FOUNDER">CO_FOUNDER</option>
                                 <option value="ADMIN">ADMIN</option>
                               </select>
                             )}
@@ -1852,7 +1857,7 @@ function OwnerDashboardContent() {
                               >
                                 <Key className="w-3.5 h-3.5 text-amber-400" />
                               </button>
-                              {acc.role !== "OWNER" && acc.email?.toLowerCase() !== "ashuchinthapalli3900@gmail.com" && acc.username !== "ashu" && (
+                              {!isProtectedAccount(acc) && (
                                 <button
                                   onClick={() => handleDeleteAccount(acc)}
                                   className="p-1.5 rounded-lg bg-[#141414] hover:bg-crimson text-[#888] hover:text-white transition-colors"
@@ -2829,9 +2834,13 @@ function OwnerDashboardContent() {
                       onChange={(e) => setMemberFormData({ ...memberFormData, role: e.target.value })}
                       className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
                     >
-                      <option value="TEAM_MEMBER">TEAM_MEMBER</option>
-                      <option value="CO_FOUNDER">CO_FOUNDER</option>
+                      <option value="EMPLOYEE">EMPLOYEE</option>
+                      <option value="INTERN">INTERN</option>
+                      <option value="HR">HR</option>
+                      <option value="COO">COO</option>
+                      <option value="CTO">CTO</option>
                       <option value="CEO">CEO</option>
+                      <option value="CO_FOUNDER">CO_FOUNDER</option>
                       <option value="ADMIN">ADMIN</option>
                     </select>
                   </div>
@@ -2948,9 +2957,13 @@ function OwnerDashboardContent() {
                       onChange={(e) => setAccountFormData({ ...accountFormData, role: e.target.value })}
                       className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
                     >
-                      <option value="TEAM_MEMBER">TEAM_MEMBER</option>
-                      <option value="CO_FOUNDER">CO_FOUNDER</option>
+                      <option value="EMPLOYEE">EMPLOYEE</option>
+                      <option value="INTERN">INTERN</option>
+                      <option value="HR">HR</option>
+                      <option value="COO">COO</option>
+                      <option value="CTO">CTO</option>
                       <option value="CEO">CEO</option>
+                      <option value="CO_FOUNDER">CO_FOUNDER</option>
                       <option value="ADMIN">ADMIN</option>
                     </select>
                   </div>

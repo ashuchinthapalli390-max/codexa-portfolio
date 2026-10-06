@@ -56,8 +56,8 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "No media to adjust position for." }, { status: 400 });
   }
 
-  // TEAM_MEMBER can only adjust their own profile
-  if (user.role === "TEAM_MEMBER" && targetProfile.userId !== user.id) {
+  // EMPLOYEE / INTERN can only adjust their own profile
+  if ((user.role === "EMPLOYEE" || user.role === "INTERN" || user.role === "TEAM_MEMBER") && targetProfile.userId !== user.id) {
     return NextResponse.json({ error: "Permission denied." }, { status: 403 });
   }
 

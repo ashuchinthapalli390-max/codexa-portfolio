@@ -21,11 +21,30 @@ export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * SESSION_DURATION_DAYS; // 
 export const ROLLING_RENEWAL_THRESHOLD_SECONDS = 60 * 60 * 24 * 15; // 15 days = 1,296,000s
 export const LAST_SEEN_THROTTLE_MS = 1000 * 60 * 5; // 5 minutes
 
+// ── In-Memory Session Cache (Eliminates redundant Supabase roundtrips) ────────
+interface CachedSessionEntry {
+  result: SessionValidationResult;
+  timestamp: number;
+}
+const sessionCache = new Map<string, CachedSessionEntry>();
+const SESSION_CACHE_TTL_MS = 20 * 1000; // 20 seconds hot cache
+
+export function invalidateSessionCache(tokenOrHash?: string) {
+  if (!tokenOrHash) {
+    sessionCache.clear();
+    return;
+  }
+  sessionCache.delete(tokenOrHash);
+  try {
+    sessionCache.delete(hashToken(tokenOrHash));
+  } catch {}
+}
+
 export interface AuthenticatedUser {
   id: string;
   username: string | null;
   email: string | null;
-  role: "OWNER" | "ADMIN" | "TEAM_MEMBER" | string;
+  role: "FOUNDER" | "CO_FOUNDER" | "CEO" | "CTO" | "HR" | "COO" | "EMPLOYEE" | "INTERN" | "OWNER" | "ADMIN" | string;
   orgRole?: string | null;
   isActive: boolean;
   mustChangePassword?: boolean;
@@ -155,6 +174,14 @@ export async function validateSessionResult(rawToken?: string | null): Promise<S
   const hash = hashToken(token);
   const now = new Date();
 
+  // 1. Hot Cache Lookup (0ms latency, bypasses Supabase connection pool)
+  const cached = sessionCache.get(hash);
+  if (cached && now.getTime() - cached.timestamp < SESSION_CACHE_TTL_MS) {
+    if (cached.result.status === "authenticated") {
+      return cached.result;
+    }
+  }
+
   try {
     const session = await db.session.findUnique({
       where: { sessionTokenHash: hash },
@@ -241,7 +268,7 @@ export async function validateSessionResult(rawToken?: string | null): Promise<S
       primaryRole: session.user.profile?.primaryRole ?? null,
     };
 
-    return {
+    const finalResult: SessionValidationResult = {
       status: "authenticated",
       user: authUser,
       session: {
@@ -250,6 +277,14 @@ export async function validateSessionResult(rawToken?: string | null): Promise<S
         lastSeenAt: session.lastSeenAt,
       },
     };
+
+    // Store in hot memory cache
+    sessionCache.set(hash, {
+      result: finalResult,
+      timestamp: Date.now(),
+    });
+
+    return finalResult;
   } catch (err: any) {
     const requestId = generateRequestId();
     console.error(`[validateSessionResult Error] [${requestId}]`, {
@@ -323,6 +358,7 @@ export async function destroySession(token?: string): Promise<void> {
 
   if (sessionToken) {
     const hash = hashToken(sessionToken);
+    invalidateSessionCache(hash);
     try {
       await db.session.updateMany({
         where: { sessionTokenHash: hash },
@@ -350,6 +386,7 @@ export async function destroySession(token?: string): Promise<void> {
  * Revokes all active sessions for a user (e.g. on password change, password reset, account disable, or "Log Out All Devices").
  */
 export async function revokeAllUserSessions(userId: string): Promise<void> {
+  invalidateSessionCache();
   try {
     await db.session.updateMany({
       where: {

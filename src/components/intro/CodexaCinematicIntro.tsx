@@ -166,13 +166,15 @@ export function CodexaCinematicIntro({ onComplete }: CodexaCinematicIntroProps) 
   return (
     <div
       id="codexa-cinematic-intro-overlay"
-      className="fixed inset-0 z-[99999] select-none overflow-hidden bg-[#050505] flex items-center justify-center pointer-events-auto"
+      onClick={handleFinish}
+      className="fixed inset-0 z-[99999] select-none overflow-hidden bg-[#050505] flex items-center justify-center pointer-events-auto cursor-pointer"
       style={{
         transition: "opacity 0.75s cubic-bezier(0.16, 1, 0.3, 1)",
         opacity: isFadingOut ? 0 : 1,
         pointerEvents: isFadingOut ? "none" : "auto",
       }}
-      aria-label="CodeXa 30-Second Cinematic Identity Sequence"
+      title="Click anywhere to enter site"
+      aria-label="CodeXa Cinematic Identity Sequence"
     >
       {/* 1. Skip Intro Button (Top-Right + ESC) */}
       <IntroSkipButton onSkip={handleFinish} />

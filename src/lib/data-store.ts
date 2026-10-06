@@ -19,7 +19,7 @@ export interface Profile {
   email: string;
   passwordHash?: string;
   displayName: string;
-  role: "OWNER" | "ADMIN" | "TEAM_MEMBER" | string;
+  role: "FOUNDER" | "CO_FOUNDER" | "CEO" | "CTO" | "HR" | "COO" | "EMPLOYEE" | "INTERN" | "OWNER" | "ADMIN" | string;
   orgRole?: string | null;
   department?: string | null;
   memberType: "LEADERSHIP" | "CORE_TEAM" | string;
@@ -473,7 +473,7 @@ function mapProjectToProject(p: any): Project {
           username: c.user?.username || "",
           displayName: uProfile?.displayName || c.user?.fullName || c.user?.username || "Collaborator",
           mediaUrl: uProfile?.mediaUrl || c.user?.profileMediaUrl || null,
-          role: c.user?.role || "TEAM_MEMBER",
+          role: c.user?.role || "EMPLOYEE",
           roleTitle: c.roleTitle || "Collaborator",
         };
       })
@@ -681,8 +681,8 @@ export const dataStore = {
         email,
         fullName: data.displayName || data.username!,
         passwordHash,
-        role: data.role || "TEAM_MEMBER",
-        orgRole: data.orgRole || data.role || "TEAM_MEMBER",
+        role: data.role || "EMPLOYEE",
+        orgRole: data.orgRole || data.role || "EMPLOYEE",
         department: data.department || null,
         isActive: true,
         mustChangePassword: data.mustChangePassword ?? false,

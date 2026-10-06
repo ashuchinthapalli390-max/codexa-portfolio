@@ -30,11 +30,25 @@ export async function GET(req: NextRequest) {
     if (search) filter.search = search;
 
     const projects = await dataStore.getProjects(filter);
-    return NextResponse.json({ success: true, projects }, { headers: NO_CACHE_HEADERS });
+    return NextResponse.json(
+      { success: true, projects },
+      {
+        headers: {
+          "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120",
+        },
+      }
+    );
   } catch (err: any) {
     console.error("[GET /api/projects]", err);
     const fallbackProjects = await dataStore.getProjects();
-    return NextResponse.json({ success: true, projects: fallbackProjects }, { headers: NO_CACHE_HEADERS });
+    return NextResponse.json(
+      { success: true, projects: fallbackProjects },
+      {
+        headers: {
+          "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120",
+        },
+      }
+    );
   }
 }
 

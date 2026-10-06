@@ -22,7 +22,10 @@ export function IntroSkipButton({ onSkip }: IntroSkipButtonProps) {
   return (
     <button
       id="codexa-intro-skip-btn"
-      onClick={onSkip}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSkip();
+      }}
       type="button"
       aria-label="Skip Intro Animation (Press Escape)"
       className="fixed top-4 right-4 sm:top-6 sm:right-8 z-[10001] group flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded border border-[rgba(217,4,41,0.4)] bg-black/40 hover:bg-[rgba(217,4,41,0.15)] hover:border-[#FF1E3C] text-[10px] sm:text-xs font-mono uppercase tracking-[0.25em] text-[#A5A5A5] hover:text-white transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-[#FF1E3C] focus:ring-offset-2 focus:ring-offset-black backdrop-blur-md cursor-pointer"

@@ -149,8 +149,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  if (user.role === "TEAM_MEMBER" && targetProfile.userId !== user.id) {
-    console.warn(`[commit] PROFILE_COMMIT_PERMISSION_DENIED ref=${ref} reason=TEAM_MEMBER_WRONG_PROFILE`);
+  if ((user.role === "EMPLOYEE" || user.role === "INTERN" || user.role === "TEAM_MEMBER") && targetProfile.userId !== user.id) {
+    console.warn(`[commit] PROFILE_COMMIT_PERMISSION_DENIED ref=${ref} reason=MEMBER_WRONG_PROFILE`);
     return NextResponse.json(
       { error: "Profile media could not be saved. Please try again.", ref },
       { status: 403 }

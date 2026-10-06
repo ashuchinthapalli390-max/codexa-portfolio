@@ -58,7 +58,7 @@ function AdminWorkspaceContent() {
     password: "",
     displayName: "",
     email: "",
-    role: "TEAM_MEMBER",
+    role: "EMPLOYEE",
     headline: "CodeXa Developer",
   });
   const [savingMember, setSavingMember] = useState(false);
@@ -182,7 +182,7 @@ function AdminWorkspaceContent() {
             displayName: "",
             email: "",
             password: "",
-            role: "TEAM_MEMBER",
+            role: "EMPLOYEE",
             headline: "CodeXa Developer",
           });
         }, 1500);

@@ -166,9 +166,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         );
       }
 
-      // Permissions: OWNER can update any core team profile, TEAM_MEMBER can only update own
-      if (user.role === "TEAM_MEMBER" && targetProfile.userId !== user.id) {
-        console.warn(`[PROFILE_UPDATE_PERMISSION_DENIED] ref=${ref} reason=TEAM_MEMBER_CORE_TEAM_MISMATCH`);
+      // Permissions: Leadership can update any core team profile, EMPLOYEE/INTERN can only update own
+      if ((user.role === "EMPLOYEE" || user.role === "INTERN" || user.role === "TEAM_MEMBER") && targetProfile.userId !== user.id) {
+        console.warn(`[PROFILE_UPDATE_PERMISSION_DENIED] ref=${ref} reason=MEMBER_PROFILE_MISMATCH`);
         return NextResponse.json(
           { error: "You can only update your own profile.", ref },
           { status: 403 }
