@@ -5,7 +5,6 @@ import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { Shield, RefreshCw, AlertTriangle } from "lucide-react";
 import { isOwner } from "@/lib/permissions";
-import { MandatoryPasswordChangeModal } from "@/components/auth/MandatoryPasswordChangeModal";
 import "../../app/globals.css";
 
 export default function OwnerLayout({
@@ -93,7 +92,6 @@ export default function OwnerLayout({
 
   return (
     <div className="min-h-screen bg-[#070707] text-[#F7F7F7] antialiased">
-      <MandatoryPasswordChangeModal />
       {status === "temporarily-unavailable" && user && (
         <div className="fixed top-0 left-0 right-0 z-50 bg-deep-red/90 border-b border-bright-red text-white px-4 py-2 flex items-center justify-between text-xs font-mono backdrop-blur-md">
           <div className="flex items-center gap-2">

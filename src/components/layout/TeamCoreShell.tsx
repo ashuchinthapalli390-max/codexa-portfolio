@@ -39,7 +39,6 @@ import {
 } from "@/lib/permissions";
 import { NotificationItem } from "@/lib/data-store";
 import { useAuth } from "@/context/AuthContext";
-import { MandatoryPasswordChangeModal } from "@/components/auth/MandatoryPasswordChangeModal";
 import {
   CreditCard,
   BarChart3,
@@ -418,8 +417,6 @@ export function TeamCoreShell({
         </div>
       </header>
 
-      {/* ─── MANDATORY PASSWORD CHANGE OVERLAY ───────────────────────────── */}
-      <MandatoryPasswordChangeModal />
 
       {/* ─── MAIN APP BODY (Sidebar + Page Content) ──────────────────────── */}
       <div className="flex-1 flex overflow-hidden">

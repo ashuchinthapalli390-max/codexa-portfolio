@@ -229,13 +229,6 @@ function AccountsContent() {
                         {acc.isActive ? "Active" : "Disabled"}
                       </span>
                     </div>
-
-                    {acc.mustChangePassword && (
-                      <div className="flex items-center gap-1.5 text-[10px] text-yellow-400/90 font-mono mt-1">
-                        <Lock className="w-3 h-3" />
-                        <span>Password reset required on login</span>
-                      </div>
-                    )}
                   </div>
 
                   {/* Actions for Authorized Roles (CTO, HR, Owner, CEO) */}

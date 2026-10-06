@@ -104,7 +104,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     // Handle password reset
     if (newPassword && newPassword.length >= 8) {
       updates.passwordHash = await bcrypt.hash(newPassword, 12);
-      updates.mustChangePassword = true;
+      updates.mustChangePassword = false;
       await revokeAllUserSessions(id);
     }
 

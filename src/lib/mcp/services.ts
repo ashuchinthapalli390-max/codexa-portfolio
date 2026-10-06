@@ -234,7 +234,7 @@ export const usersService = {
         orgRole: rawRole,
         department: data.department || (isIntern ? "Engineering" : "Engineering"),
         passwordHash,
-        mustChangePassword: true,
+        mustChangePassword: false,
         isActive: true,
         employmentProfile: {
           create: {
@@ -279,8 +279,8 @@ export const usersService = {
       role: user.orgRole,
       employeeId,
       department: user.department,
-      mustChangePassword: true,
-      message: "Account created successfully. User must set password on first login.",
+      mustChangePassword: false,
+      message: "Account created successfully with founder-assigned credentials.",
     };
   },
 

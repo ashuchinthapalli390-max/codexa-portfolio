@@ -162,7 +162,7 @@ export async function POST(req: NextRequest) {
       mediaUrl: "/assets/images/logo.jpeg",
       isActive: true,
       isPublic: true,
-      mustChangePassword: true,
+      mustChangePassword: false,
     });
 
     // Provision Employment Profile

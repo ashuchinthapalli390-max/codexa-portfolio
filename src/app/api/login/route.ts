@@ -110,7 +110,7 @@ export async function POST(req: Request) {
       success: true,
       authenticated: true,
       requiresTwoFactor: false,
-      mustChangePassword: profile.mustChangePassword ?? false,
+      mustChangePassword: false,
       redirectUrl,
       user: {
         id: profile.id,
@@ -119,7 +119,7 @@ export async function POST(req: Request) {
         displayName: profile.displayName,
         role: profile.role,
         orgRole: profile.orgRole || profile.role,
-        mustChangePassword: profile.mustChangePassword ?? false,
+        mustChangePassword: false,
         createdAt: Date.now(),
       },
       message: "Identity verified. Access authorized.",

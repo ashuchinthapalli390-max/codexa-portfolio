@@ -256,7 +256,7 @@ export async function validateSessionResult(rawToken?: string | null): Promise<S
       role: session.user.role,
       orgRole: session.user.orgRole ?? (session.user.role === "OWNER" ? "FOUNDER" : session.user.role),
       isActive: session.user.isActive,
-      mustChangePassword: Boolean(session.user.mustChangePassword),
+      mustChangePassword: false,
       displayName:
         session.user.profile?.displayName ??
         session.user.fullName ??
