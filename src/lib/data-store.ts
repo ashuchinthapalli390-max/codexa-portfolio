@@ -655,6 +655,7 @@ export const dataStore = {
         OR: [
           { email: { equals: clean, mode: "insensitive" } },
           { username: { equals: clean, mode: "insensitive" } },
+          { employmentProfile: { employeeId: { equals: clean, mode: "insensitive" } } },
         ],
       },
       include: {
