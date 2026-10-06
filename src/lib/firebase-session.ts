@@ -9,9 +9,9 @@ export const PERMANENT_FOUNDER_EMAIL = "ashuchinthapalli3900@gmail.com";
  * Approved executive identity definition
  */
 export interface ApprovedAdminIdentity {
-  canonicalUsername: "ashu" | "sanjay" | "kishore";
-  role: "OWNER" | "ADMIN";
-  leadershipPosition: "FOUNDER" | "CO_FOUNDER" | "CEO";
+  canonicalUsername: string;
+  role: string;
+  leadershipPosition: string;
   displayName: string;
   fullName: string;
   primaryRole: string;
@@ -69,8 +69,8 @@ export const APPROVED_ADMIN_EMAILS: Record<string, ApprovedAdminIdentity> = {
     leadershipPosition: "CO_FOUNDER",
     displayName: "Sanjay",
     fullName: "Sanjay",
-    primaryRole: "Co-Founder & Operations Lead",
-    defaultRedirect: "/admin",
+    primaryRole: "Co-Founder & System Architect",
+    defaultRedirect: "/owner",
     isOwner: false,
     defaultImage: "/assets/images/co-founder.jpeg",
     cropX: 50,
@@ -79,28 +79,70 @@ export const APPROVED_ADMIN_EMAILS: Record<string, ApprovedAdminIdentity> = {
   // CEO / Kishore
   "katlakishore86@gmail.com": {
     canonicalUsername: "kishore",
-    role: "ADMIN",
+    role: "CEO",
     leadershipPosition: "CEO",
     displayName: "Kishore",
     fullName: "Kishore",
-    primaryRole: "CEO & Executive Strategy",
-    defaultRedirect: "/admin",
+    primaryRole: "Chief Executive Officer (CEO)",
+    defaultRedirect: "/dashboard",
     isOwner: false,
     defaultImage: "/assets/images/ceo.jpeg",
     cropX: 50,
     cropY: 20,
   },
-  // CEO secondary login alias (maps to canonical Kishore, public display Kishore)
+  // CEO secondary login alias
   "katlavenu520@gmail.com": {
     canonicalUsername: "kishore",
-    role: "ADMIN",
+    role: "CEO",
     leadershipPosition: "CEO",
     displayName: "Kishore",
     fullName: "Kishore",
-    primaryRole: "CEO & Executive Strategy",
-    defaultRedirect: "/admin",
+    primaryRole: "Chief Executive Officer (CEO)",
+    defaultRedirect: "/dashboard",
     isOwner: false,
     defaultImage: "/assets/images/ceo.jpeg",
+    cropX: 50,
+    cropY: 20,
+  },
+  // CTO / Amrutha
+  "amruthadivvela@gmail.com": {
+    canonicalUsername: "amrutha",
+    role: "CTO",
+    leadershipPosition: "CTO",
+    displayName: "Amrutha Divvela",
+    fullName: "Amrutha Divvela",
+    primaryRole: "Chief Technology Officer (CTO)",
+    defaultRedirect: "/dashboard",
+    isOwner: false,
+    defaultImage: "/assets/images/cto.jpeg",
+    cropX: 50,
+    cropY: 20,
+  },
+  // HR / Vyshnavi
+  "vyshnavireddy720@gmail.com": {
+    canonicalUsername: "vyshnavi",
+    role: "HR",
+    leadershipPosition: "HR",
+    displayName: "Vyshnavi Reddy",
+    fullName: "Vyshnavi Reddy",
+    primaryRole: "Head of Human Resources (HR)",
+    defaultRedirect: "/dashboard",
+    isOwner: false,
+    defaultImage: "/assets/images/hr.jpeg",
+    cropX: 50,
+    cropY: 20,
+  },
+  // COO / Varun
+  "varunparlapalli2008@gmail.com": {
+    canonicalUsername: "varun",
+    role: "COO",
+    leadershipPosition: "COO",
+    displayName: "Varun Parlapalli",
+    fullName: "Varun Parlapalli",
+    primaryRole: "Chief Operating Officer (COO)",
+    defaultRedirect: "/dashboard",
+    isOwner: false,
+    defaultImage: "/assets/images/coo.jpeg",
     cropX: 50,
     cropY: 20,
   },
@@ -141,17 +183,9 @@ export async function handleFirebaseSession(
     };
   }
 
-  // 2. Normalize and check email against approved executive mapping
+  // 2. Normalize and check email against approved executive mapping or database
   const normalizedEmail = (decoded.email || "").trim().toLowerCase();
   const identity = APPROVED_ADMIN_EMAILS[normalizedEmail];
-
-  if (!identity) {
-    return {
-      success: false,
-      authorized: false,
-      message: "This Google account is not authorized for the CodeXa executive console.",
-    };
-  }
 
   // 3. Email verification check
   if (!decoded.email_verified) {
@@ -163,20 +197,16 @@ export async function handleFirebaseSession(
   }
 
   try {
-    // 4. Find or connect to canonical user account
+    // 4. Find the EXACT SAME ACCOUNT in the database:
+    // Priority 1: Match by registered email in DB
+    // Priority 2: Match by existing linked firebaseUid
+    // Priority 3: Match by canonical username (for aliases like darklevelinggaming@gmail.com -> ashu)
     let user = await db.user.findFirst({
       where: {
         OR: [
-          { username: identity.canonicalUsername },
           { email: { equals: normalizedEmail, mode: "insensitive" } },
           { firebaseUid: decoded.uid },
-          ...(identity.isOwner ? [{ role: "OWNER" }] : []),
-          ...(identity.canonicalUsername === "sanjay"
-            ? [{ profile: { leadershipPosition: "CO_FOUNDER" } }]
-            : []),
-          ...(identity.canonicalUsername === "kishore"
-            ? [{ profile: { leadershipPosition: "CEO" } }]
-            : []),
+          ...(identity ? [{ username: identity.canonicalUsername }] : []),
         ],
       },
       include: {
@@ -184,8 +214,16 @@ export async function handleFirebaseSession(
       },
     });
 
-    if (!user) {
-      // Bootstrap canonical user account
+    if (!user && !identity) {
+      return {
+        success: false,
+        authorized: false,
+        message: `Google account (${normalizedEmail}) is not associated with any CodeXa user. Please sign in with your credentials or contact the Founder.`,
+      };
+    }
+
+    if (!user && identity) {
+      // Bootstrap canonical user account if not yet seeded
       user = await db.user.create({
         data: {
           email: normalizedEmail,
@@ -215,16 +253,14 @@ export async function handleFirebaseSession(
           profile: true,
         },
       });
-    } else {
-      // User exists: update login info, ensure active and proper role
+    } else if (user) {
+      // EXACT SAME USER FOUND: Ensure account is active and link firebaseUid
       const updateData: any = {
-        role: identity.role,
         isActive: true,
         lastLoginAt: new Date(),
       };
 
-      // Set firebaseUid if not set or link current UID
-      if (!user.firebaseUid) {
+      if (!user.firebaseUid || user.firebaseUid !== decoded.uid) {
         updateData.firebaseUid = decoded.uid;
       }
 
@@ -235,17 +271,14 @@ export async function handleFirebaseSession(
           profile: true,
         },
       });
+    }
 
-      // Ensure profile leadership position matches
-      if (user.profile && user.profile.leadershipPosition !== identity.leadershipPosition) {
-        await db.teamProfile.update({
-          where: { id: user.profile.id },
-          data: {
-            leadershipPosition: identity.leadershipPosition,
-            primaryRole: identity.primaryRole,
-          },
-        });
-      }
+    if (!user) {
+      return {
+        success: false,
+        authorized: false,
+        message: "Failed to resolve or create user account.",
+      };
     }
 
     // 5. Track discrete AdminLoginIdentity without merging different UIDs
@@ -255,7 +288,7 @@ export async function handleFirebaseSession(
         update: {
           userId: user.id,
           firebaseUid: decoded.uid,
-          role: identity.role,
+          role: identity?.role || user.role,
           isActive: true,
           lastLoginAt: new Date(),
         },
@@ -263,7 +296,7 @@ export async function handleFirebaseSession(
           userId: user.id,
           email: normalizedEmail,
           firebaseUid: decoded.uid,
-          role: identity.role,
+          role: identity?.role || user.role,
           isActive: true,
           lastLoginAt: new Date(),
         },
@@ -282,41 +315,61 @@ export async function handleFirebaseSession(
         action: "FIREBASE_OAUTH_LOGIN",
         actorId: user.id,
         actorName: user.profile?.displayName || user.fullName || user.username,
-        details: `Approved OAuth login via ${normalizedEmail} (UID: ${decoded.uid}) mapped to canonical @${identity.canonicalUsername}, role: ${identity.role}`,
+        details: `Approved Google login via ${normalizedEmail} (UID: ${decoded.uid}) mapped to canonical @${user.username}, role: ${user.role}`,
         ipAddress: metadata?.ip || "127.0.0.1",
         userAgent: metadata?.userAgent,
       })
       .catch(() => {});
 
+    const effectiveRole = (user.profile?.leadershipPosition || user.role || "").toUpperCase();
+    const isOwnerOrFounder =
+      user.role === "OWNER" ||
+      user.role === "FOUNDER" ||
+      effectiveRole === "FOUNDER" ||
+      effectiveRole === "CO_FOUNDER" ||
+      user.role === "CO_FOUNDER";
+
+    const defaultRedirect = isOwnerOrFounder ? "/owner" : "/dashboard";
+    const redirectUrl = identity?.defaultRedirect || defaultRedirect;
+
     return {
       success: true,
       authorized: true,
-      redirectUrl: identity.defaultRedirect,
+      redirectUrl,
       user: {
         id: user.id,
-        username: identity.canonicalUsername,
-        email: normalizedEmail,
-        displayName: user.profile?.displayName || identity.displayName,
-        role: identity.role,
-        leadershipPosition: identity.leadershipPosition,
+        username: user.username,
+        email: user.email,
+        displayName: user.profile?.displayName || user.fullName || user.username,
+        role: user.role,
+        leadershipPosition: user.profile?.leadershipPosition || identity?.leadershipPosition || null,
       },
     };
   } catch (dbErr: any) {
     console.error("[Firebase Session DB Error]:", dbErr);
 
     // Resilient fallback for approved identities if database is in temporary cold-start
+    if (identity) {
+      return {
+        success: true,
+        authorized: true,
+        redirectUrl: identity.defaultRedirect,
+        user: {
+          id: `mock_${identity.canonicalUsername}_id`,
+          username: identity.canonicalUsername,
+          email: normalizedEmail,
+          displayName: identity.displayName,
+          role: identity.role,
+          leadershipPosition: identity.leadershipPosition,
+        },
+      };
+    }
+
     return {
-      success: true,
-      authorized: true,
-      redirectUrl: identity.defaultRedirect,
-      user: {
-        id: `mock_${identity.canonicalUsername}_id`,
-        username: identity.canonicalUsername,
-        email: normalizedEmail,
-        displayName: identity.displayName,
-        role: identity.role,
-        leadershipPosition: identity.leadershipPosition,
-      },
+      success: false,
+      authorized: false,
+      message: "Authentication service encountered a database timeout. Please try again.",
     };
   }
 }
+

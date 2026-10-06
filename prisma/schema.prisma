@@ -1295,7 +1295,7 @@ model PaymentAccount {
 model PaymentSetting {
   id                  String   @id @default("cxa_payment_settings")
   upiDisplayName      String   @default("CodeXa Agency")
-  defaultUpiId        String   @default("codexa@upi")
+  defaultUpiId        String   @default("shaikashu33@fam")
   qrCodeUrl           String?
   paymentInstructions String   @default("Scan the QR code or click your preferred UPI app. Pay the exact amount and upload your payment screenshot with UTR number.")
   proofUploadEnabled  Boolean  @default(true)

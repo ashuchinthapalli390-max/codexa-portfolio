@@ -30,8 +30,8 @@ export async function GET(req: NextRequest) {
 
     const resolvedSettings = settings || {
       id: "cxa_payment_settings",
-      upiDisplayName: "CodeXa Agency",
-      defaultUpiId: "codexa@upi",
+      upiDisplayName: process.env.DEFAULT_UPI_NAME || "CodeXa Agency",
+      defaultUpiId: process.env.DEFAULT_UPI_ID || "shaikashu33@fam",
       qrCodeUrl: null,
       paymentInstructions:
         "Scan the QR code or click your preferred UPI app. Pay the exact amount and upload your payment screenshot with UTR number.",
@@ -115,8 +115,8 @@ export async function PUT(req: NextRequest) {
       },
       create: {
         id: "cxa_payment_settings",
-        upiDisplayName: upiDisplayName || "CodeXa Agency",
-        defaultUpiId: defaultUpiId || "codexa@upi",
+        upiDisplayName: upiDisplayName || process.env.DEFAULT_UPI_NAME || "CodeXa Agency",
+        defaultUpiId: defaultUpiId || process.env.DEFAULT_UPI_ID || "shaikashu33@fam",
         qrCodeUrl: qrCodeUrl || null,
         paymentInstructions: paymentInstructions || "Scan the QR code or click your preferred UPI app.",
         proofUploadEnabled: proofUploadEnabled !== undefined ? Boolean(proofUploadEnabled) : true,

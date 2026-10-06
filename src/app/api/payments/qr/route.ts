@@ -12,8 +12,8 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const pa = searchParams.get("pa") || "codexa@upi";
-    const pn = searchParams.get("pn") || "CodeXa Agency";
+    const pa = searchParams.get("pa") || process.env.DEFAULT_UPI_ID || "shaikashu33@fam";
+    const pn = searchParams.get("pn") || process.env.DEFAULT_UPI_NAME || "CodeXa Agency";
     const am = searchParams.get("am");
     const tn = searchParams.get("tn") || "CodeXa Payment";
     const cu = searchParams.get("cu") || "INR";

@@ -187,7 +187,7 @@ export default function PaymentDetailPage() {
     );
   }
 
-  const upiId = payment.paymentAccount?.upiId || "codexa@upi";
+  const upiId = payment.paymentAccount?.upiId || "shaikashu33@fam";
   const payeeName = payment.paymentAccount?.payeeName || "CodeXa Agency";
   const amountStr = payment.fixedAmount.toFixed(2);
   const upiDeepLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(

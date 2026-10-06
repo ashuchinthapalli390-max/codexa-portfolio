@@ -45,13 +45,16 @@ export async function POST(req: Request) {
     }
 
     // Check environment password matching if passwordHash hasn't been set yet
-    if (!isValidPassword && profile.role === "OWNER" && process.env.OWNER_PASSWORD && password === process.env.OWNER_PASSWORD) {
+    const effectiveRole = (profile.leadershipPosition || profile.role || "").toUpperCase();
+    const isExecutiveRole = ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "COO", "ADMIN", "OWNER"].includes(effectiveRole);
+
+    if (!isValidPassword && (profile.role === "OWNER" || effectiveRole === "FOUNDER") && process.env.OWNER_PASSWORD && password === process.env.OWNER_PASSWORD) {
       isValidPassword = true;
     }
-    if (!isValidPassword && profile.role === "ADMIN" && process.env.ADMIN_PASSWORD && password === process.env.ADMIN_PASSWORD) {
+    if (!isValidPassword && isExecutiveRole && process.env.ADMIN_PASSWORD && password === process.env.ADMIN_PASSWORD) {
       isValidPassword = true;
     }
-    if (!isValidPassword && (profile.role === "EMPLOYEE" || profile.role === "INTERN" || profile.role === "TEAM_MEMBER") && process.env.TEAM_PASSWORD && password === process.env.TEAM_PASSWORD) {
+    if (!isValidPassword && process.env.TEAM_PASSWORD && password === process.env.TEAM_PASSWORD) {
       isValidPassword = true;
     }
 
@@ -103,8 +106,14 @@ export async function POST(req: Request) {
       details: `User @${profile.username} logged in successfully (Single-Factor).`,
     });
 
-    const isTopExecutive = profile.role === "OWNER" || profile.role === "FOUNDER" || profile.role === "CO_FOUNDER";
-    const redirectUrl = isTopExecutive ? "/owner" : profile.role === "ADMIN" ? "/admin" : "/dashboard";
+    const isOwnerOrFounder =
+      profile.role === "OWNER" ||
+      profile.role === "FOUNDER" ||
+      effectiveRole === "FOUNDER" ||
+      effectiveRole === "CO_FOUNDER" ||
+      profile.role === "CO_FOUNDER";
+
+    const redirectUrl = isOwnerOrFounder ? "/owner" : "/dashboard";
 
     return NextResponse.json({
       success: true,

@@ -1016,7 +1016,7 @@ export default function PaymentsPage() {
               <div className="flex items-center gap-2">
                 <input
                   type="text"
-                  value={settingsData.settings?.defaultUpiId || "codexa@upi"}
+                  value={settingsData.settings?.defaultUpiId || "shaikashu33@fam"}
                   disabled
                   className="w-full p-2.5 bg-[#161616] border border-white/10 rounded-xl font-mono text-zinc-300"
                 />
