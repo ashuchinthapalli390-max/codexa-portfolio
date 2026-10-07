@@ -34,9 +34,8 @@ export const CYBER_REMINDER_EXCLUDED_DOMAINS = [
   "cyber-ethical-pentesting",
   "cyber-elite",
   "cyber elite",
-  "cybersecurity",
-  "cyber-security",
-  "cyber",
+  "ethical hacking + pentesting",
+  "ethical-hacking-pentesting",
 ];
 
 export const EXCLUDED_CYBER_AMOUNTS = [1100, 1900, 2300];
@@ -49,7 +48,7 @@ export function isCyberExcludedDomain(
   planType?: string | null,
   amount?: number | null
 ): boolean {
-  if (typeof amount === "number" && EXCLUDED_CYBER_AMOUNTS.includes(amount)) {
+  if (typeof amount === "number" && (amount > 450 || EXCLUDED_CYBER_AMOUNTS.includes(amount))) {
     return true;
   }
 

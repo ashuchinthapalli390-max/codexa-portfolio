@@ -33,8 +33,30 @@ export default function InternsPage() {
   const [selectedIntern, setSelectedIntern] = useState<any>(null);
   const [deactivating, setDeactivating] = useState(false);
   const [deactivateConfirmOpen, setDeactivateConfirmOpen] = useState(false);
+  const [sendingReminder, setSendingReminder] = useState(false);
 
   const canManage = user && hasPermission(user, Permission.MANAGE_INTERNS);
+
+  const handleSendReminder = async (userId: string) => {
+    setSendingReminder(true);
+    try {
+      const res = await fetch(`/api/admin/interns/${userId}/payment-reminder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force: false }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "Failed to dispatch reminder.");
+      } else {
+        alert("Daily ₹450 reminder sent via Resend Email and Web Push!");
+      }
+    } catch (e: any) {
+      alert(`Error: ${e.message}`);
+    } finally {
+      setSendingReminder(false);
+    }
+  };
 
   const loadInterns = async () => {
     setLoading(true);
@@ -250,6 +272,32 @@ export default function InternsPage() {
                     Not Assigned (Pending HR Update)
                   </span>
                 )}
+              </div>
+              <div className="p-3 rounded-xl bg-neutral-950 border border-neutral-800 col-span-2 flex items-center justify-between">
+                <div>
+                  <span className="text-neutral-500 block text-[10px]">Mandatory Service Fee</span>
+                  <span className="font-bold text-xs text-white">₹450 (ID Card ₹150 + AI Tools ₹300)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      selectedIntern.user?.internServicePaymentPaid
+                        ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                        : "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                    }`}
+                  >
+                    {selectedIntern.user?.internServicePaymentPaid ? "PAID" : "PENDING"}
+                  </span>
+                  {!selectedIntern.user?.internServicePaymentPaid && canManage && (
+                    <button
+                      onClick={() => handleSendReminder(selectedIntern.userId)}
+                      disabled={sendingReminder}
+                      className="px-2.5 py-1 rounded-lg bg-crimson hover:bg-bright-red text-white text-[10px] font-bold uppercase transition-all disabled:opacity-50"
+                    >
+                      {sendingReminder ? "Sending..." : "Send Reminder"}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 

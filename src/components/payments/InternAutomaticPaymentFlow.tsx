@@ -23,6 +23,7 @@ import {
   Lock,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { PushNotificationBanner } from "@/components/notifications/PushNotificationBanner";
 
 interface PaymentAttempt {
   id: string;
@@ -463,6 +464,9 @@ export function InternAutomaticPaymentFlow({
 
   return (
     <div className="space-y-8 max-w-4xl mx-auto">
+      {/* ─── PUSH NOTIFICATION BANNER (OPT-IN CTA) ─────────────────────────── */}
+      <PushNotificationBanner />
+
       {/* ─── 1. HEADER & OFFICIAL BILL CARD ──────────────────────────────────── */}
       <div className="relative overflow-hidden p-6 sm:p-8 rounded-3xl bg-[#0c0c0c] border border-white/10 shadow-2xl">
         <div className="absolute top-0 right-0 w-80 h-80 bg-crimson/10 rounded-full blur-3xl pointer-events-none" />

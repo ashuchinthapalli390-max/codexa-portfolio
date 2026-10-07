@@ -16,7 +16,12 @@ import { Prisma } from "@prisma/client";
 import crypto from "crypto";
 import { generatePaymentReferenceId } from "@/lib/cxa-ids";
 import { savePaymentProof } from "@/lib/payment-storage";
-import { sendPaymentApprovedEmail } from "@/lib/email/notifications";
+import {
+  sendPaymentApprovedEmail,
+  sendPaymentProofSubmittedEmail,
+  sendPaymentRejectedEmail,
+} from "@/lib/email/notifications";
+import { sendPushNotification } from "@/lib/push";
 
 export const FIXED_INTERNSHIP_AMOUNT = 450.0;
 export const MANDATORY_ID_CARD_AMOUNT = 150.0;
@@ -730,6 +735,34 @@ export async function submitPaymentProof(params: {
     timingMismatch,
   });
 
+  if (verificationResult.status !== "SUCCESS") {
+    // Send Web Push notification confirming proof submission
+    sendPushNotification(userId, {
+      title: "CodeXa Payment Proof Submitted",
+      body: `Proof for ₹${Number(attempt.amountSnapshot)} (Ref: ${attempt.paymentRequest.referenceId}) has been received and is under verification.`,
+      icon: "/email-assets/codexa-logo.png",
+      badge: "/email-assets/codexa-logo.png",
+      tag: "mandatory-service-payment-verifying",
+      data: {
+        type: "MANDATORY_SERVICE_PAYMENT_PROOF_SUBMITTED",
+        url: "/dashboard/payments",
+      },
+    }).catch(() => {});
+
+    // Send confirmation email
+    const recipientEmail = attempt.paymentRequest.userEmail;
+    if (recipientEmail) {
+      sendPaymentProofSubmittedEmail({
+        recipientEmail,
+        recipientName: attempt.paymentRequest.userName || "Intern",
+        referenceId: attempt.paymentRequest.referenceId,
+        title: attempt.paymentRequest.title,
+        amount: Number(attempt.amountSnapshot),
+        utrNumber: cleanUtr,
+      }).catch(() => {});
+    }
+  }
+
   return verificationResult;
 }
 
@@ -949,6 +982,19 @@ export async function runAutomaticVerificationEngine(params: {
       console.error("Failed to send payment approval email:", emailErr);
     }
   }
+
+  // 8. Send Web Push Notification to Intern
+  sendPushNotification(attempt.userId, {
+    title: "🎉 CodeXa Payment Confirmed",
+    body: `Your mandatory ₹${expectedAmount} internship service payment is verified. Student ID card & AI tools pack are unlocked!`,
+    icon: "/email-assets/codexa-logo.png",
+    badge: "/email-assets/codexa-logo.png",
+    tag: "mandatory-service-payment-success",
+    data: {
+      type: "MANDATORY_SERVICE_PAYMENT_SUCCESS",
+      url: "/dashboard/payments",
+    },
+  }).catch((err) => console.error("Failed to send push on payment approval:", err));
 
   return {
     status: "SUCCESS",
