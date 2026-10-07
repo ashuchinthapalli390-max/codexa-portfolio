@@ -78,6 +78,9 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  const domainFilter = url.searchParams.get("domain") || url.searchParams.get("internshipDomain");
+  const durationFilter = url.searchParams.get("duration");
+
   try {
     const whereClause: any = {};
 
@@ -92,6 +95,20 @@ export async function GET(req: NextRequest) {
       };
     }
 
+    if (domainFilter) {
+      whereClause.OR = [
+        { department: { equals: domainFilter, mode: "insensitive" } },
+        { internshipDomain: { equals: domainFilter, mode: "insensitive" } },
+      ];
+    }
+
+    if (durationFilter) {
+      whereClause.internshipDuration = {
+        contains: durationFilter,
+        mode: "insensitive",
+      };
+    }
+
     if (typeFilter) {
       if (typeFilter.toUpperCase() === "INTERN") {
         whereClause.employmentType = "INTERN";
@@ -101,10 +118,13 @@ export async function GET(req: NextRequest) {
     }
 
     if (searchQuery) {
-      whereClause.OR = [
+      const searchConditions = [
         { employeeId: { contains: searchQuery, mode: "insensitive" } },
         { designation: { contains: searchQuery, mode: "insensitive" } },
         { department: { contains: searchQuery, mode: "insensitive" } },
+        { internshipDomain: { contains: searchQuery, mode: "insensitive" } },
+        { college: { contains: searchQuery, mode: "insensitive" } },
+        { referenceNumber: { contains: searchQuery, mode: "insensitive" } },
         {
           user: {
             OR: [
@@ -115,6 +135,13 @@ export async function GET(req: NextRequest) {
           },
         },
       ];
+
+      if (whereClause.OR) {
+        whereClause.AND = [{ OR: whereClause.OR }, { OR: searchConditions }];
+        delete whereClause.OR;
+      } else {
+        whereClause.OR = searchConditions;
+      }
     }
 
     const profiles = await db.employmentProfile.findMany({

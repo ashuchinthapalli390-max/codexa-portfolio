@@ -31,6 +31,7 @@ model User {
   zoom                 Float?    @default(1)
   objectPosition       String?   @default("center")
   mustChangePassword   Boolean   @default(false)
+  phone                String?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
@@ -667,6 +668,16 @@ model EmploymentProfile {
   deductions         Float?
   mentorName         String?
   internshipDuration String?   // e.g. "3 Months"
+  internshipDomain   String?   // Authoritative Final Offer Domain e.g. "Full-Stack Development with AI"
+  internshipDurationMonths Int? // Duration in months (2, 3, 6, 9)
+  internshipStartDate DateTime? // Canonical internship start date
+  internshipEndDate   DateTime? // Canonical internship end date
+  college            String?   // College name
+  collegeLocation    String?   // College location
+  yearOfStudy        String?   // Year of study e.g. "2nd Year"
+  academicBranch     String?   // Branch/Department e.g. "CSE", "AI"
+  referenceNumber    String?   // Reference number e.g. "CXA/INT/2026/001"
+  phone              String?   // Contact phone number
   bankAccountMasked  String?   // e.g. "XXXX XXXX 4832"
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt

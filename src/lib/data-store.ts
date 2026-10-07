@@ -408,10 +408,10 @@ function mapUserToProfile(user: any): Profile {
     displayName: profile?.displayName || user.fullName || user.username,
     role: user.role,
     orgRole: user.orgRole || user.role,
-    department: user.department || null,
+    department: user.employmentProfile?.internshipDomain || user.employmentProfile?.department || user.department || null,
     memberType: profile?.memberType || (user.role === "OWNER" || user.role === "ADMIN" ? "LEADERSHIP" : "CORE_TEAM"),
     leadershipPosition: profile?.leadershipPosition || null,
-    primaryRole: profile?.primaryRole || null,
+    primaryRole: profile?.primaryRole || user.employmentProfile?.designation || null,
     headline: profile?.headline || null,
     bio: profile?.bio || null,
     publicBio: profile?.publicBio || profile?.bio || null,
@@ -621,6 +621,7 @@ export const dataStore = {
       },
       include: {
         profile: true,
+        employmentProfile: true,
         twoFactorConfig: true,
         skills: { orderBy: { displayOrder: "asc" } },
         links: { orderBy: { displayOrder: "asc" } },
@@ -637,6 +638,7 @@ export const dataStore = {
       where: { id },
       include: {
         profile: true,
+        employmentProfile: true,
         twoFactorConfig: true,
         skills: { orderBy: { displayOrder: "asc" } },
         links: { orderBy: { displayOrder: "asc" } },
@@ -660,6 +662,7 @@ export const dataStore = {
       },
       include: {
         profile: true,
+        employmentProfile: true,
         twoFactorConfig: true,
         skills: { orderBy: { displayOrder: "asc" } },
         links: { orderBy: { displayOrder: "asc" } },

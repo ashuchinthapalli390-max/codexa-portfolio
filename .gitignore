@@ -52,3 +52,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .env*
+
+# Script backups
+scripts/intern-sync-backup-*.json
+
+# Mobile APK builds
+*.apk
+public/downloads/*.apk

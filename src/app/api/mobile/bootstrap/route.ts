@@ -97,8 +97,14 @@ export async function GET(req: NextRequest) {
 
       internship = {
         internId: emp.employeeId || "CXA-INT-2026",
-        domain: emp.department || "Full Stack Development",
-        duration: emp.internshipDuration || "3 Months",
+        domain: (emp as any).internshipDomain || emp.department || "Technical Track",
+        duration: emp.internshipDuration || ((emp as any).internshipDurationMonths ? `${(emp as any).internshipDurationMonths} Months` : "—"),
+        designation: emp.designation,
+        college: (emp as any).college,
+        collegeLocation: (emp as any).collegeLocation,
+        yearOfStudy: (emp as any).yearOfStudy,
+        academicBranch: (emp as any).academicBranch,
+        referenceNumber: (emp as any).referenceNumber,
         startDate,
         endDate,
         daysUntilStart,

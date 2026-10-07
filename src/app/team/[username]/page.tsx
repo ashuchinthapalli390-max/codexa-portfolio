@@ -274,6 +274,7 @@ export default function DedicatedTeamProfilePage() {
   const allProjects = [...createdProjects, ...collabProjects];
   const isFounder = (profile.email?.toLowerCase() === "ashuchinthapalli3900@gmail.com" || profile.email?.toLowerCase() === "darklevelinggaming@gmail.com" || profile.username?.toLowerCase() === "ashu") && (profile.leadershipPosition === "FOUNDER" || profile.role === "OWNER");
   const isCoFounder = (profile.email?.toLowerCase() === "boddukurisanjay@gmail.com" || profile.username?.toLowerCase() === "sanjay") && (profile.leadershipPosition === "CO_FOUNDER" || profile.role === "ADMIN");
+  const isIntern = profile.role === "INTERN" || profile.orgRole === "INTERN";
 
   // Dynamic Categorized Skills Resolution with strict profile data isolation
   const categorySkillsMap: Record<string, string[]> = {};
@@ -506,7 +507,7 @@ export default function DedicatedTeamProfilePage() {
                   </h1>
                   
                   <p className="font-orbitron text-xs sm:text-sm font-bold text-crimson uppercase tracking-widest">
-                    {profile.primaryRole || (isFounder ? "Founder & Full-Stack Developer" : "CodeXa Engineer")}
+                    {profile.primaryRole || (isFounder ? "Founder & Full-Stack Developer" : isIntern ? "Technical Intern" : "CodeXa Engineer")}
                   </p>
                 </div>
 
@@ -660,7 +661,7 @@ export default function DedicatedTeamProfilePage() {
                   <div>
                     <h4 className="font-orbitron font-bold text-xs text-[#888] uppercase mb-1.5">Role Classification</h4>
                     <p className="text-xs text-white font-mono">
-                      {profile.primaryRole || (isFounder ? "Founder & Full-Stack Developer" : "Core Team Member")}
+                      {profile.primaryRole || (isFounder ? "Founder & Full-Stack Developer" : isIntern ? "Technical Intern" : "Core Team Member")}
                     </p>
                   </div>
                 </div>

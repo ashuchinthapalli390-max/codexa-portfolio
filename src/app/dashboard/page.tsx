@@ -33,6 +33,7 @@ export default function DashboardOverviewPage() {
   const [myProjects, setMyProjects] = useState<Project[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [internPayment, setInternPayment] = useState<any>(null);
+  const [internProfile, setInternProfile] = useState<any>(null);
   const [paymentTimerSeconds, setPaymentTimerSeconds] = useState<number>(0);
   const [loading, setLoading] = useState(true);
 
@@ -42,6 +43,13 @@ export default function DashboardOverviewPage() {
     if (currentUser) {
       loadDashboardData(currentUser);
       if (effectiveRole === "INTERN") {
+        fetch("/api/employment")
+          .then((r) => r.json())
+          .then((data) => {
+            if (data.profiles?.[0]) setInternProfile(data.profiles[0]);
+          })
+          .catch(() => {});
+
         fetch("/api/payments/me")
           .then((r) => r.json())
           .then((data) => {
@@ -233,7 +241,9 @@ export default function DashboardOverviewPage() {
                   <div className="text-xl sm:text-2xl font-orbitron font-black text-zinc-400 mt-1">
                     Not Assigned
                   </div>
-                  <p className="text-[10px] font-mono text-zinc-500 mt-1">Development Internship</p>
+                  <p className="text-[10px] font-mono text-zinc-500 mt-1">
+                    {internProfile?.internshipDomain || internProfile?.department || "Technical Track"}
+                  </p>
                 </div>
               ) : (
                 <Link
@@ -267,6 +277,70 @@ export default function DashboardOverviewPage() {
               </Link>
             </motion.div>
           </motion.div>
+        )}
+
+        {/* ─── INTERN PROGRAM ASSIGNMENT DETAILS (SECTION 37) ─────────────── */}
+        {effectiveRole === "INTERN" && internProfile && (
+          <div className="p-5 sm:p-6 rounded-3xl bg-neutral-900/60 border border-neutral-800 backdrop-blur-xl space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-800 pb-4">
+              <div>
+                <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-400 font-bold">
+                  Active Internship Program Track
+                </span>
+                <h3 className="text-base font-orbitron font-bold text-white mt-0.5">
+                  {internProfile.internshipDomain || internProfile.department}
+                </h3>
+                <p className="text-xs font-mono text-neutral-400 mt-0.5">
+                  {internProfile.employeeId} &bull; {internProfile.designation}
+                </p>
+              </div>
+              <Link
+                href="/dashboard/interns"
+                className="px-3.5 py-1.5 rounded-xl bg-neutral-950 border border-neutral-800 hover:border-emerald-500/50 text-xs font-mono text-neutral-300 hover:text-white transition-all self-start sm:self-auto"
+              >
+                View Full Details &rarr;
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+              <div className="p-3 rounded-xl bg-neutral-950 border border-neutral-800">
+                <span className="text-neutral-500 block text-[10px] uppercase">Track Duration</span>
+                <span className="text-white font-bold">
+                  {internProfile.internshipDuration || (internProfile.internshipDurationMonths ? `${internProfile.internshipDurationMonths} Months` : "—")}
+                </span>
+              </div>
+              <div className="p-3 rounded-xl bg-neutral-950 border border-neutral-800">
+                <span className="text-neutral-500 block text-[10px] uppercase">Status</span>
+                <span className="text-emerald-400 font-bold">{internProfile.status}</span>
+              </div>
+              <div className="p-3 rounded-xl bg-neutral-950 border border-neutral-800">
+                <span className="text-neutral-500 block text-[10px] uppercase">Start Date</span>
+                <span className="text-white">
+                  {internProfile.internshipStartDate || internProfile.joiningDate
+                    ? new Date(internProfile.internshipStartDate || internProfile.joiningDate).toLocaleDateString("en-GB", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                        timeZone: "UTC",
+                      })
+                    : "—"}
+                </span>
+              </div>
+              <div className="p-3 rounded-xl bg-neutral-950 border border-neutral-800">
+                <span className="text-neutral-500 block text-[10px] uppercase">End Date</span>
+                <span className="text-white">
+                  {internProfile.internshipEndDate || internProfile.endDate
+                    ? new Date(internProfile.internshipEndDate || internProfile.endDate).toLocaleDateString("en-GB", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                        timeZone: "UTC",
+                      })
+                    : "—"}
+                </span>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* ─── TODAY'S ACTIONS PANEL (SECTION 52) ────────────────────────── */}
