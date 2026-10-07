@@ -135,7 +135,7 @@ export async function GET(req: NextRequest) {
       todayRecord: todayRecord ? {
         id: todayRecord.id,
         status: todayRecord.status,
-        timestamp: todayRecord.timestamp?.toISOString() || todayRecord.date.toISOString(),
+        timestamp: todayRecord.markedAt?.toISOString() || todayRecord.date.toISOString(),
       } : null,
       stats: null,
     };
@@ -160,7 +160,7 @@ export async function GET(req: NextRequest) {
       status: p.status || "Active",
       category: p.category || "Engineering",
       progressPercentage: 75.0,
-      shortDesc: p.description?.slice(0, 120) || null,
+      shortDesc: p.shortDesc || p.overview?.slice(0, 120) || null,
     }));
 
     // 6. Payment Information (for intern)
