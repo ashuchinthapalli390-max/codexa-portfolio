@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { validateSessionResult, getCurrentSessionResult } from "@/lib/auth";
 
@@ -32,7 +32,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized." } }, { status: 401 });
     }
 
-    // Load projects where user is creator or collaborator
+    const effectiveRole = user.role;
+    const isLeadership = ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "COO"].includes(effectiveRole);
+
+    // Load projects where user is creator or collaborator (or all for leadership)
     const collabs = await db.projectCollaborator.findMany({
       where: { userId: user.id },
       select: { projectId: true, roleTitle: true },
@@ -41,12 +44,14 @@ export async function GET(req: NextRequest) {
     const projectIds = collabs.map((c) => c.projectId);
 
     const projects = await db.project.findMany({
-      where: {
-        OR: [
-          { id: { in: projectIds } },
-          { createdBy: user.id },
-        ],
-      },
+      where: isLeadership
+        ? undefined
+        : {
+            OR: [
+              { id: { in: projectIds } },
+              { createdBy: user.id },
+            ],
+          },
       include: {
         creator: {
           select: { id: true, fullName: true, username: true, role: true },

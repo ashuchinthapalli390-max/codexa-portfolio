@@ -120,47 +120,20 @@ export async function POST(req: NextRequest) {
           employmentProfile: true,
         },
       });
-    } else if (!user && !identity) {
-      // Auto-provision standard team member / intern account
-      const basePrefix = normalizedEmail.split("@")[0].replace(/[^a-zA-Z0-9_]/g, "").toLowerCase() || "user";
-      let uniqueUsername = basePrefix;
-      let counter = 1;
-      while (await db.user.findUnique({ where: { username: uniqueUsername } })) {
-        uniqueUsername = `${basePrefix}${counter++}`;
-      }
-
-      const displayName = decoded.name || basePrefix;
-      user = await db.user.create({
-        data: {
-          email: normalizedEmail,
-          username: uniqueUsername,
-          fullName: decoded.name || basePrefix,
-          passwordHash: "FIREBASE_MANAGED_OAUTH_ACCOUNT",
-          role: "INTERN",
-          orgRole: "INTERN",
-          firebaseUid: decoded.uid,
-          isActive: true,
-          mustChangePassword: false,
-          lastLoginAt: new Date(),
-          profile: {
-            create: {
-              memberType: "CORE_TEAM",
-              primaryRole: "Intern Developer",
-              displayName: displayName,
-              mediaUrl: decoded.picture || "/assets/images/logo.jpeg",
-              cropX: 50,
-              cropY: 20,
-              cropZoom: 1.05,
-              isPublic: true,
-              displayOrder: 99,
-            },
+    } else if (!user) {
+      // Security Enforcement: Unregistered Google accounts are strictly denied!
+      console.warn(`[Google Auth Denied] Unregistered Google email: ${normalizedEmail} [${requestId}]`);
+      return NextResponse.json(
+        {
+          ok: false,
+          error: {
+            code: "GOOGLE_NOT_REGISTERED",
+            message: "This Google account is not registered with CodeXa.",
           },
+          requestId,
         },
-        include: {
-          profile: true,
-          employmentProfile: true,
-        },
-      });
+        { status: 403, headers: NO_CACHE_HEADERS }
+      );
     } else if (user) {
       // Account exists: ensure active and link firebaseUid safely
       if (!user.isActive) {

@@ -114,41 +114,96 @@ export async function GET(req: NextRequest) {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const todayRecord = await db.attendanceRecord.findFirst({
-      where: {
-        userId: user.id,
-        date: {
-          gte: today,
-          lt: tomorrow,
+    const isInternPreStart = effectiveRole === "INTERN" && emp?.joiningDate ? new Date(emp.joiningDate).getTime() > Date.now() : false;
+
+    let attendance: any;
+    if (isInternPreStart) {
+      attendance = {
+        lifecycleStatus: "PRE_START",
+        canMark: false,
+        isPreStart: true,
+        message: "Your attendance will become available when your internship begins.",
+        startDate: emp?.joiningDate ? emp.joiningDate.toISOString() : null,
+        currentWindow: {
+          isOpen: false,
+          startTime: null,
         },
-      },
-    }).catch(() => null);
+        todayRecord: null,
+        stats: null,
+      };
+    } else {
+      const todayRecord = await db.attendanceRecord.findFirst({
+        where: {
+          userId: user.id,
+          date: {
+            gte: today,
+            lt: tomorrow,
+          },
+        },
+      }).catch(() => null);
 
-    const attendance = {
-      lifecycleStatus: todayRecord ? "COMPLETED" : "WINDOW_ACTIVE",
-      canMark: !todayRecord && Boolean(featureFlags.MOBILE_ATTENDANCE),
-      message: todayRecord ? "Attendance marked for today." : "Attendance window open.",
-      currentWindow: {
-        isOpen: !todayRecord,
-        startTime: today.toISOString(),
-      },
-      todayRecord: todayRecord ? {
-        id: todayRecord.id,
-        status: todayRecord.status,
-        timestamp: todayRecord.markedAt?.toISOString() || todayRecord.date.toISOString(),
-      } : null,
-      stats: null,
-    };
+      attendance = {
+        lifecycleStatus: todayRecord ? "COMPLETED" : "WINDOW_ACTIVE",
+        canMark: !todayRecord && Boolean(featureFlags.MOBILE_ATTENDANCE),
+        isPreStart: false,
+        message: todayRecord ? "Attendance marked for today." : "Attendance window open.",
+        startDate: emp?.joiningDate ? emp.joiningDate.toISOString() : null,
+        currentWindow: {
+          isOpen: !todayRecord,
+          startTime: today.toISOString(),
+        },
+        todayRecord: todayRecord ? {
+          id: todayRecord.id,
+          status: todayRecord.status,
+          timestamp: todayRecord.markedAt?.toISOString() || todayRecord.date.toISOString(),
+        } : null,
+        stats: null,
+      };
+    }
 
-    // 5. Active Projects (User's projects or collaborations)
+    // 5. Active Projects & Operational Metrics
+    const isLeadership = ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "COO"].includes(effectiveRole);
+
+    let operationalMetrics: any = null;
+    if (isLeadership) {
+      const [
+        activeEmployees,
+        activeInterns,
+        todayPresentCount,
+        pendingLeaveCount,
+        pendingCorrectionsCount,
+        totalProjectsCount,
+      ] = await Promise.all([
+        db.user.count({ where: { role: "EMPLOYEE", isActive: true } }).catch(() => 0),
+        db.user.count({ where: { role: "INTERN", isActive: true } }).catch(() => 0),
+        db.attendanceRecord.count({
+          where: { date: { gte: today, lt: tomorrow }, status: "PRESENT" },
+        }).catch(() => 0),
+        db.leaveRequest.count({ where: { status: "PENDING" } }).catch(() => 0),
+        db.attendanceCorrection.count({ where: { status: "PENDING" } }).catch(() => 0),
+        db.project.count().catch(() => 0),
+      ]);
+
+      operationalMetrics = {
+        activeEmployees,
+        activeInterns,
+        todayPresentCount,
+        pendingLeaveCount,
+        pendingCorrectionsCount,
+        totalProjectsCount,
+      };
+    }
+
     const projects = await db.project.findMany({
-      where: {
-        OR: [
-          { createdBy: user.id },
-          { collaborators: { some: { userId: user.id } } },
-        ],
-      },
-      take: 5,
+      where: isLeadership
+        ? undefined
+        : {
+            OR: [
+              { createdBy: user.id },
+              { collaborators: { some: { userId: user.id } } },
+            ],
+          },
+      take: 6,
       orderBy: { updatedAt: "desc" },
     }).catch(() => []);
 
@@ -156,10 +211,10 @@ export async function GET(req: NextRequest) {
       id: p.id,
       title: p.title,
       slug: p.slug,
-      myRole: p.createdBy === user.id ? "Lead / Creator" : "Contributor",
+      myRole: p.createdBy === user.id ? "Lead / Creator" : isLeadership ? "Management" : "Contributor",
       status: p.status || "Active",
       category: p.category || "Engineering",
-      progressPercentage: 75.0,
+      progressPercentage: p.status === "Live" ? 100.0 : 75.0,
       shortDesc: p.shortDesc || p.overview?.slice(0, 120) || null,
     }));
 
@@ -240,6 +295,7 @@ export async function GET(req: NextRequest) {
       unreadMessages,
       unreadNotifications,
       activeProjects,
+      operationalMetrics,
       payment,
       appConfig,
       announcement,
