@@ -48,7 +48,11 @@ export async function GET(req: NextRequest) {
         designation: user.employmentProfile?.designation || user.profile?.primaryRole,
         employeeId: user.employmentProfile?.employeeId,
         bio: user.profile?.bio || user.profile?.headline,
+        status: user.profile?.headline || "Available",
         profileMediaUrl: user.profileMediaUrl || user.profile?.profileMediaUrl || user.profile?.mediaUrl,
+        cropX: user.cropX ?? user.profile?.cropX ?? 0,
+        cropY: user.cropY ?? user.profile?.cropY ?? 0,
+        zoom: user.zoom ?? user.profile?.zoom ?? 1,
         githubUrl: user.profile?.githubUrl,
         linkedinUrl: user.profile?.linkedinUrl,
         portfolioUrl: user.profile?.portfolioUrl,
@@ -67,35 +71,51 @@ export async function PATCH(req: NextRequest) {
     if (!authUser) return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED" } }, { status: 401 });
 
     const body = await req.json();
-    const { bio, githubUrl, linkedinUrl, portfolioUrl, profileMediaUrl, skills } = body;
+    const { bio, status, headline, githubUrl, linkedinUrl, portfolioUrl, profileMediaUrl, cropX, cropY, zoom, skills } = body;
+
+    const resolvedStatus = status || headline;
 
     // Update TeamProfile
     await db.teamProfile.upsert({
       where: { userId: authUser.id },
       update: {
         ...(bio !== undefined && { bio }),
+        ...(resolvedStatus !== undefined && { headline: resolvedStatus }),
         ...(githubUrl !== undefined && { githubUrl }),
         ...(linkedinUrl !== undefined && { linkedinUrl }),
         ...(portfolioUrl !== undefined && { portfolioUrl }),
         ...(profileMediaUrl !== undefined && { profileMediaUrl, mediaUrl: profileMediaUrl }),
+        ...(cropX !== undefined && { cropX: Number(cropX) }),
+        ...(cropY !== undefined && { cropY: Number(cropY) }),
+        ...(zoom !== undefined && { zoom: Number(zoom) }),
       },
       create: {
         userId: authUser.id,
         displayName: authUser.displayName,
         bio,
+        headline: resolvedStatus,
         githubUrl,
         linkedinUrl,
         portfolioUrl,
         profileMediaUrl,
         mediaUrl: profileMediaUrl,
+        cropX: cropX ? Number(cropX) : 0,
+        cropY: cropY ? Number(cropY) : 0,
+        zoom: zoom ? Number(zoom) : 1,
       },
     });
 
-    // Update User.profileMediaUrl if provided
-    if (profileMediaUrl !== undefined) {
+    // Update User model fields
+    const userUpdate: any = {};
+    if (profileMediaUrl !== undefined) userUpdate.profileMediaUrl = profileMediaUrl;
+    if (cropX !== undefined) userUpdate.cropX = Number(cropX);
+    if (cropY !== undefined) userUpdate.cropY = Number(cropY);
+    if (zoom !== undefined) userUpdate.zoom = Number(zoom);
+
+    if (Object.keys(userUpdate).length > 0) {
       await db.user.update({
         where: { id: authUser.id },
-        data: { profileMediaUrl },
+        data: userUpdate,
       });
     }
 
