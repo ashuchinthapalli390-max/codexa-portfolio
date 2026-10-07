@@ -202,11 +202,11 @@ export function ContactSection() {
                 </a>
               </div>
 
-              {/* Co-Founder Sanjay */}
+              {/* Co-Founder B. Sanjay */}
               <div className="flex justify-between items-center p-4 rounded bg-card/60 border border-crimson/15 shadow-inner">
                 <div>
-                  <span className="text-[9px] uppercase tracking-wider text-crimson font-orbitron font-semibold">Co-Founder</span>
-                  <h5 className="font-orbitron font-bold text-sm text-white">Sanjay</h5>
+                  <span className="text-[9px] uppercase tracking-wider text-crimson font-orbitron font-semibold">CO-FOUNDER</span>
+                  <h5 className="font-orbitron font-bold text-sm text-white">B. Sanjay</h5>
                 </div>
                 <a 
                   href={`tel:${siteConfig.contact.sanjay.phone}`} 

@@ -26,9 +26,9 @@ export const siteConfig = {
       quote: "Vision creates companies. Execution builds them."
     },
     sanjay: {
-      name: "Sanjay",
+      name: "B. Sanjay",
       role: "Co-Founder & Operations Lead",
-      phone: "9494245412",
+      phone: "7075920852",
       image: "/assets/images/co-founder.jpeg",
       details: [
         "Platform Architecture",
