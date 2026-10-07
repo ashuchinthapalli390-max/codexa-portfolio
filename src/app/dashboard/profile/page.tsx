@@ -15,13 +15,15 @@ import {
   AlertCircle,
   ArrowUpRight,
   Sparkles,
-  Shield
+  Shield,
+  Code2,
 } from "lucide-react";
 import { TeamCoreShell } from "@/components/layout/TeamCoreShell";
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
 import { CodeXaMediaSelectorModal } from "@/components/ui/CodeXaMediaSelectorModal";
 import { Profile } from "@/lib/data-store";
 import { useAuth } from "@/context/AuthContext";
+import { EXPERTISE_CATEGORIES, getCategorySkills } from "@/data/expertise-config";
 
 export default function MyProfileEditorPage() {
   const { user: currentUser } = useAuth();
@@ -38,6 +40,18 @@ export default function MyProfileEditorPage() {
   const [linkedinUrl, setLinkedinUrl] = useState("");
   const [portfolioUrl, setPortfolioUrl] = useState("");
 
+  const [expertiseInputs, setExpertiseInputs] = useState<Record<string, string>>({
+    "Development Languages": "",
+    "Full-Stack Engineering": "",
+    "AI Engineering": "",
+    "Cybersecurity & Defense": "",
+    "Linux & Systems": "",
+    "Application Platforms": "",
+  });
+  const [featuredProjects, setFeaturedProjects] = useState<Array<{ name: string; category: string; url?: string | null }>>([]);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [newProjectCategory, setNewProjectCategory] = useState("");
+
   // Media selector modal
   const [mediaModalOpen, setMediaModalOpen] = useState(false);
 
@@ -53,7 +67,7 @@ export default function MyProfileEditorPage() {
 
   const loadProfileData = (username: string) => {
     setLoading(true);
-    fetch(`/api/profile/${username}`)
+    fetch(`/api/profile/${username}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((data) => {
         if (data.success && data.profile) {
@@ -66,6 +80,25 @@ export default function MyProfileEditorPage() {
           setGithubUrl(p.githubUrl || "");
           setLinkedinUrl(p.linkedinUrl || "");
           setPortfolioUrl(p.portfolioUrl || "");
+
+          const isProfFounder = (p.email?.toLowerCase() === "ashuchinthapalli3900@gmail.com" || p.email?.toLowerCase() === "darklevelinggaming@gmail.com" || p.username?.toLowerCase() === "ashu") && (p.leadershipPosition === "FOUNDER" || p.role === "OWNER");
+
+          const expInputs: Record<string, string> = {
+            "Development Languages": "",
+            "Full-Stack Engineering": "",
+            "AI Engineering": "",
+            "Cybersecurity & Defense": "",
+            "Linux & Systems": "",
+            "Application Platforms": "",
+          };
+
+          EXPERTISE_CATEGORIES.forEach((cat) => {
+            const catSkills = getCategorySkills(cat.key, cat.aliases, p.expertiseGroups, isProfFounder);
+            expInputs[cat.key] = catSkills.join(", ");
+          });
+
+          setExpertiseInputs(expInputs);
+          setFeaturedProjects(p.featuredProjects || []);
         }
       })
       .finally(() => setLoading(false));
@@ -85,12 +118,41 @@ export default function MyProfileEditorPage() {
     setSkills(skills.filter((s) => s !== skillToRemove));
   };
 
+  const handleAddFeaturedProject = () => {
+    if (!newProjectName.trim()) return;
+    setFeaturedProjects([
+      ...featuredProjects,
+      {
+        name: newProjectName.trim(),
+        category: newProjectCategory.trim() || "System Build",
+        url: null,
+      },
+    ]);
+    setNewProjectName("");
+    setNewProjectCategory("");
+  };
+
+  const handleRemoveFeaturedProject = (index: number) => {
+    const updated = [...featuredProjects];
+    updated.splice(index, 1);
+    setFeaturedProjects(updated);
+  };
+
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile) return;
 
     setSaveState("loading");
     setFeedbackMsg("");
+
+    const parsedExpertiseGroups: Record<string, string[]> = {};
+    EXPERTISE_CATEGORIES.forEach((cat) => {
+      const val = expertiseInputs[cat.key] || "";
+      parsedExpertiseGroups[cat.key] = val
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    });
 
     try {
       const res = await fetch(`/api/profile/${profile.username}`, {
@@ -101,6 +163,8 @@ export default function MyProfileEditorPage() {
           headline,
           bio,
           skills,
+          expertiseGroups: parsedExpertiseGroups,
+          featuredProjects,
           githubUrl,
           linkedinUrl,
           portfolioUrl,
@@ -280,6 +344,113 @@ export default function MyProfileEditorPage() {
                     </button>
                   </span>
                 ))}
+              </div>
+            </div>
+
+            {/* Categorized Expertise Matrix Editor */}
+            <div className="pt-2 border-t border-white/5 space-y-4">
+              <div>
+                <label className="text-[10px] font-orbitron uppercase text-bright-red font-bold block">
+                  Expertise Matrix by Category
+                </label>
+                <p className="text-[10px] text-[#666] mt-0.5">
+                  Configure skills for each specific category. Only your saved skills will appear on your profile cards.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {EXPERTISE_CATEGORIES.map((cat) => (
+                  <div key={cat.key} className="p-4 rounded-2xl bg-[#0D0D0D] border border-crimson/20 space-y-2">
+                    <label className="text-[10px] font-orbitron uppercase text-[#CCC] font-bold block">
+                      {cat.label}
+                    </label>
+                    <input
+                      type="text"
+                      value={expertiseInputs[cat.key] || ""}
+                      onChange={(e) =>
+                        setExpertiseInputs({
+                          ...expertiseInputs,
+                          [cat.key]: e.target.value,
+                        })
+                      }
+                      className="w-full bg-[#141414] border border-crimson/25 focus:border-bright-red rounded-xl p-2.5 text-xs text-white outline-none"
+                      placeholder={
+                        cat.key === "Development Languages"
+                          ? "e.g. HTML, CSS, JavaScript, TypeScript, Python, Java"
+                          : cat.key === "Full-Stack Engineering"
+                          ? "e.g. Frontend, Backend, REST APIs, PostgreSQL"
+                          : cat.key === "AI Engineering"
+                          ? "e.g. AI Applications, LLMs, Prompt Engineering"
+                          : cat.key === "Cybersecurity & Defense"
+                          ? "e.g. Ethical Hacking, Security Testing, Web Security"
+                          : cat.key === "Linux & Systems"
+                          ? "e.g. Linux Administration, Docker, Bash, CI/CD"
+                          : "e.g. Web Apps, SaaS, Flutter, Desktop Software"
+                      }
+                    />
+                    <p className="text-[9px] text-[#666] font-mono">Comma-separated list</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Selected Projects & Systems Editor */}
+            <div className="pt-2 border-t border-white/5 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="text-[10px] font-orbitron uppercase text-bright-red font-bold block">
+                    Selected Projects & Systems
+                  </label>
+                  <p className="text-[10px] text-[#666]">
+                    Architectural highlights and systems to showcase on your profile.
+                  </p>
+                </div>
+                <span className="text-[9px] font-mono text-[#666]">({featuredProjects.length})</span>
+              </div>
+
+              {featuredProjects.length > 0 && (
+                <div className="space-y-2 max-h-40 overflow-y-auto p-2 bg-[#090909] rounded-xl border border-white/5">
+                  {featuredProjects.map((p, idx) => (
+                    <div key={idx} className="flex items-center justify-between gap-2 p-2.5 rounded-lg bg-[#141414] text-xs">
+                      <div className="truncate">
+                        <span className="font-orbitron font-bold text-white block truncate">{p.name}</span>
+                        <span className="text-[9px] font-mono text-[#888]">{p.category}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFeaturedProject(idx)}
+                        className="p-1 text-[#666] hover:text-bright-red transition-colors"
+                        title="Remove system"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  placeholder="System Name (e.g. Internal CRM Platform)"
+                  className="flex-1 bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-xs text-white outline-none"
+                />
+                <input
+                  type="text"
+                  value={newProjectCategory}
+                  onChange={(e) => setNewProjectCategory(e.target.value)}
+                  placeholder="Category (e.g. Architecture)"
+                  className="w-1/3 bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-xs text-white outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddFeaturedProject}
+                  className="px-4 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
               </div>
             </div>
 

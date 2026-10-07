@@ -11,7 +11,7 @@
  * - Explicit session revocation on logout, password change, account disable, or remote logout
  */
 import crypto from "crypto";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { db } from "@/lib/db";
 import { dataStore } from "@/lib/data-store";
 
@@ -318,8 +318,17 @@ export async function validateSession(rawToken: string): Promise<AuthenticatedUs
  */
 export async function getCurrentSessionResult(): Promise<SessionValidationResult> {
   try {
-    const cookieStore = cookies();
-    const token = cookieStore.get(COOKIE_NAME)?.value;
+    let token: string | undefined;
+    try { const cookieStore = cookies(); token = cookieStore.get(COOKIE_NAME)?.value; } catch {}
+    if (!token) {
+      try {
+        const headerStore = headers();
+        const authHeader = headerStore.get("authorization");
+        if (authHeader?.startsWith("Bearer ")) {
+          token = authHeader.substring(7).trim();
+        }
+      } catch {}
+    }
     return validateSessionResult(token);
   } catch (err: any) {
     const requestId = generateRequestId();

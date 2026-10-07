@@ -6,74 +6,13 @@
 
 import { db } from "./db";
 import bcrypt from "bcryptjs";
+import { OFFICIAL_FOUNDER_EXPERTISE_DEFAULTS } from "../data/expertise-config";
 
 export const OFFICIAL_FOUNDER_PROJECTS: any[] = [];
 
 export const OFFICIAL_CO_FOUNDER_PROJECTS: any[] = [];
 
-export const OFFICIAL_FOUNDER_EXPERTISE_GROUPS = {
-  "Development Languages": ["HTML", "CSS", "JavaScript", "TypeScript", "Python", "Java", "C", "C++", "C#"],
-  "Full-Stack Engineering": [
-    "Frontend Development",
-    "Backend Development",
-    "REST APIs",
-    "Database Architecture",
-    "Authentication Systems",
-    "Admin Dashboards",
-    "SaaS Platforms",
-    "Developer Platforms",
-    "Web Applications",
-    "Responsive Applications",
-    "Cloud Deployment",
-    "Hosting",
-    "Automation",
-    "System Integration",
-  ],
-  "AI Engineering": [
-    "AI Applications",
-    "AI Agents",
-    "AI Workflow Engineering",
-    "LLM Integration",
-    "Automation Systems",
-    "Intelligent Assistants",
-    "AI-Powered SaaS",
-    "Prompt Engineering",
-    "AI Tool Development",
-  ],
-  "Cybersecurity": [
-    "Ethical Hacking",
-    "Security Testing",
-    "Secure Application Development",
-    "Authentication Security",
-    "Web Security",
-    "Cybersecurity Tools",
-    "Security Automation",
-    "Linux Security",
-  ],
-  "Linux & Systems": [
-    "Linux",
-    "Linux Administration",
-    "Developer Environments",
-    "System Automation",
-    "Command-Line Workflows",
-    "Deployment Environments",
-    "Server Management",
-    "Security Tooling",
-  ],
-  "Application Engineering": [
-    "Web Applications",
-    "SaaS Applications",
-    "Desktop Applications",
-    "Android Applications",
-    "iOS Applications",
-    "macOS Applications",
-    "Cross-Platform Applications",
-    "Flutter Applications",
-    "Developer Tools",
-    "AI Applications",
-    "Automation Applications",
-  ],
-};
+export const OFFICIAL_FOUNDER_EXPERTISE_GROUPS = OFFICIAL_FOUNDER_EXPERTISE_DEFAULTS;
 
 export const OFFICIAL_FOUNDER_SKILLS = [
   "Full-Stack Development",
@@ -110,6 +49,8 @@ export async function bootstrapOfficialLeadership() {
     let founderUser = await db.user.findFirst({
       where: {
         OR: [
+          { email: { equals: "ashuchinthapalli3900@gmail.com", mode: "insensitive" } },
+          { email: { equals: "darklevelinggaming@gmail.com", mode: "insensitive" } },
           { username: { equals: "ashu", mode: "insensitive" } },
           { role: "OWNER" },
         ],

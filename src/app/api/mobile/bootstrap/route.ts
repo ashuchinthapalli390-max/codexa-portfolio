@@ -1,0 +1,281 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getCurrentSessionResult, validateSessionResult, generateRequestId } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { getEffectiveRole, ROLE_PERMISSIONS } from "@/lib/permissions";
+import {
+  getOrCreateGlobalMobileConfig,
+  resolveAllMobileFeatures,
+} from "@/lib/mobile-features";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const NO_CACHE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+  Pragma: "no-cache",
+  Expires: "0",
+};
+
+function isDatabaseError(err: any): boolean {
+  if (!err) return false;
+  const msg = String(err.message || "").toLowerCase();
+  const name = String(err.name || "").toLowerCase();
+  const code = String(err.code || "");
+  if (code.startsWith("P10") || code === "P2024") return true;
+  if (name.includes("prismaclientinitializationerror") || name.includes("prismaclientrustpanickerror")) return true;
+  if (msg.includes("can't reach database") || msg.includes("connection pool") || msg.includes("timed out")) return true;
+  if (msg.includes("connection refused") || msg.includes("econnrefused") || msg.includes("etimedout")) return true;
+  return false;
+}
+
+async function resolveRequestUser(req: NextRequest) {
+  const authHeader = req.headers.get("authorization");
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const rawToken = authHeader.substring(7).trim();
+    if (rawToken) {
+      const res = await validateSessionResult(rawToken);
+      if (res.status === "authenticated") {
+        return res.user;
+      }
+    }
+  }
+
+  const cookieRes = await getCurrentSessionResult();
+  if (cookieRes.status === "authenticated") {
+    return cookieRes.user;
+  }
+
+  return null;
+}
+
+export async function GET(req: NextRequest) {
+  const requestId = generateRequestId();
+
+  try {
+    const authUser = await resolveRequestUser(req);
+
+    if (!authUser) {
+      return NextResponse.json(
+        { ok: false, error: { code: "UNAUTHORIZED", message: "Valid CodeXa mobile session required." }, requestId },
+        { status: 401, headers: NO_CACHE_HEADERS }
+      );
+    }
+
+    // 1. Fetch full user with relations from Core DB
+    const user = await db.user.findUnique({
+      where: { id: authUser.id },
+      include: {
+        profile: true,
+        employmentProfile: true,
+      },
+    });
+
+    if (!user || !user.isActive) {
+      return NextResponse.json(
+        { ok: false, error: { code: "ACCOUNT_DISABLED", message: "User account is disabled or not found." }, requestId },
+        { status: 403, headers: NO_CACHE_HEADERS }
+      );
+    }
+
+    const effectiveRole = getEffectiveRole(user);
+    const globalConfig = await getOrCreateGlobalMobileConfig();
+    const featureFlags = await resolveAllMobileFeatures(user, globalConfig);
+
+    // 2. Resolve Role Permissions
+    const permSet = ROLE_PERMISSIONS[effectiveRole] || new Set();
+    const permissions = Array.from(permSet);
+
+    // 3. Internship Details (if INTERN)
+    let internship: any = null;
+    const emp = user.employmentProfile;
+    if (effectiveRole === "INTERN" && emp) {
+      const startDate = emp.joiningDate ? emp.joiningDate.toISOString().split("T")[0] : null;
+      const endDate = emp.endDate ? emp.endDate.toISOString().split("T")[0] : null;
+      const now = new Date();
+      const startD = emp.joiningDate ? new Date(emp.joiningDate) : now;
+      const daysUntilStart = Math.max(0, Math.ceil((startD.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+
+      internship = {
+        internId: emp.employeeId || "CXA-INT-2026",
+        domain: emp.department || "Full Stack Development",
+        duration: emp.internshipDuration || "3 Months",
+        startDate,
+        endDate,
+        daysUntilStart,
+        mentorName: emp.mentorName || "Shaik Ashu (Founder)",
+        status: emp.status || "ACTIVE",
+        stipend: emp.stipend ? `₹${emp.stipend}/mo` : "Performance Stipend",
+      };
+    }
+
+    // 4. Attendance State
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const todayRecord = await db.attendanceRecord.findFirst({
+      where: {
+        userId: user.id,
+        date: {
+          gte: today,
+          lt: tomorrow,
+        },
+      },
+    }).catch(() => null);
+
+    const attendance = {
+      lifecycleStatus: todayRecord ? "COMPLETED" : "WINDOW_ACTIVE",
+      canMark: !todayRecord && Boolean(featureFlags.MOBILE_ATTENDANCE),
+      message: todayRecord ? "Attendance marked for today." : "Attendance window open.",
+      currentWindow: {
+        isOpen: !todayRecord,
+        startTime: today.toISOString(),
+      },
+      todayRecord: todayRecord ? {
+        id: todayRecord.id,
+        status: todayRecord.status,
+        timestamp: todayRecord.timestamp?.toISOString() || todayRecord.date.toISOString(),
+      } : null,
+      stats: null,
+    };
+
+    // 5. Active Projects (User's projects or collaborations)
+    const projects = await db.project.findMany({
+      where: {
+        OR: [
+          { createdBy: user.id },
+          { collaborators: { some: { userId: user.id } } },
+        ],
+      },
+      take: 5,
+      orderBy: { updatedAt: "desc" },
+    }).catch(() => []);
+
+    const activeProjects = projects.map((p) => ({
+      id: p.id,
+      title: p.title,
+      slug: p.slug,
+      myRole: p.createdBy === user.id ? "Lead / Creator" : "Contributor",
+      status: p.status || "Active",
+      category: p.category || "Engineering",
+      progressPercentage: 75.0,
+      shortDesc: p.description?.slice(0, 120) || null,
+    }));
+
+    // 6. Payment Information (for intern)
+    let payment: any = null;
+    if (effectiveRole === "INTERN") {
+      const paymentReq = await db.paymentRequest.findFirst({
+        where: { userId: user.id, paymentPurpose: "INTERNSHIP_FEE" },
+      }).catch(() => null);
+
+      payment = {
+        totalAmount: globalConfig.internFeeTotal || 450.0,
+        currency: "INR",
+        status: paymentReq?.paymentStatus || (user.internServicePaymentPaid ? "SUCCESSFUL" : "PENDING"),
+        referenceId: paymentReq?.referenceId || null,
+        webCheckoutUrl: globalConfig.paymentPortalUrl || "https://codxa-agency.online/dashboard/internship/payment",
+        items: [
+          { name: "Official Smart ID Card & NFC Dispatch", amount: 150 },
+          { name: "Enterprise AI Development Stack Access", amount: 300 },
+        ],
+      };
+    }
+
+    // 7. Unread counts (isolated from Chat DB)
+    const unreadNotifications = await db.notification.count({
+      where: { userId: user.id, isRead: false },
+    }).catch(() => 0);
+
+    const unreadMessages = 0; // Isolated - chat loads independently
+
+    // 8. Announcement
+    let announcement: any = null;
+    if (globalConfig.announcementEnabled) {
+      announcement = {
+        enabled: true,
+        title: globalConfig.announcementTitle || "Announcement",
+        message: globalConfig.announcementMessage || "",
+        type: globalConfig.announcementType || "INFO",
+        actionLabel: globalConfig.announcementActionLabel || null,
+        actionUrl: globalConfig.announcementActionUrl || null,
+      };
+    }
+
+    // 9. App Config
+    const appConfig = {
+      appName: globalConfig.appName || "CodeXa",
+      currentVersion: globalConfig.currentVersion || "1.0.0",
+      minimumVersion: globalConfig.minVersion || "1.0.0",
+      forceUpdate: Boolean(globalConfig.forceUpdateEnabled),
+      maintenanceMode: Boolean(globalConfig.maintenanceEnabled),
+      maintenanceMessage: globalConfig.maintenanceMessage || "",
+    };
+
+    return NextResponse.json({
+      ok: true,
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        fullName: user.fullName || user.profile?.displayName || user.username,
+        role: effectiveRole,
+        orgRole: user.orgRole,
+        department: user.department || user.employmentProfile?.department,
+        designation: user.employmentProfile?.designation || user.profile?.primaryRole,
+        employeeId: user.employmentProfile?.employeeId,
+        profileMediaUrl: user.profileMediaUrl || user.profile?.profileMediaUrl || user.profile?.mediaUrl,
+        bio: user.profile?.bio || null,
+        githubUrl: null,
+        linkedinUrl: null,
+        portfolioUrl: null,
+        mustChangePassword: user.mustChangePassword,
+      },
+      role: effectiveRole,
+      permissions,
+      featureFlags,
+      internship,
+      attendance,
+      unreadMessages,
+      unreadNotifications,
+      activeProjects,
+      payment,
+      appConfig,
+      announcement,
+      requestId,
+    }, { headers: NO_CACHE_HEADERS });
+
+  } catch (err: any) {
+    console.error(`[GET /api/mobile/bootstrap Error] [${requestId}]`, {
+      message: err?.message,
+      code: err?.code,
+    });
+
+    if (isDatabaseError(err)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: {
+            code: "DATABASE_UNAVAILABLE",
+            message: "CodeXa is temporarily unable to connect to its database.",
+          },
+          requestId,
+        },
+        { status: 503, headers: NO_CACHE_HEADERS }
+      );
+    }
+
+    return NextResponse.json(
+      {
+        ok: false,
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Signed in, but CodeXa couldn't load your workspace.",
+        },
+        requestId,
+      },
+      { status: 500, headers: NO_CACHE_HEADERS }
+    );
+  }
+}

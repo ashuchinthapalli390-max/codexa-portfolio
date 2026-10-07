@@ -70,6 +70,7 @@ model User {
   pushSubscriptions     PushSubscription[]
   paymentAttempts       PaymentAttempt[]
   internServicePaymentPaid Boolean @default(false)
+  mobileSessions        MobileSession[]
 }
 
 // ─── TEAM PROFILES ────────────────────────────────────────────────────────────
@@ -864,19 +865,173 @@ model MobileAppConfig {
   id                String   @id @default(cuid())
   targetType        String   @default("GLOBAL") // "GLOBAL" | "ROLE" | "USER"
   targetId          String?  // Role name or User ID if targeted
+  
+  // App General & Versioning
+  appName           String   @default("CodeXa")
+  platformStatus    String   @default("ACTIVE") // "ACTIVE" | "MAINTENANCE" | "DISABLED"
+  currentVersion    String   @default("1.0.0")
+  minVersion        String   @default("1.0.0")
+  buildNumber       Int      @default(1)
+  forceUpdateEnabled Boolean @default(false)
+  softUpdateEnabled  Boolean @default(false)
+  maintenanceEnabled Boolean @default(false)
+  maintenanceMessage String  @default("CodeXa is undergoing scheduled maintenance. Please try again shortly.")
+  configVersion     Int      @default(1)
+
+  // Download & Distribution URLs
+  downloadUrl       String   @default("")
+  androidApkUrl     String   @default("")
+  playStoreUrl      String   @default("")
+  iosStoreUrl       String   @default("")
+  altDownloadUrl    String   @default("")
+
+  // Global Features
   attendanceEnabled Boolean  @default(true)
   dmEnabled         Boolean  @default(true)
   postsEnabled      Boolean  @default(true)
   commentsEnabled   Boolean  @default(true)
   pushEnabled       Boolean  @default(true)
-  dmRoleMatrix      Json?    // Role-to-role DM permissions matrix
-  minVersion        String   @default("1.0.0")
-  currentVersion    String   @default("1.0.0")
-  downloadUrl       String   @default("")
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  projectsEnabled   Boolean  @default(true)
+  paymentsEnabled   Boolean  @default(true)
+  documentsEnabled  Boolean  @default(true)
+  leaveRequestsEnabled Boolean @default(true)
+  profileEnabled    Boolean  @default(true)
+
+  // Attendance Controls
+  employeeSelfAttendance       Boolean @default(true)
+  internSelfAttendance         Boolean @default(true)
+  allowAttendanceHistory       Boolean @default(true)
+  allowAttendanceCorrection    Boolean @default(true)
+  allowLateAttendance          Boolean @default(false)
+  showAttendancePercentage     Boolean @default(true)
+  requireActiveAttendanceWindow Boolean @default(true)
+  defaultAttendanceDuration    Int     @default(20)
+
+  // Message & DM Controls
+  groupMessagesEnabled    Boolean @default(true)
+  projectChatEnabled      Boolean @default(true)
+  fileAttachmentsEnabled  Boolean @default(true)
+  imageAttachmentsEnabled Boolean @default(true)
+  readReceiptsEnabled     Boolean @default(true)
+  typingIndicatorsEnabled Boolean @default(true)
+  messageDeleteEnabled    Boolean @default(true)
+  dmRoleMatrix            Json?   // Role-to-role DM permissions matrix
+
+  // Post & Social Controls
+  likesEnabled            Boolean @default(true)
+  videoUploadEnabled      Boolean @default(true)
+  projectUpdatesEnabled   Boolean @default(true)
+  mentionsEnabled         Boolean @default(true)
+  internalSharesEnabled   Boolean @default(true)
+  postsRolePermissions    Json?
+
+  // Project Controls
+  showAssignedProjectsOnly Boolean @default(false)
+  allowProjectUpdates     Boolean @default(true)
+  allowMobileProjectComments Boolean @default(true)
+  allowProjectMediaUpload Boolean @default(true)
+  showProjectMembers      Boolean @default(true)
+  showProjectStatus       Boolean @default(true)
+
+  // Push Notifications Categories
+  pushCategories          Json?
+
+  // Payment Controls
+  internFeeVisible        Boolean @default(true)
+  internFeeTotal          Float   @default(450)
+  internFeeBreakdown      Json?
+  paymentPortalUrl        String  @default("https://codxa-agency.online/dashboard/internship/payment")
+
+  // Documents Controls
+  docOfferLetter          Boolean @default(true)
+  docIdCard               Boolean @default(true)
+  docPayslips             Boolean @default(true)
+  docInternshipCert       Boolean @default(true)
+  docCompletionCert       Boolean @default(true)
+  docExperienceLetter     Boolean @default(true)
+  docNda                  Boolean @default(true)
+
+  // Profile Controls
+  profileViewingEnabled   Boolean @default(true)
+  profileEditingEnabled   Boolean @default(true)
+  pfpUploadEnabled        Boolean @default(true)
+  bioEditingEnabled       Boolean @default(true)
+  skillsEditingEnabled    Boolean @default(true)
+  socialLinksEditingEnabled Boolean @default(true)
+
+  // Leave Controls
+  leaveAttachmentsEnabled Boolean @default(true)
+  leaveHistoryEnabled     Boolean @default(true)
+  leaveStatusEnabled      Boolean @default(true)
+  leaveCancellationEnabled Boolean @default(true)
+
+  // Announcement System
+  announcementEnabled     Boolean @default(false)
+  announcementTitle       String?
+  announcementMessage     String?
+  announcementType        String? @default("INFO") // "INFO" | "WARNING" | "MAINTENANCE" | "URGENT"
+  announcementStartDate   DateTime?
+  announcementEndDate     DateTime?
+  announcementActionLabel String?
+  announcementActionUrl   String?
+
+  // Security & Device Policy
+  maxDevicesPerUser       Int     @default(2)
+  multipleSessionsAllowed Boolean @default(true)
+  forceLogoutAllDevices   Boolean @default(false)
+  requireReauthSensitive  Boolean @default(false)
+  sessionExpiryDays       Int     @default(30)
+  blockRootedDevices      Boolean @default(false)
+  screenshotProtection    Boolean @default(false)
+  requireLatestVersionLogin Boolean @default(false)
+
+  // Metadata
+  updatedBy               String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
   @@index([targetType])
+}
+
+// ─── MOBILE FEATURE OVERRIDES (ROLE & USER LEVEL) ────────────────────────────
+model MobileFeatureOverride {
+  id           String   @id @default(cuid())
+  featureKey   String   // e.g. "MOBILE_MESSAGES", "MOBILE_ATTENDANCE"
+  scope        String   // "ROLE" | "USER"
+  targetRole   String?  // e.g. "INTERN", "EMPLOYEE"
+  targetUserId String?  // User ID
+  state        String   // "ENABLED" | "DISABLED"
+  updatedBy    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([featureKey, scope, targetRole, targetUserId])
+  @@index([featureKey])
+  @@index([targetRole])
+  @@index([targetUserId])
+}
+
+// ─── MOBILE DEVICE SESSIONS ──────────────────────────────────────────────────
+model MobileSession {
+  id          String    @id @default(cuid())
+  userId      String
+  deviceId    String
+  fcmToken    String?
+  deviceName  String?
+  platform    String?   // "ANDROID" | "IOS" | "WEB_PWA"
+  appVersion  String?
+  lastActive  DateTime  @default(now())
+  isRevoked   Boolean   @default(false)
+  revokedAt   DateTime?
+  revokedBy   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([deviceId])
+  @@index([isRevoked])
 }
 
 // ─── DESKTOP LICENSING & DEVICE ACTIVATION ────────────────────────────────────

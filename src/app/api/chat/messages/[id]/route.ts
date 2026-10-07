@@ -1,40 +1,36 @@
-/**
- * PATCH /api/chat/messages/[id]
- * Edits a message text. Only the original sender can edit their own message.
- */
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
-import { dataStore } from "@/lib/data-store";
+import { getCurrentSessionResult } from "@/lib/auth";
+import { chatSupabaseAdmin, isChatConfigured } from "@/lib/supabase/chat-admin";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-export async function PATCH(
+export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401 });
-    }
-
-    const { id } = params;
-    const body = await req.json();
-    const { message } = body;
-
-    if (!message || !message.trim()) {
-      return NextResponse.json({ success: false, error: "Message content cannot be empty." }, { status: 400 });
-    }
-
-    const updated = await dataStore.editMessage(id, user.id, message.trim());
-    if (!updated) {
-      return NextResponse.json({ success: false, error: "Message not found or unauthorized to edit." }, { status: 403 });
-    }
-
-    return NextResponse.json({ success: true, message: updated });
-  } catch (err: any) {
-    console.error("[PATCH /api/chat/messages/[id]]", err);
-    return NextResponse.json({ success: false, error: "Failed to edit message." }, { status: 500 });
+  const sessionResult = await getCurrentSessionResult();
+  if (sessionResult.status !== "authenticated") {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+
+  const user = sessionResult.user;
+
+  if (!isChatConfigured() || !chatSupabaseAdmin) {
+    return NextResponse.json({ ok: false, error: "Chat unavailable" }, { status: 503 });
+  }
+
+  const { data, error } = await chatSupabaseAdmin
+    .from("messages")
+    .update({
+      deleted_at: new Date().toISOString(),
+      text: "[Message deleted]",
+    })
+    .eq("id", params.id)
+    .eq("sender_core_user_id", user.id)
+    .select()
+    .single();
+
+  if (error || !data) {
+    return NextResponse.json({ ok: false, error: "Could not delete message or not permitted" }, { status: 403 });
+  }
+
+  return NextResponse.json({ ok: true, deleted: true });
 }

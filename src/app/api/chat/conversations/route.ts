@@ -1,141 +1,154 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSessionResult } from "@/lib/auth";
-import { dataStore } from "@/lib/data-store";
+import { prisma } from "@/lib/prisma";
+import {
+  getUserConversations,
+  getOrCreateDirectConversation,
+  chatSupabaseAdmin,
+  isChatConfigured
+} from "@/lib/supabase/chat-admin";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-const NO_CACHE_HEADERS = {
-  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-  Pragma: "no-cache",
-  Expires: "0",
-};
-
-export async function GET() {
-  try {
-    const auth = await getCurrentSessionResult();
-
-    if (auth.status === "error") {
-      return NextResponse.json(
-        { success: false, error: "Authentication service is temporarily unavailable.", requestId: auth.requestId },
-        { status: 503, headers: NO_CACHE_HEADERS }
-      );
-    }
-
-    if (auth.status === "unauthenticated") {
-      return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401, headers: NO_CACHE_HEADERS });
-    }
-
-    const user = auth.user;
-    const conversations = await dataStore.getConversations(user.id);
-
-    return NextResponse.json(
-      {
-        success: true,
-        conversations,
-      },
-      { headers: NO_CACHE_HEADERS }
-    );
-  } catch (error: any) {
-    console.error("[GET /api/chat/conversations]", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch conversations." },
-      { status: 500, headers: NO_CACHE_HEADERS }
-    );
+function canInitiateDirectMessage(senderRole: string, recipientRole: string): boolean {
+  if (senderRole === "FOUNDER" || senderRole === "CEO" || senderRole === "CTO") return true;
+  if (senderRole === "INTERN" && (recipientRole === "FOUNDER" || recipientRole === "CEO")) {
+    return false; // Direct message to Founder/CEO restricted for interns
   }
+  return true;
+}
+
+export async function GET(req: NextRequest) {
+  const sessionResult = await getCurrentSessionResult();
+  if (sessionResult.status !== "authenticated") {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  const user = sessionResult.user;
+
+  if (!isChatConfigured() || !chatSupabaseAdmin) {
+    return NextResponse.json({ ok: true, conversations: [] });
+  }
+
+  const { data, error } = await getUserConversations(user.id);
+  if (error) {
+    return NextResponse.json({ ok: false, error }, { status: 500 });
+  }
+
+  // Populate recipient metadata from Core DB for direct chats
+  const conversationsWithDetails = await Promise.all(
+    (data || []).map(async (conv: any) => {
+      if (conv.type === "DIRECT") {
+        const otherMember = (conv.conversation_members || []).find(
+          (m: any) => m.core_user_id !== user.id
+        );
+        if (otherMember) {
+          const userRecord = await prisma.user.findUnique({
+            where: { id: otherMember.core_user_id },
+            select: { id: true, fullName: true, username: true, role: true, profileMediaUrl: true },
+          });
+          return {
+            ...conv,
+            recipientUser: userRecord || { id: otherMember.core_user_id, fullName: "CodeXa Colleague", username: "colleague" },
+          };
+        }
+      }
+      return conv;
+    })
+  );
+
+  return NextResponse.json({ ok: true, conversations: conversationsWithDetails });
 }
 
 export async function POST(req: NextRequest) {
-  try {
-    const auth = await getCurrentSessionResult();
-
-    if (auth.status === "error") {
-      return NextResponse.json(
-        { success: false, error: "Authentication service is temporarily unavailable.", requestId: auth.requestId },
-        { status: 503, headers: NO_CACHE_HEADERS }
-      );
-    }
-
-    if (auth.status === "unauthenticated") {
-      return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401, headers: NO_CACHE_HEADERS });
-    }
-
-    const user = auth.user;
-
-    const body = await req.json();
-    const { recipientId } = body;
-
-    if (!recipientId) {
-      return NextResponse.json({ success: false, error: "Recipient ID or Username is required." }, { status: 400 });
-    }
-
-    // Resolve recipient profile
-    let recipientProfile = await dataStore.getProfileById(recipientId);
-    if (!recipientProfile) {
-      recipientProfile = await dataStore.getProfileByUsername(recipientId);
-    }
-
-    if (!recipientProfile) {
-      return NextResponse.json({ success: false, error: "Recipient member not found." }, { status: 404 });
-    }
-
-    // Prevent self DM
-    if (recipientProfile.id === user.id || recipientProfile.username === user.username) {
-      return NextResponse.json({ success: false, error: "Cannot start a direct message with yourself." }, { status: 400 });
-    }
-
-    const conversation = await dataStore.getOrCreateDirectConversation(user.id, recipientProfile.id);
-
-    return NextResponse.json({
-      success: true,
-      conversation,
-    }, { headers: NO_CACHE_HEADERS });
-  } catch (error: any) {
-    console.error("[POST /api/chat/conversations]", error);
-    const isPoolError = error?.code === "P2024" || error?.message?.includes("timed out") || error?.message?.includes("connection pool");
-    if (isPoolError) {
-      return NextResponse.json(
-        { success: false, error: "CHAT_TEMPORARILY_UNAVAILABLE", retryable: true },
-        { status: 503, headers: NO_CACHE_HEADERS }
-      );
-    }
-    return NextResponse.json(
-      { success: false, error: "Failed to start direct conversation." },
-      { status: 500, headers: NO_CACHE_HEADERS }
-    );
+  const sessionResult = await getCurrentSessionResult();
+  if (sessionResult.status !== "authenticated") {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
-}
 
-export async function DELETE(req: NextRequest) {
+  const user = sessionResult.user;
+
   try {
-    const auth = await getCurrentSessionResult();
+    const body = await req.json();
+    const { type = "DIRECT", targetUserId, title, memberIds } = body;
 
-    if (auth.status === "error") {
-      return NextResponse.json(
-        { success: false, error: "Authentication service is temporarily unavailable.", requestId: auth.requestId },
-        { status: 503, headers: NO_CACHE_HEADERS }
+    if (!isChatConfigured() || !chatSupabaseAdmin) {
+      return NextResponse.json({ ok: false, error: "Chat infrastructure is not configured" }, { status: 503 });
+    }
+
+    if (type === "DIRECT") {
+      if (!targetUserId) {
+        return NextResponse.json({ ok: false, error: "targetUserId is required for direct conversation" }, { status: 400 });
+      }
+
+      // Check communication permission
+      const recipient = await prisma.user.findUnique({
+        where: { id: targetUserId },
+        select: { id: true, role: true, fullName: true, username: true, isActive: true },
+      });
+
+      if (!recipient) {
+        return NextResponse.json({ ok: false, error: "Target user not found" }, { status: 404 });
+      }
+
+      if (!recipient.isActive) {
+        return NextResponse.json({ ok: false, error: "Target user is disabled" }, { status: 400 });
+      }
+
+      if (!canInitiateDirectMessage(user.role, recipient.role)) {
+        return NextResponse.json({
+          ok: false,
+          error: "Direct communication with this role is restricted by CodeXa workspace policy.",
+        }, { status: 403 });
+      }
+
+      // Check block status
+      const { data: block } = await chatSupabaseAdmin
+        .from("chat_blocks")
+        .select("id")
+        .or(`and(blocker_core_user_id.eq.${targetUserId},blocked_core_user_id.eq.${user.id}),and(blocker_core_user_id.eq.${user.id},blocked_core_user_id.eq.${targetUserId})`)
+        .maybeSingle();
+
+      if (block) {
+        return NextResponse.json({ ok: false, error: "Cannot start conversation with this user." }, { status: 403 });
+      }
+
+      const { data: conversation, error } = await getOrCreateDirectConversation(
+        user.id,
+        targetUserId
       );
+
+      if (error) {
+        return NextResponse.json({ ok: false, error }, { status: 500 });
+      }
+
+      return NextResponse.json({ ok: true, conversation });
+    } else {
+      // Group conversation
+      const { data: newConv, error: convErr } = await chatSupabaseAdmin
+        .from("conversations")
+        .insert({
+          type: "GROUP",
+          title: title || "New Group",
+          created_by_core_user_id: user.id,
+        })
+        .select()
+        .single();
+
+      if (convErr || !newConv) {
+        return NextResponse.json({ ok: false, error: convErr?.message || "Failed to create group" }, { status: 500 });
+      }
+
+      const allMembers = Array.from(new Set([user.id, ...(memberIds || [])]));
+      const memberRows = allMembers.map((mId: string) => ({
+        conversation_id: newConv.id,
+        core_user_id: mId,
+        member_role: mId === user.id ? "OWNER" : "MEMBER",
+      }));
+
+      await chatSupabaseAdmin.from("conversation_members").insert(memberRows);
+
+      return NextResponse.json({ ok: true, conversation: newConv });
     }
-
-    if (auth.status === "unauthenticated") {
-      return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401, headers: NO_CACHE_HEADERS });
-    }
-
-    const user = auth.user;
-    const { searchParams } = new URL(req.url);
-    const conversationId = searchParams.get("id");
-
-    if (!conversationId) {
-      return NextResponse.json({ success: false, error: "Conversation ID is required." }, { status: 400, headers: NO_CACHE_HEADERS });
-    }
-
-    const success = await dataStore.hideConversation(conversationId, user.id);
-    return NextResponse.json({ success }, { headers: NO_CACHE_HEADERS });
-  } catch (error: any) {
-    console.error("[DELETE /api/chat/conversations]", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to hide conversation." },
-      { status: 500, headers: NO_CACHE_HEADERS }
-    );
+  } catch (err: any) {
+    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
   }
 }

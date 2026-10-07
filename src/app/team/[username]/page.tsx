@@ -45,6 +45,7 @@ import { CodeXaMediaSelectorModal } from "@/components/ui/CodeXaMediaSelectorMod
 import { Profile, Project, Post } from "@/lib/data-store";
 import { tabTransitionVariants, cardRevealVariants, buttonHoverVariants } from "@/lib/motion";
 import { useAuth } from "@/context/AuthContext";
+import { EXPERTISE_CATEGORIES, getCategorySkills } from "@/data/expertise-config";
 
 type TabType = "about" | "expertise" | "systems" | "projects" | "builds" | "posts";
 
@@ -80,6 +81,14 @@ export default function DedicatedTeamProfilePage() {
     linkedinUrl: "",
     portfolioUrl: "",
     featuredProjects: [] as Array<{ name: string; category: string; url?: string | null }>,
+    expertiseInputs: {
+      "Development Languages": "",
+      "Full-Stack Engineering": "",
+      "AI Engineering": "",
+      "Cybersecurity & Defense": "",
+      "Linux & Systems": "",
+      "Application Platforms": "",
+    } as Record<string, string>,
   });
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectCategory, setNewProjectCategory] = useState("");
@@ -88,29 +97,53 @@ export default function DedicatedTeamProfilePage() {
 
   useEffect(() => {
     if (!username) return;
+    // Clear old state immediately to prevent stale Founder or previous user flash
+    setProfile(null);
+    setStats({ projectsCount: 0, postsCount: 0, collabCount: 0 });
+    setCreatedProjects([]);
+    setCollabProjects([]);
+    setPosts([]);
     setLoading(true);
 
-    fetch(`/api/profile/${username}`)
+    fetch(`/api/profile/${username}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((data) => {
         if (data.success && data.profile) {
-          setProfile(data.profile);
+          const prof = data.profile;
+          setProfile(prof);
           setStats(data.stats || { projectsCount: 0, postsCount: 0, collabCount: 0 });
           setCreatedProjects(data.createdProjects || []);
           setCollabProjects(data.collabProjects || []);
           setPosts(data.posts || []);
 
+          const isProfFounder = (prof.email?.toLowerCase() === "ashuchinthapalli3900@gmail.com" || prof.email?.toLowerCase() === "darklevelinggaming@gmail.com" || prof.username?.toLowerCase() === "ashu") && (prof.leadershipPosition === "FOUNDER" || prof.role === "OWNER");
+
+          const expInputs: Record<string, string> = {
+            "Development Languages": "",
+            "Full-Stack Engineering": "",
+            "AI Engineering": "",
+            "Cybersecurity & Defense": "",
+            "Linux & Systems": "",
+            "Application Platforms": "",
+          };
+
+          EXPERTISE_CATEGORIES.forEach((cat) => {
+            const catSkills = getCategorySkills(cat.key, cat.aliases, prof.expertiseGroups, isProfFounder);
+            expInputs[cat.key] = catSkills.join(", ");
+          });
+
           setEditFormData({
-            displayName: data.profile.displayName || "",
-            primaryRole: data.profile.primaryRole || "",
-            headline: data.profile.headline || "",
-            publicBio: data.profile.publicBio || "",
-            bio: data.profile.bio || "",
-            skillsStr: (data.profile.skills || []).join(", "),
-            githubUrl: data.profile.githubUrl || "",
-            linkedinUrl: data.profile.linkedinUrl || "",
-            portfolioUrl: data.profile.portfolioUrl || "",
-            featuredProjects: data.profile.featuredProjects || [],
+            displayName: prof.displayName || "",
+            primaryRole: prof.primaryRole || "",
+            headline: prof.headline || "",
+            publicBio: prof.publicBio || "",
+            bio: prof.bio || "",
+            skillsStr: (prof.skills || []).join(", "),
+            githubUrl: prof.githubUrl || "",
+            linkedinUrl: prof.linkedinUrl || "",
+            portfolioUrl: prof.portfolioUrl || "",
+            featuredProjects: prof.featuredProjects || [],
+            expertiseInputs: expInputs,
           });
         }
       })
@@ -167,6 +200,15 @@ export default function DedicatedTeamProfilePage() {
     setEditSaving(true);
     setEditError(null);
 
+    const parsedExpertiseGroups: Record<string, string[]> = {};
+    EXPERTISE_CATEGORIES.forEach((cat) => {
+      const val = editFormData.expertiseInputs[cat.key] || "";
+      parsedExpertiseGroups[cat.key] = val
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    });
+
     try {
       const res = await fetch(`/api/profile/${username}`, {
         method: "PATCH",
@@ -178,6 +220,7 @@ export default function DedicatedTeamProfilePage() {
           publicBio: editFormData.publicBio,
           bio: editFormData.bio,
           skills: editFormData.skillsStr.split(",").map((s) => s.trim()).filter(Boolean),
+          expertiseGroups: parsedExpertiseGroups,
           featuredProjects: editFormData.featuredProjects,
           githubUrl: editFormData.githubUrl,
           linkedinUrl: editFormData.linkedinUrl,
@@ -229,8 +272,17 @@ export default function DedicatedTeamProfilePage() {
   }
 
   const allProjects = [...createdProjects, ...collabProjects];
-  const isFounder = profile.leadershipPosition === "FOUNDER" || profile.role === "OWNER" || profile.username.toLowerCase() === "ashu";
-  const isCoFounder = profile.leadershipPosition === "CO_FOUNDER" || profile.username.toLowerCase() === "sanjay";
+  const isFounder = (profile.email?.toLowerCase() === "ashuchinthapalli3900@gmail.com" || profile.email?.toLowerCase() === "darklevelinggaming@gmail.com" || profile.username?.toLowerCase() === "ashu") && (profile.leadershipPosition === "FOUNDER" || profile.role === "OWNER");
+  const isCoFounder = (profile.email?.toLowerCase() === "boddukurisanjay@gmail.com" || profile.username?.toLowerCase() === "sanjay") && (profile.leadershipPosition === "CO_FOUNDER" || profile.role === "ADMIN");
+
+  // Dynamic Categorized Skills Resolution with strict profile data isolation
+  const categorySkillsMap: Record<string, string[]> = {};
+  let totalExpertiseCount = 0;
+  EXPERTISE_CATEGORIES.forEach((cat) => {
+    const catSkills = getCategorySkills(cat.key, cat.aliases, profile.expertiseGroups, isFounder);
+    categorySkillsMap[cat.key] = catSkills;
+    totalExpertiseCount += catSkills.length;
+  });
 
   const capabilityStrip = [
     "WEB DEVELOPMENT",
@@ -545,8 +597,8 @@ export default function DedicatedTeamProfilePage() {
           <div className="flex justify-center border-b border-crimson/20 bg-[#0A0A0A] rounded-2xl p-1.5 gap-2 overflow-x-auto">
             {[
               { id: "about", label: "About", icon: UserCheck },
-              { id: "expertise", label: "Expertise", icon: Cpu },
-              { id: "systems", label: "Selected Systems", icon: Code2, count: (profile.featuredProjects || []).length },
+              { id: "expertise", label: "Expertise", icon: Cpu, count: totalExpertiseCount },
+              { id: "systems", label: "Selected Systems", icon: Code2, count: ((profile.featuredProjects || []) as any[]).length },
               { id: "projects", label: "Builds", icon: FolderGit2, count: allProjects.length },
               { id: "posts", label: "Posts", icon: ImageIcon, count: posts.length },
             ].map((tab) => {
@@ -613,7 +665,7 @@ export default function DedicatedTeamProfilePage() {
                   </div>
                 </div>
 
-                {profile.skills && profile.skills.length > 0 && (
+                {profile.skills && profile.skills.length > 0 ? (
                   <div className="pt-4 border-t border-white/5">
                     <h4 className="font-orbitron font-bold text-xs text-[#888] uppercase mb-3">Primary Focus Areas</h4>
                     <div className="flex flex-wrap gap-2">
@@ -623,6 +675,22 @@ export default function DedicatedTeamProfilePage() {
                         </span>
                       ))}
                     </div>
+                  </div>
+                ) : (
+                  <div className="pt-4 border-t border-white/5 space-y-2">
+                    <h4 className="font-orbitron font-bold text-xs text-[#888] uppercase">Primary Focus Areas</h4>
+                    <p className="text-xs text-[#666] font-mono">
+                      {canEdit ? "No focus skills added yet. Add your skills from Edit Profile." : "No skills added yet."}
+                    </p>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => setEditModalOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-crimson/15 hover:bg-crimson/30 border border-crimson/30 text-bright-red text-xs font-orbitron font-semibold transition-colors"
+                      >
+                        <Plus className="w-3 h-3" /> + Add Skills
+                      </button>
+                    )}
                   </div>
                 )}
               </motion.div>
@@ -638,160 +706,97 @@ export default function DedicatedTeamProfilePage() {
                 exit="exit"
                 className="space-y-6"
               >
+                {/* Global Empty State Banner if no categories populated */}
+                {totalExpertiseCount === 0 && (
+                  <div className="text-center py-8 px-4 rounded-2xl bg-[#090909] border border-crimson/20 space-y-2">
+                    <AlertCircle className="w-6 h-6 text-crimson mx-auto" />
+                    <h4 className="font-orbitron font-bold text-xs text-white uppercase tracking-wider">
+                      No expertise added yet
+                    </h4>
+                    <p className="text-xs text-[#777]">
+                      {canEdit
+                        ? "Add your technical skills from Edit Profile to showcase your competencies across development categories."
+                        : `@${profile.username} has not configured their technical expertise matrix yet.`}
+                    </p>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => setEditModalOpen(true)}
+                        className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(217,4,41,0.3)]"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Add your skills from Edit Profile
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 {/* Categorized Matrix Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  
-                  {/* Category: Development Languages */}
-                  <div className="p-6 rounded-2xl bg-[#0A0A0A] border border-crimson/25 space-y-4">
-                    <div className="flex items-center gap-2">
-                      <Terminal className="w-4 h-4 text-bright-red" />
-                      <h4 className="font-orbitron font-bold text-xs text-white uppercase tracking-wider">
-                        Development Languages
-                      </h4>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {["HTML", "CSS", "JavaScript", "TypeScript", "Python", "Java", "C", "C++", "C#"].map((lang, idx) => (
-                        <span key={idx} className="px-3 py-1 rounded-lg bg-[#141414] border border-white/5 font-mono text-xs text-[#DDD]">
-                          {lang}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+                  {EXPERTISE_CATEGORIES.map((cat) => {
+                    const catSkills = categorySkillsMap[cat.key] || [];
+                    const CatIcon =
+                      cat.key === "Development Languages"
+                        ? Terminal
+                        : cat.key === "Full-Stack Engineering"
+                        ? Layers
+                        : cat.key === "AI Engineering"
+                        ? Cpu
+                        : cat.key === "Cybersecurity & Defense"
+                        ? Shield
+                        : cat.key === "Linux & Systems"
+                        ? Terminal
+                        : Smartphone;
 
-                  {/* Category: Full-Stack Engineering */}
-                  <div className="p-6 rounded-2xl bg-[#0A0A0A] border border-crimson/25 space-y-4">
-                    <div className="flex items-center gap-2">
-                      <Layers className="w-4 h-4 text-bright-red" />
-                      <h4 className="font-orbitron font-bold text-xs text-white uppercase tracking-wider">
-                        Full-Stack Engineering
-                      </h4>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        "Frontend Development",
-                        "Backend Development",
-                        "REST APIs",
-                        "Database Architecture",
-                        "Authentication Systems",
-                        "Admin Dashboards",
-                        "SaaS Platforms",
-                        "Developer Platforms",
-                        "Web Applications",
-                        "Cloud Deployment",
-                        "Automation",
-                      ].map((item, idx) => (
-                        <span key={idx} className="px-2.5 py-1 rounded-lg bg-[#141414] border border-white/5 font-orbitron text-[10px] text-[#DDD]">
-                          {item}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+                    return (
+                      <div key={cat.key} className="p-6 rounded-2xl bg-[#0A0A0A] border border-crimson/25 space-y-4">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <CatIcon className="w-4 h-4 text-bright-red" />
+                            <h4 className="font-orbitron font-bold text-xs text-white uppercase tracking-wider">
+                              {cat.label}
+                            </h4>
+                          </div>
+                          {catSkills.length > 0 && (
+                            <span className="text-[10px] font-mono text-[#888]">
+                              ({catSkills.length})
+                            </span>
+                          )}
+                        </div>
 
-                  {/* Category: AI Engineering */}
-                  <div className="p-6 rounded-2xl bg-[#0A0A0A] border border-crimson/25 space-y-4">
-                    <div className="flex items-center gap-2">
-                      <Cpu className="w-4 h-4 text-bright-red" />
-                      <h4 className="font-orbitron font-bold text-xs text-white uppercase tracking-wider">
-                        AI Engineering
-                      </h4>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        "AI Applications",
-                        "AI Agents",
-                        "AI Workflow Engineering",
-                        "LLM Integration",
-                        "Automation Systems",
-                        "Intelligent Assistants",
-                        "AI-Powered SaaS",
-                        "Prompt Engineering",
-                        "AI Tool Development",
-                      ].map((item, idx) => (
-                        <span key={idx} className="px-2.5 py-1 rounded-lg bg-[#141414] border border-white/5 font-orbitron text-[10px] text-[#DDD]">
-                          {item}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Category: Cybersecurity & Ethical Hacking */}
-                  <div className="p-6 rounded-2xl bg-[#0A0A0A] border border-crimson/25 space-y-4">
-                    <div className="flex items-center gap-2">
-                      <Shield className="w-4 h-4 text-bright-red" />
-                      <h4 className="font-orbitron font-bold text-xs text-white uppercase tracking-wider">
-                        Cybersecurity & Defense
-                      </h4>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        "Ethical Hacking",
-                        "Security Testing",
-                        "Secure App Development",
-                        "Authentication Security",
-                        "Web Security",
-                        "Cybersecurity Tools",
-                        "Security Automation",
-                        "Linux Security",
-                      ].map((item, idx) => (
-                        <span key={idx} className="px-2.5 py-1 rounded-lg bg-[#141414] border border-white/5 font-orbitron text-[10px] text-[#DDD]">
-                          {item}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Category: Linux & Systems */}
-                  <div className="p-6 rounded-2xl bg-[#0A0A0A] border border-crimson/25 space-y-4">
-                    <div className="flex items-center gap-2">
-                      <Terminal className="w-4 h-4 text-bright-red" />
-                      <h4 className="font-orbitron font-bold text-xs text-white uppercase tracking-wider">
-                        Linux & Systems
-                      </h4>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        "Linux Administration",
-                        "Developer Environments",
-                        "System Automation",
-                        "Command-Line Workflows",
-                        "Deployment Environments",
-                        "Server Management",
-                        "Security Tooling",
-                      ].map((item, idx) => (
-                        <span key={idx} className="px-2.5 py-1 rounded-lg bg-[#141414] border border-white/5 font-orbitron text-[10px] text-[#DDD]">
-                          {item}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Category: Application Engineering */}
-                  <div className="p-6 rounded-2xl bg-[#0A0A0A] border border-crimson/25 space-y-4">
-                    <div className="flex items-center gap-2">
-                      <Smartphone className="w-4 h-4 text-bright-red" />
-                      <h4 className="font-orbitron font-bold text-xs text-white uppercase tracking-wider">
-                        Application Platforms
-                      </h4>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        "Web Applications",
-                        "SaaS Applications",
-                        "Desktop Applications",
-                        "Android Applications",
-                        "iOS Applications",
-                        "macOS Applications",
-                        "Cross-Platform Builds",
-                        "Flutter Applications",
-                        "Developer Tools",
-                      ].map((item, idx) => (
-                        <span key={idx} className="px-2.5 py-1 rounded-lg bg-[#141414] border border-white/5 font-orbitron text-[10px] text-[#DDD]">
-                          {item}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
+                        {catSkills.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {catSkills.map((item, idx) => (
+                              <span
+                                key={idx}
+                                className={
+                                  cat.isMono
+                                    ? "px-3 py-1 rounded-lg bg-[#141414] border border-white/5 font-mono text-xs text-[#DDD]"
+                                    : "px-2.5 py-1 rounded-lg bg-[#141414] border border-white/5 font-orbitron text-[10px] text-[#DDD]"
+                                }
+                              >
+                                {item}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="py-4 text-center space-y-2">
+                            <p className="text-xs text-[#666] font-mono">
+                              {canEdit ? `${cat.emptyMsg}.` : "No skills added yet."}
+                            </p>
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => setEditModalOpen(true)}
+                                className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-crimson/15 hover:bg-crimson/30 border border-crimson/30 text-bright-red text-[11px] font-orbitron font-semibold transition-colors"
+                              >
+                                <Plus className="w-3 h-3" /> + Add Skills
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </motion.div>
             )}
@@ -817,10 +822,21 @@ export default function DedicatedTeamProfilePage() {
                   </div>
 
                   {((profile.featuredProjects || []) as any[]).length === 0 ? (
-                    <div className="text-center py-12 rounded-2xl bg-[#070707] border border-white/5 space-y-2">
+                    <div className="text-center py-12 rounded-2xl bg-[#070707] border border-white/5 space-y-3">
                       <Code2 className="w-8 h-8 text-[#555] mx-auto" />
-                      <h4 className="font-orbitron font-bold text-xs text-[#AAA] uppercase">No architectural systems listed</h4>
-                      <p className="text-xs text-[#666]">System highlights for @{profile.username} will appear here when assigned.</p>
+                      <h4 className="font-orbitron font-bold text-xs text-[#AAA] uppercase">No systems selected yet</h4>
+                      <p className="text-xs text-[#666]">
+                        {canEdit ? "Add your architectural highlights and systems from Edit Profile." : `No systems selected yet for @${profile.username}.`}
+                      </p>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => setEditModalOpen(true)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-crimson/20 hover:bg-crimson/30 border border-crimson/30 text-bright-red text-xs font-orbitron transition-colors"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> + Add Systems
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -904,7 +920,7 @@ export default function DedicatedTeamProfilePage() {
                 {allProjects.length === 0 ? (
                   <div className="text-center py-16 rounded-3xl bg-[#0A0A0A] border border-white/5 space-y-2">
                     <FolderGit2 className="w-8 h-8 text-[#555] mx-auto" />
-                    <h4 className="font-orbitron font-bold text-xs text-[#AAA] uppercase">No project case studies published yet</h4>
+                    <h4 className="font-orbitron font-bold text-xs text-[#AAA] uppercase">No builds added yet</h4>
                     <p className="text-xs text-[#666]">Projects created or collaborated by @{profile.username} will be featured here.</p>
                   </div>
                 ) : (
@@ -982,7 +998,7 @@ export default function DedicatedTeamProfilePage() {
                 {posts.length === 0 ? (
                   <div className="text-center py-16 rounded-3xl bg-[#0A0A0A] border border-white/5 space-y-2">
                     <ImageIcon className="w-8 h-8 text-[#555] mx-auto" />
-                    <h4 className="font-orbitron font-bold text-xs text-[#AAA] uppercase">No posts published yet</h4>
+                    <h4 className="font-orbitron font-bold text-xs text-[#AAA] uppercase">No posts yet</h4>
                     <p className="text-xs text-[#666]">Posts created by @{profile.username} will appear in this feed gallery.</p>
                   </div>
                 ) : (
@@ -1134,6 +1150,55 @@ export default function DedicatedTeamProfilePage() {
                     className="w-full bg-[#111] border border-crimson/20 rounded-xl p-2.5 text-white outline-none"
                     placeholder="Full-Stack, Python, AI, Cybersecurity"
                   />
+                </div>
+
+                {/* Categorized Expertise Matrix Editor */}
+                <div className="pt-2 border-t border-white/5 space-y-3">
+                  <div>
+                    <label className="text-[10px] font-orbitron uppercase text-bright-red font-bold block">
+                      Expertise Matrix by Category
+                    </label>
+                    <p className="text-[10px] text-[#666]">
+                      Enter comma-separated skills for each category. Only your saved skills will appear on your profile.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {EXPERTISE_CATEGORIES.map((cat) => (
+                      <div key={cat.key}>
+                        <label className="text-[9px] font-orbitron uppercase text-[#AAA] font-bold block mb-1">
+                          {cat.label}
+                        </label>
+                        <input
+                          type="text"
+                          value={editFormData.expertiseInputs[cat.key] || ""}
+                          onChange={(e) =>
+                            setEditFormData({
+                              ...editFormData,
+                              expertiseInputs: {
+                                ...editFormData.expertiseInputs,
+                                [cat.key]: e.target.value,
+                              },
+                            })
+                          }
+                          className="w-full bg-[#111] border border-crimson/20 focus:border-bright-red rounded-xl p-2.5 text-xs text-white outline-none"
+                          placeholder={
+                            cat.key === "Development Languages"
+                              ? "HTML, CSS, JavaScript, TypeScript, Python..."
+                              : cat.key === "Full-Stack Engineering"
+                              ? "Frontend Development, Backend Development, REST APIs..."
+                              : cat.key === "AI Engineering"
+                              ? "AI Applications, LLM Integration, Prompt Engineering..."
+                              : cat.key === "Cybersecurity & Defense"
+                              ? "Ethical Hacking, Security Testing, Web Security..."
+                              : cat.key === "Linux & Systems"
+                              ? "Linux Administration, Server Management, CI/CD..."
+                              : "Web Applications, Mobile Apps, Flutter..."
+                          }
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Featured Projects / Systems Editor */}

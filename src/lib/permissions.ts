@@ -776,3 +776,15 @@ export function canManageOwnerAccount(actor?: UserPermissionContext | null): boo
 export function canAccessOwnerCenter(actor?: UserPermissionContext | null): boolean {
   return isOwner(actor);
 }
+
+export function canManageMobile(actor?: UserPermissionContext | null): boolean {
+  if (!actor) return false;
+  const role = getEffectiveRole(actor);
+  return role === "FOUNDER" || role === "CO_FOUNDER";
+}
+
+export function canViewMobile(actor?: UserPermissionContext | null): boolean {
+  if (!actor) return false;
+  const role = getEffectiveRole(actor);
+  return role === "FOUNDER" || role === "CO_FOUNDER" || role === "CTO";
+}

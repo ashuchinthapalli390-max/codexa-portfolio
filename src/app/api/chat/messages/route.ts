@@ -1,161 +1,157 @@
-/**
- * /api/chat/messages
- * GET: Fetch messages for a conversation (paginated & delta-sync supported)
- * POST: Send a message in a conversation (idempotent with clientId)
- * DELETE: Unsend/Delete own message
- */
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSessionResult } from "@/lib/auth";
-import { dataStore } from "@/lib/data-store";
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-const NO_CACHE_HEADERS = {
-  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-  Pragma: "no-cache",
-  Expires: "0",
-};
+import { prisma } from "@/lib/prisma";
+import {
+  chatSupabaseAdmin,
+  sendChatMessage,
+  isChatConfigured
+} from "@/lib/supabase/chat-admin";
 
 export async function GET(req: NextRequest) {
-  try {
-    const auth = await getCurrentSessionResult();
-
-    if (auth.status === "error") {
-      return NextResponse.json(
-        { success: false, error: "CHAT_TEMPORARILY_UNAVAILABLE", retryable: true, requestId: auth.requestId },
-        { status: 503, headers: NO_CACHE_HEADERS }
-      );
-    }
-
-    if (auth.status === "unauthenticated") {
-      return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401, headers: NO_CACHE_HEADERS });
-    }
-
-    const user = auth.user;
-    const { searchParams } = new URL(req.url);
-    const conversationId = searchParams.get("conversationId");
-    const limit = searchParams.get("limit") ? parseInt(searchParams.get("limit")!, 10) : 50;
-    const before = searchParams.get("before") || undefined;
-    const after = searchParams.get("after") || undefined;
-
-    if (!conversationId) {
-      return NextResponse.json({ success: false, error: "conversationId is required." }, { status: 400, headers: NO_CACHE_HEADERS });
-    }
-
-    // ── Focused Membership Check (Indexed seek) ──
-    const isMember = await dataStore.isConversationMember(conversationId, user.id);
-    if (!isMember) {
-      return NextResponse.json({ success: false, error: "Forbidden: You are not a participant of this conversation." }, { status: 403, headers: NO_CACHE_HEADERS });
-    }
-
-    const messages = await dataStore.getMessages(conversationId, { limit, before, after });
-    return NextResponse.json({ success: true, messages }, { headers: NO_CACHE_HEADERS });
-  } catch (err: any) {
-    console.error("[GET /api/chat/messages]", err);
-    const isPoolError = err?.code === "P2024" || err?.message?.includes("timed out") || err?.message?.includes("connection pool");
-    if (isPoolError) {
-      return NextResponse.json(
-        { success: false, error: "CHAT_TEMPORARILY_UNAVAILABLE", retryable: true },
-        { status: 503, headers: NO_CACHE_HEADERS }
-      );
-    }
-    return NextResponse.json({ success: false, error: "Failed to load messages." }, { status: 500, headers: NO_CACHE_HEADERS });
+  const sessionResult = await getCurrentSessionResult();
+  if (sessionResult.status !== "authenticated") {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+
+  const user = sessionResult.user;
+
+  if (!isChatConfigured() || !chatSupabaseAdmin) {
+    return NextResponse.json({ ok: true, messages: [] });
+  }
+
+  const { searchParams } = new URL(req.url);
+  const conversationId = searchParams.get("conversationId");
+  if (!conversationId) {
+    return NextResponse.json({ ok: false, error: "conversationId required" }, { status: 400 });
+  }
+
+  const before = searchParams.get("before");
+  const limit = Math.min(Number(searchParams.get("limit")) || 30, 50);
+
+  // Check membership
+  const { data: membership } = await chatSupabaseAdmin
+    .from("conversation_members")
+    .select("id")
+    .eq("conversation_id", conversationId)
+    .eq("core_user_id", user.id)
+    .is("left_at", null)
+    .maybeSingle();
+
+  if (!membership) {
+    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+  }
+
+  let query = chatSupabaseAdmin
+    .from("messages")
+    .select("*, message_reads(*), message_reactions(*), message_attachments(*)")
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (before) {
+    query = query.lt("created_at", before);
+  }
+
+  const { data: messages, error } = await query;
+  if (error) {
+    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    ok: true,
+    success: true,
+    messages: (messages || []).map((m: any) => ({
+      ...m,
+      message: m.text,
+      senderId: m.sender_core_user_id,
+    })),
+  });
 }
 
 export async function POST(req: NextRequest) {
+  const sessionResult = await getCurrentSessionResult();
+  if (sessionResult.status !== "authenticated") {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  const user = sessionResult.user;
+
+  if (!isChatConfigured() || !chatSupabaseAdmin) {
+    return NextResponse.json({ ok: false, error: "Chat service unavailable" }, { status: 503 });
+  }
+
   try {
-    const auth = await getCurrentSessionResult();
-
-    if (auth.status === "error") {
-      return NextResponse.json(
-        { success: false, error: "CHAT_TEMPORARILY_UNAVAILABLE", retryable: true, requestId: auth.requestId },
-        { status: 503, headers: NO_CACHE_HEADERS }
-      );
-    }
-
-    if (auth.status === "unauthenticated") {
-      return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401, headers: NO_CACHE_HEADERS });
-    }
-
-    const user = auth.user;
     const body = await req.json();
-    const { conversationId, message, clientId, attachments, fileUrl, fileName, replyToId } = body;
+    const conversationId = body.conversationId;
+    const text = body.text || body.message;
+    const clientMessageId = body.clientMessageId || body.clientId;
+    const messageType = body.messageType || "TEXT";
+    const replyToMessageId = body.replyToMessageId;
 
     if (!conversationId) {
-      return NextResponse.json({ success: false, error: "conversationId is required." }, { status: 400, headers: NO_CACHE_HEADERS });
+      return NextResponse.json({ ok: false, error: "conversationId required" }, { status: 400 });
     }
 
-    const hasText = message && message.trim().length > 0;
-    const hasAttachments = (attachments && attachments.length > 0) || fileUrl;
-
-    if (!hasText && !hasAttachments) {
-      return NextResponse.json({ success: false, error: "Cannot send an empty message." }, { status: 400, headers: NO_CACHE_HEADERS });
+    if (!clientMessageId) {
+      return NextResponse.json({ ok: false, error: "clientMessageId required" }, { status: 400 });
     }
 
-    // ── Focused Membership Check (Indexed seek) ──
-    const isMember = await dataStore.isConversationMember(conversationId, user.id);
-    if (!isMember) {
-      return NextResponse.json({ success: false, error: "Forbidden: You are not a participant of this conversation." }, { status: 403, headers: NO_CACHE_HEADERS });
+    if (!text && messageType === "TEXT") {
+      return NextResponse.json({ ok: false, error: "Message text cannot be empty" }, { status: 400 });
     }
 
-    const newMessage = await dataStore.sendMessage({
+    const result = await sendChatMessage({
       conversationId,
-      senderId: user.id,
-      clientId: clientId ? String(clientId).trim() : undefined,
-      message: message ? message.trim() : "",
-      attachments,
-      fileUrl,
-      fileName,
-      replyToId,
+      senderCoreUserId: user.id,
+      clientMessageId,
+      text,
+      messageType,
+      replyToMessageId,
     });
 
-    return NextResponse.json({ success: true, message: newMessage }, { headers: NO_CACHE_HEADERS });
+    if (result.error) {
+      return NextResponse.json({ ok: false, error: result.error }, { status: 400 });
+    }
+
+    // Trigger Core notification if this is a newly inserted message
+    if (!result.isDuplicate && result.data) {
+      const { data: members } = await chatSupabaseAdmin
+        .from("conversation_members")
+        .select("core_user_id, muted")
+        .eq("conversation_id", conversationId)
+        .neq("core_user_id", user.id)
+        .is("left_at", null);
+
+      if (members && members.length > 0) {
+        for (const m of members) {
+          if (!m.muted) {
+            try {
+              await prisma.notification.create({
+                data: {
+                  userId: m.core_user_id,
+                  type: "CHAT",
+                  title: `Message from ${user.username || "Colleague"}`,
+                  message: (text || "Sent an attachment").slice(0, 120),
+                  link: `/messages/${conversationId}`,
+                },
+              });
+            } catch (_) {}
+          }
+        }
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      success: true,
+      message: {
+        ...result.data,
+        message: result.data.text,
+        senderId: result.data.sender_core_user_id,
+      },
+      isDuplicate: result.isDuplicate,
+    });
   } catch (err: any) {
-    console.error("[POST /api/chat/messages]", err);
-    const isPoolError = err?.code === "P2024" || err?.message?.includes("timed out") || err?.message?.includes("connection pool");
-    if (isPoolError) {
-      return NextResponse.json(
-        { success: false, error: "CHAT_TEMPORARILY_UNAVAILABLE", retryable: true },
-        { status: 503, headers: NO_CACHE_HEADERS }
-      );
-    }
-    return NextResponse.json({ success: false, error: "Failed to send message." }, { status: 500, headers: NO_CACHE_HEADERS });
-  }
-}
-
-export async function DELETE(req: NextRequest) {
-  try {
-    const auth = await getCurrentSessionResult();
-
-    if (auth.status === "error") {
-      return NextResponse.json(
-        { success: false, error: "CHAT_TEMPORARILY_UNAVAILABLE", retryable: true, requestId: auth.requestId },
-        { status: 503, headers: NO_CACHE_HEADERS }
-      );
-    }
-
-    if (auth.status === "unauthenticated") {
-      return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401, headers: NO_CACHE_HEADERS });
-    }
-
-    const user = auth.user;
-    const { searchParams } = new URL(req.url);
-    const messageId = searchParams.get("id");
-
-    if (!messageId) {
-      return NextResponse.json({ success: false, error: "message id is required." }, { status: 400, headers: NO_CACHE_HEADERS });
-    }
-
-    const deleted = await dataStore.deleteMessage(messageId, user.id);
-    if (!deleted) {
-      return NextResponse.json({ success: false, error: "Message not found or unauthorized to unsend." }, { status: 403, headers: NO_CACHE_HEADERS });
-    }
-
-    return NextResponse.json({ success: true, messageId }, { headers: NO_CACHE_HEADERS });
-  } catch (err: any) {
-    console.error("[DELETE /api/chat/messages]", err);
-    return NextResponse.json({ success: false, error: "Failed to unsend message." }, { status: 500, headers: NO_CACHE_HEADERS });
+    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
   }
 }

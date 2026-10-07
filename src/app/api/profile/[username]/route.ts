@@ -21,14 +21,23 @@ export async function GET(
       return NextResponse.json({ success: false, error: "Member profile not found." }, { status: 404 });
     }
 
-    return NextResponse.json({
-      success: true,
-      profile: data.profile,
-      stats: data.stats,
-      createdProjects: data.createdProjects,
-      collabProjects: data.collabProjects,
-      posts: data.posts,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        profile: data.profile,
+        stats: data.stats,
+        createdProjects: data.createdProjects,
+        collabProjects: data.collabProjects,
+        posts: data.posts,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      }
+    );
   } catch (err: any) {
     console.error("[GET /api/profile/[username]] Error:", err);
     return NextResponse.json({ success: false, error: "Failed to fetch profile data." }, { status: 500 });
@@ -56,7 +65,19 @@ export async function PATCH(
       return NextResponse.json({ success: false, error: "Permission denied: You do not have authorization to edit this profile." }, { status: 403 });
     }
 
-    const isTargetOwner = targetProfile.role === "OWNER";
+    const userIsOwner = isOwner(user);
+    const userIsCeoOrAdmin = isCeoOrAdmin(user);
+    const isTargetOwner = targetProfile.role === "OWNER" || targetProfile.username?.toLowerCase() === "ashu";
+
+    // Strictly enforce: No non-owner can modify Founder profile
+    if (isTargetOwner && !userIsOwner) {
+      return NextResponse.json({ success: false, error: "Permission denied: Only the Founder can modify Founder profile." }, { status: 403 });
+    }
+
+    // Strictly enforce: Normal users can edit ONLY their own profile
+    if (!userIsOwner && !userIsCeoOrAdmin && user.id !== targetProfile.id && user.username?.toLowerCase() !== targetProfile.username?.toLowerCase()) {
+      return NextResponse.json({ success: false, error: "Permission denied: You can only edit your own profile." }, { status: 403 });
+    }
 
     const body = await req.json();
     const {
@@ -92,8 +113,6 @@ export async function PATCH(
     if (socialLinks !== undefined) updates.socialLinks = socialLinks;
 
     // Role & Active status can only be modified by Owner or CEO (for non-owner)
-    const userIsOwner = isOwner(user);
-    const userIsCeoOrAdmin = isCeoOrAdmin(user);
     if (role !== undefined && (userIsOwner || (userIsCeoOrAdmin && !isTargetOwner && role !== "OWNER"))) {
       updates.role = role;
     }

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import { TeamCoreShell } from "@/components/layout/TeamCoreShell";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -21,9 +22,10 @@ import {
   Layers,
   Sparkles,
   Lock,
-  X
+  X,
+  ExternalLink
 } from "lucide-react";
-import { hasPermission, Permission, getEffectiveRole } from "@/lib/permissions";
+import { hasPermission, Permission, getEffectiveRole, canManageMobile } from "@/lib/permissions";
 
 export default function AppsCenterPage() {
   const { user } = useAuth();
@@ -53,7 +55,7 @@ export default function AppsCenterPage() {
   const [entitlementDaily, setEntitlementDaily] = useState("200");
   const [entitlementMonthly, setEntitlementMonthly] = useState("5000");
 
-  const canManageMobile = user && hasPermission(user, Permission.MANAGE_MOBILE_FEATURES);
+  const canManageMobileApp = user && canManageMobile(user);
   const canManageDesktop = user && hasPermission(user, Permission.MANAGE_DESKTOP_ACCESS);
   const canManageAI = user && hasPermission(user, Permission.MANAGE_AI_ENTITLEMENTS);
 
@@ -211,17 +213,14 @@ export default function AppsCenterPage() {
           >
             My App Access & Status
           </button>
-          {canManageMobile && (
-            <button
-              onClick={() => setAdminTab("MOBILE_CONFIG")}
-              className={`px-4 py-2 rounded-xl transition-all ${
-                adminTab === "MOBILE_CONFIG"
-                  ? "bg-neutral-800 text-white font-bold"
-                  : "text-neutral-400 hover:text-white"
-              }`}
+          {canManageMobileApp && (
+            <Link
+              href="/dashboard/apps/mobile"
+              className="px-4 py-2 rounded-xl text-crimson hover:bg-neutral-800 font-bold transition-all flex items-center gap-1.5"
             >
-              Mobile App Remote Controls
-            </button>
+              <Smartphone className="w-3.5 h-3.5" />
+              Mobile App Control Center &rarr;
+            </Link>
           )}
           {canManageDesktop && (
             <button
@@ -260,7 +259,7 @@ export default function AppsCenterPage() {
                     <Smartphone className="w-6 h-6" />
                   </div>
                   <span className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-mono uppercase tracking-widest font-bold">
-                    Access Enabled
+                    Status: {mobileConfig?.platformStatus || "ACTIVE"}
                   </span>
                 </div>
 
@@ -269,43 +268,51 @@ export default function AppsCenterPage() {
                     CodeXa Mobile
                   </h3>
                   <p className="text-xs font-mono text-neutral-400">
-                    Platform: Android &bull; Version: {mobileConfig?.currentVersion || "1.0.0"}
+                    Daily Workspace for Employees & Interns &bull; Version: {mobileConfig?.currentVersion || "1.0.0"}
                   </p>
                 </div>
 
                 <p className="text-xs text-neutral-400 leading-relaxed font-sans">
-                  Use your CodeXa email and password to log into the mobile application to mark attendance, check direct messages, and receive real-time push alerts.
+                  Daily workspace for marking attendance, checking direct messages, viewing assigned projects, and accessing documents.
                 </p>
 
                 <div className="p-3.5 rounded-xl bg-neutral-950/80 border border-neutral-800 text-xs font-mono space-y-1">
                   <div className="flex justify-between">
-                    <span className="text-neutral-500">Attendance Marking:</span>
-                    <span className="text-emerald-400">Supported</span>
+                    <span className="text-neutral-500">Attendance:</span>
+                    <span className={mobileConfig?.attendanceEnabled ? "text-emerald-400" : "text-red-400"}>
+                      {mobileConfig?.attendanceEnabled ? "Supported" : "Disabled"}
+                    </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-neutral-500">Device Push Alerts:</span>
-                    <span className="text-emerald-400">Active</span>
+                    <span className="text-neutral-500">Fleet Control Status:</span>
+                    <span className="text-purple-400 font-bold">Configuration Ready</span>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-neutral-800">
+              <div className="pt-4 border-t border-neutral-800 space-y-3">
+                {canManageMobileApp && (
+                  <Link
+                    href="/dashboard/apps/mobile"
+                    className="w-full py-3 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-crimson/25 transition-all"
+                  >
+                    <Smartphone className="w-4 h-4" /> MANAGE MOBILE APP
+                  </Link>
+                )}
+
                 {mobileConfig?.downloadUrl ? (
                   <a
                     href={mobileConfig.downloadUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full py-3 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-crimson/25 transition-all"
+                    className="w-full py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-mono uppercase tracking-wider flex items-center justify-center gap-2 transition-all border border-neutral-700"
                   >
-                    <Download className="w-4 h-4" /> Download Mobile APK
+                    <Download className="w-4 h-4 text-emerald-400" /> Download Mobile APK
                   </a>
                 ) : (
-                  <button
-                    disabled
-                    className="w-full py-3 rounded-xl bg-neutral-950 border border-neutral-800 text-neutral-500 text-xs font-mono uppercase tracking-wider"
-                  >
-                    Mobile Client Deployed to Agency Fleet
-                  </button>
+                  <div className="w-full py-2.5 rounded-xl bg-neutral-950 border border-neutral-800 text-neutral-500 text-xs font-mono uppercase tracking-wider text-center">
+                    Android App: Coming Soon
+                  </div>
                 )}
               </div>
             </div>

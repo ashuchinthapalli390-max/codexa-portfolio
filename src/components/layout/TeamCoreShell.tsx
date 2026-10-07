@@ -26,7 +26,8 @@ import {
   AlertCircle,
   Menu,
   Key,
-  ToggleRight
+  ToggleRight,
+  Layers
 } from "lucide-react";
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
 import { 
@@ -173,9 +174,8 @@ export function TeamCoreShell({
           { label: "Documents", href: "/dashboard/documents", icon: FileText },
           { label: "Offer Letters", href: "/dashboard/documents?tab=OFFER_LETTERS", icon: Award },
           { label: "Email", href: "/dashboard/email", icon: Mail },
-          { label: "Analytics", href: "/owner?tab=overview", icon: BarChart3 },
-          { label: "Mobile Controls", href: "/dashboard/apps", icon: Smartphone },
-          { label: "Desktop Access", href: "/dashboard/apps", icon: Key },
+          { label: "Mobile App", href: "/dashboard/apps/mobile", icon: Smartphone },
+          { label: "Apps Center", href: "/dashboard/apps", icon: Layers },
           { label: "Feature Flags", href: "/dashboard/features", icon: Sliders },
           { label: "Audit Logs", href: "/owner?tab=audit", icon: Clock },
           { label: "Settings", href: "/dashboard/settings/security", icon: Shield },
