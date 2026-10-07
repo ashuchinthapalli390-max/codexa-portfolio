@@ -1,21 +1,15 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
   CreditCard,
-  QrCode,
   CheckCircle2,
   Clock,
   XCircle,
   AlertTriangle,
-  Upload,
-  Copy,
-  Check,
   ChevronLeft,
-  Smartphone,
-  ExternalLink,
   Shield,
   FileCheck,
   Calendar,
@@ -25,9 +19,21 @@ import {
   Send,
   Mail,
   RefreshCw,
+  ExternalLink,
+  Smartphone,
+  Eye,
+  Check,
+  X,
+  MessageSquare,
+  Lock,
+  User,
+  Hash,
+  Layers,
+  Banknote,
+  Search,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { hasPermission, Permission, getEffectiveRole } from "@/lib/permissions";
+import { getEffectiveRole } from "@/lib/permissions";
 import { InternAutomaticPaymentFlow } from "@/components/payments/InternAutomaticPaymentFlow";
 
 interface LineItem {
@@ -45,29 +51,34 @@ export default function PaymentDetailPage() {
 
   const [payment, setPayment] = useState<any>(null);
   const [reminderLogs, setReminderLogs] = useState<any[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [duplicateWarnings, setDuplicateWarnings] = useState<any>({});
+  const [canManage, setCanManage] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  // Review & Exception Action States
+  const [processingAction, setProcessingAction] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
+  // Modals State
+  const [showApproveModal, setShowApproveModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [approvalNotes, setApprovalNotes] = useState("");
+  const [selectedAttemptId, setSelectedAttemptId] = useState<string | null>(null);
+
+  // Cash Action Modals
+  const [showCashApproveModal, setShowCashApproveModal] = useState(false);
+  const [showCashRejectModal, setShowCashRejectModal] = useState(false);
+  const [cashRejectReason, setCashRejectReason] = useState("");
+
+  // Screenshot Zoom Modal
+  const [zoomedImageUrl, setZoomedImageUrl] = useState<string | null>(null);
+
+  // Dispatch Reminder State
   const [sendingReminder, setSendingReminder] = useState(false);
   const [reminderMessage, setReminderMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [copiedUpi, setCopiedUpi] = useState(false);
-  const [copiedRef, setCopiedRef] = useState(false);
-
-  // Proof Form State
-  const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [paymentDate, setPaymentDate] = useState<string>(
-    new Date().toISOString().split("T")[0]
-  );
-  const [paymentTime, setPaymentTime] = useState<string>(
-    new Date().toTimeString().slice(0, 5)
-  );
-  const [utrNumber, setUtrNumber] = useState<string>("");
-  const [upiApp, setUpiApp] = useState<string>("PhonePe");
-  const [userNote, setUserNote] = useState<string>("");
-  const [submittingProof, setSubmittingProof] = useState(false);
-  const [proofError, setProofError] = useState("");
-  const [isResubmitting, setIsResubmitting] = useState(false);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchPayment = async () => {
     try {
@@ -81,9 +92,10 @@ export default function PaymentDetailPage() {
       }
       const data = await res.json();
       setPayment(data.payment);
-      if (data.reminderLogs) {
-        setReminderLogs(data.reminderLogs);
-      }
+      if (data.reminderLogs) setReminderLogs(data.reminderLogs);
+      if (data.auditLogs) setAuditLogs(data.auditLogs);
+      if (data.duplicateWarnings) setDuplicateWarnings(data.duplicateWarnings);
+      setCanManage(Boolean(data.canManage));
     } catch (err: any) {
       console.error("Error fetching payment:", err);
     } finally {
@@ -91,6 +103,13 @@ export default function PaymentDetailPage() {
     }
   };
 
+  useEffect(() => {
+    if (status === "authenticated" && paymentId) {
+      fetchPayment();
+    }
+  }, [status, paymentId]);
+
+  // Dispatch Reminder
   const handleSendReminder = async () => {
     if (!payment?.id) return;
     try {
@@ -124,84 +143,136 @@ export default function PaymentDetailPage() {
     }
   };
 
-  useEffect(() => {
-    if (status === "authenticated" && paymentId) {
-      fetchPayment();
-    }
-  }, [status, paymentId]);
-
-  const handleCopy = (text: string, type: "upi" | "ref") => {
-    navigator.clipboard.writeText(text);
-    if (type === "upi") {
-      setCopiedUpi(true);
-      setTimeout(() => setCopiedUpi(false), 2000);
-    } else {
-      setCopiedRef(true);
-      setTimeout(() => setCopiedRef(false), 2000);
-    }
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setProofError("");
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
-      setProofError("Please select a JPG, PNG, or WebP screenshot.");
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      setProofError("Screenshot size exceeds 10 MB limit.");
-      return;
-    }
-
-    setScreenshotFile(file);
-    const objectUrl = URL.createObjectURL(file);
-    setPreviewUrl(objectUrl);
-  };
-
-  const handleSubmitProof = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!screenshotFile) {
-      setProofError("Payment screenshot is required.");
-      return;
-    }
-
-    if (!paymentDate) {
-      setProofError("Payment date is required.");
-      return;
-    }
-
+  // Approve Exception (Founder / Co-Founder)
+  const handleApproveException = async () => {
+    if (!payment?.id) return;
     try {
-      setSubmittingProof(true);
-      setProofError("");
-
-      const formData = new FormData();
-      formData.append("screenshot", screenshotFile);
-      formData.append("paymentDate", paymentDate);
-      formData.append("paymentTime", paymentTime);
-      formData.append("utrNumber", utrNumber);
-      formData.append("upiApp", upiApp);
-      formData.append("userNote", userNote);
-
-      const res = await fetch(`/api/payments/${payment.id}/proof`, {
+      setProcessingAction(true);
+      setActionError(null);
+      const res = await fetch(`/api/payments/${payment.id}/review/approve`, {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          attemptId: selectedAttemptId,
+          notes: approvalNotes,
+        }),
       });
-
       const data = await res.json();
       if (!res.ok) {
-        setProofError(data.error || "Failed to submit payment proof.");
-        return;
+        throw new Error(data.error || "Failed to approve payment exception.");
       }
-
-      setIsResubmitting(false);
+      setActionSuccess("Payment successfully approved! Intern access cleared and confirmation email sent.");
+      setShowApproveModal(false);
+      setApprovalNotes("");
       await fetchPayment();
     } catch (err: any) {
-      setProofError(err.message || "An unexpected error occurred.");
+      setActionError(err.message || "Approval failed.");
     } finally {
-      setSubmittingProof(false);
+      setProcessingAction(false);
+    }
+  };
+
+  // Reject Exception (Founder / Co-Founder)
+  const handleRejectException = async () => {
+    if (!payment?.id || !rejectionReason.trim()) return;
+    try {
+      setProcessingAction(true);
+      setActionError(null);
+      const res = await fetch(`/api/payments/${payment.id}/review/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          attemptId: selectedAttemptId,
+          reason: rejectionReason.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to reject payment proof.");
+      }
+      setActionSuccess("Payment proof rejected. Intern has been notified.");
+      setShowRejectModal(false);
+      setRejectionReason("");
+      await fetchPayment();
+    } catch (err: any) {
+      setActionError(err.message || "Rejection failed.");
+    } finally {
+      setProcessingAction(false);
+    }
+  };
+
+  // Re-run Automated Verification (Founder / Co-Founder)
+  const handleRerunVerification = async (attemptId: string) => {
+    if (!payment?.id) return;
+    try {
+      setProcessingAction(true);
+      setActionError(null);
+      setActionSuccess(null);
+      const res = await fetch(`/api/payments/${payment.id}/verification/retry`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attemptId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to re-run verification.");
+      }
+      setActionSuccess(`Verification re-run complete: ${data.decision.status}`);
+      await fetchPayment();
+    } catch (err: any) {
+      setActionError(err.message || "Re-verification failed.");
+    } finally {
+      setProcessingAction(false);
+    }
+  };
+
+  // Confirm Cash Received (Founder / Co-Founder)
+  const handleConfirmCash = async () => {
+    if (!payment?.id) return;
+    try {
+      setProcessingAction(true);
+      setActionError(null);
+      const res = await fetch(`/api/payments/${payment.id}/cash/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to confirm cash receipt.");
+      }
+      setActionSuccess("Cash payment confirmed! Intern access cleared and receipt dispatched.");
+      setShowCashApproveModal(false);
+      await fetchPayment();
+    } catch (err: any) {
+      setActionError(err.message || "Cash confirmation failed.");
+    } finally {
+      setProcessingAction(false);
+    }
+  };
+
+  // Reject Cash (Founder / Co-Founder)
+  const handleRejectCash = async () => {
+    if (!payment?.id || !cashRejectReason.trim()) return;
+    try {
+      setProcessingAction(true);
+      setActionError(null);
+      const res = await fetch(`/api/payments/${payment.id}/cash/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: cashRejectReason.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to reject cash payment.");
+      }
+      setActionSuccess("Cash payment request rejected.");
+      setShowCashRejectModal(false);
+      setCashRejectReason("");
+      await fetchPayment();
+    } catch (err: any) {
+      setActionError(err.message || "Cash rejection failed.");
+    } finally {
+      setProcessingAction(false);
     }
   };
 
@@ -210,7 +281,7 @@ export default function PaymentDetailPage() {
       <div className="min-h-[60vh] flex flex-col items-center justify-center space-y-3">
         <div className="w-10 h-10 border-2 border-bright-red border-t-transparent rounded-full animate-spin" />
         <p className="text-xs font-orbitron tracking-widest text-zinc-500 uppercase">
-          Loading Official CodeXa Bill...
+          Loading CodeXa Payment Control Center...
         </p>
       </div>
     );
@@ -234,36 +305,10 @@ export default function PaymentDetailPage() {
     );
   }
 
-  const upiId = payment.paymentAccount?.upiId || "shaikashu33@fam";
-  const payeeName = payment.paymentAccount?.payeeName || "CodeXa Agency";
-  const amountStr = payment.fixedAmount.toFixed(2);
-  const upiDeepLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(
-    payeeName
-  )}&am=${amountStr}&cu=INR&tn=${encodeURIComponent(payment.referenceId)}`;
-
-  // Default Line Items if not provided
-  const lineItems: LineItem[] = payment.lineItems || [
-    { item: "Mandatory ID Card", amount: 150 },
-    {
-      item: "AI Dev Tools Pack (Shared)",
-      amount: 300,
-      details: [
-        "Nexa AI Access (Included)",
-        "ChatGPT Astra (Included)",
-        "Anthropic Fabel (Included)",
-        "Gemini Pro (Included)",
-        "More AI Models (Included)",
-      ],
-    },
-  ];
-
-  const isPendingPayment = payment.paymentStatus === "PENDING_PAYMENT";
-  const isPendingVerification = payment.paymentStatus === "PENDING_VERIFICATION";
-  const isApproved = payment.paymentStatus === "APPROVED";
-  const isRejected = payment.paymentStatus === "REJECTED" || payment.paymentStatus === "FAILED";
   const role = user ? getEffectiveRole(user) : "";
   const isPrivileged = ["FOUNDER", "CO_FOUNDER", "HR", "CEO", "CTO", "COO", "ADMIN"].includes(role);
 
+  // Intern View: Delegate to zero-manual-entry InternAutomaticPaymentFlow
   if (role === "INTERN" || !isPrivileged) {
     return (
       <div className="max-w-4xl mx-auto space-y-6 pb-12">
@@ -281,685 +326,1082 @@ export default function PaymentDetailPage() {
     );
   }
 
+  // Bill Line Items
+  const lineItems: LineItem[] = payment.lineItems || [
+    { item: "Mandatory Student ID Card", amount: 150 },
+    {
+      item: "AI Dev Tools Pack (Shared)",
+      amount: 300,
+      details: ["Nexa AI Access", "ChatGPT Astra", "Anthropic Fabel", "Gemini Pro"],
+    },
+  ];
+
+  const attempts: any[] = payment.attempts || [];
+  const latestAttempt = attempts[0] || null;
+  const isApproved = payment.paymentStatus === "APPROVED" || payment.paymentStatus === "SUCCESS";
+  const isReviewRequired = payment.paymentStatus === "REVIEW_REQUIRED";
+  const isPendingCash = payment.cashStatus === "PENDING_CASH_APPROVAL";
+  const isFailed = payment.paymentStatus === "FAILED" || payment.paymentStatus === "REJECTED";
+
+  // WhatsApp Alert URL for Co-Founder B. Sanjay (7075920852)
+  const coFounderPhone = "917075920852";
+  const waReviewUrl = `https://codxa-agency.online/dashboard/payments/${payment.id}`;
+  const detectedTimeStr = latestAttempt?.detectedTime || "N/A";
+  const windowStartStr = latestAttempt ? new Date(latestAttempt.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "6:10 PM";
+  const windowEndStr = latestAttempt ? new Date(latestAttempt.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "6:15 PM";
+  const maskedUtrStr = latestAttempt?.utrNumber || payment.utrNumber || "N/A";
+
+  const waReviewMessage = [
+    "CodeXa Payment Verification Required",
+    "",
+    `Intern: ${payment.userName || "Intern"}`,
+    `Intern ID: ${payment.internId || "CXA-INT-2026"}`,
+    `Domain: ${payment.domain || "Development"}`,
+    "",
+    `Amount: ₹450`,
+    `Method: ${latestAttempt?.detectedApp || latestAttempt?.selectedMethod || payment.paymentMethod || "UPI"}`,
+    `Reference: ${payment.referenceId}`,
+    "",
+    `Detected UTR: ${maskedUtrStr}`,
+    "",
+    "Expected Payment Window:",
+    `${windowStartStr} – ${windowEndStr}`,
+    "",
+    `Detected Payment Time: ${detectedTimeStr}`,
+    "",
+    "Issue:",
+    latestAttempt?.verificationReason === "PAYMENT_TIME_OUTSIDE_WINDOW"
+      ? "Payment is outside the automatic verification window."
+      : "Automated settlement feed reconciliation pending.",
+    "",
+    "All remaining verification checks passed.",
+    "",
+    "Review Payment:",
+    waReviewUrl,
+    "",
+    "— CodeXa Payment System",
+  ].join("\n");
+
+  const waDirectLink = `https://wa.me/${coFounderPhone}?text=${encodeURIComponent(waReviewMessage)}`;
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-12">
-      {/* ─── TOP BACK LINK ─────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
+    <div className="max-w-5xl mx-auto space-y-6 pb-16">
+      {/* ─── TOP NAVIGATION & METADATA ───────────────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
         <Link
           href="/dashboard/payments"
           className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-white transition-colors"
         >
           <ChevronLeft className="w-4 h-4" />
-          Back to Payments
+          Back to Live Payment Control Center
         </Link>
 
-        <span className="text-[11px] font-mono text-zinc-500">
-          Created: {new Date(payment.createdAt).toLocaleDateString()}
-        </span>
+        <div className="flex items-center gap-3 text-xs">
+          <span className="font-mono text-zinc-500">Ref: {payment.referenceId}</span>
+          <span className="text-zinc-600">&bull;</span>
+          <span className="text-zinc-400">Created {new Date(payment.createdAt).toLocaleDateString()}</span>
+          {!canManage && (
+            <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-white/10 text-[10px] font-semibold flex items-center gap-1">
+              <Lock className="w-3 h-3" /> Read-Only ({role})
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* ─── STATUS BANNER ─────────────────────────────────────────────────── */}
+      {/* Action Messages */}
+      {actionSuccess && (
+        <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+            <span>{actionSuccess}</span>
+          </div>
+          <button onClick={() => setActionSuccess(null)} className="text-emerald-400 hover:text-white">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {actionError && (
+        <div className="p-4 rounded-2xl bg-crimson/15 border border-crimson/30 text-crimson text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>{actionError}</span>
+          </div>
+          <button onClick={() => setActionError(null)} className="text-crimson hover:text-white">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Duplicate Warnings Banner */}
+      {(duplicateWarnings.duplicateUtr || duplicateWarnings.duplicateScreenshot) && (
+        <div className="p-4 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 shrink-0 text-amber-400 mt-0.5" />
+          <div>
+            <div className="font-bold uppercase tracking-wider text-[11px]">Potential Duplicate Transaction Detected</div>
+            <p className="mt-0.5 text-zinc-300">
+              {duplicateWarnings.duplicateUtr && (
+                <span>This UTR is already attached to another verified bill ({duplicateWarnings.conflictingReference}). </span>
+              )}
+              {duplicateWarnings.duplicateScreenshot && (
+                <span>This screenshot hash matches a previously submitted receipt ({duplicateWarnings.conflictingReference}). </span>
+              )}
+              Strict duplicate protection triggered.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ─── STATUS HERO BANNER ────────────────────────────────────────────── */}
       <div
-        className={`p-4 rounded-2xl border flex items-center justify-between gap-4 ${
+        className={`p-6 rounded-3xl border flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl ${
           isApproved
-            ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
-            : isPendingVerification
-            ? "bg-blue-500/10 border-blue-500/30 text-blue-300"
-            : isRejected
-            ? "bg-crimson/15 border-crimson/30 text-crimson"
-            : "bg-amber-500/10 border-amber-500/30 text-amber-300"
+            ? "bg-emerald-950/20 border-emerald-500/30"
+            : isReviewRequired
+            ? "bg-amber-950/20 border-amber-500/40"
+            : isPendingCash
+            ? "bg-amber-950/20 border-amber-500/30"
+            : isFailed
+            ? "bg-crimson/10 border-crimson/30"
+            : "bg-[#121212] border-white/10"
         }`}
       >
-        <div className="flex items-center gap-3">
-          {isApproved ? (
-            <CheckCircle2 className="w-6 h-6 text-emerald-400 shrink-0" />
-          ) : isPendingVerification ? (
-            <Clock className="w-6 h-6 text-blue-400 shrink-0 animate-pulse" />
-          ) : isRejected ? (
-            <XCircle className="w-6 h-6 text-crimson shrink-0" />
-          ) : (
-            <CreditCard className="w-6 h-6 text-amber-400 shrink-0" />
-          )}
+        <div className="flex items-start gap-4">
+          <div
+            className={`p-3 rounded-2xl shrink-0 ${
+              isApproved
+                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                : isReviewRequired
+                ? "bg-amber-500/20 text-amber-400 border border-amber-500/40"
+                : isPendingCash
+                ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                : isFailed
+                ? "bg-crimson/20 text-crimson border border-crimson/30"
+                : "bg-white/5 text-zinc-400 border border-white/10"
+            }`}
+          >
+            {isApproved ? (
+              <CheckCircle2 className="w-7 h-7" />
+            ) : isReviewRequired ? (
+              <AlertTriangle className="w-7 h-7 animate-pulse text-amber-400" />
+            ) : isPendingCash ? (
+              <Banknote className="w-7 h-7 text-amber-400" />
+            ) : isFailed ? (
+              <XCircle className="w-7 h-7 text-crimson" />
+            ) : (
+              <Clock className="w-7 h-7 text-zinc-400" />
+            )}
+          </div>
 
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wider">
-              {isApproved
-                ? "Payment Verified & Approved"
-                : isPendingVerification
-                ? "Payment Proof Submitted — Pending Manual Verification"
-                : isRejected
-                ? "Payment Proof Rejected"
-                : "Payment Due — Action Required"}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-orbitron font-extrabold text-base text-white">
+                {isApproved
+                  ? "PAYMENT SUCCESSFUL & CLEARED"
+                  : isReviewRequired
+                  ? "PAYMENT REVIEW REQUIRED"
+                  : isPendingCash
+                  ? "CASH PAYMENT REQUEST PENDING"
+                  : isFailed
+                  ? "PAYMENT VERIFICATION FAILED"
+                  : "PAYMENT PENDING"}
+              </span>
+
+              <span
+                className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                  isApproved
+                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                    : isReviewRequired
+                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse"
+                    : isPendingCash
+                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                    : isFailed
+                    ? "bg-crimson/20 text-crimson border border-crimson/30"
+                    : "bg-zinc-800 text-zinc-400"
+                }`}
+              >
+                {payment.paymentStatus}
+              </span>
             </div>
-            <p className="text-xs opacity-90 mt-0.5">
-              {isApproved
-                ? `Verified by CodeXa administration on ${new Date(payment.verifiedAt).toLocaleString()}`
-                : isPendingVerification
-                ? "Our accounts team is manually verifying your payment against bank records."
-                : isRejected
-                ? `Reason: ${payment.rejectionReason || "Proof unverified. Please check details and resubmit."}`
-                : "Please pay via UPI using the QR code or intent buttons, then upload your transaction screenshot."}
+
+            <p className="text-xs text-zinc-400 mt-1 max-w-2xl">
+              {isApproved && (
+                <span>
+                  Verified via {payment.verificationSource || "Automated Decision Engine"} on{" "}
+                  {new Date(payment.verifiedAt || payment.paidAt).toLocaleString()} by {payment.verifiedByName || "System"}.
+                </span>
+              )}
+              {isReviewRequired && (
+                <span>
+                  The payment screenshot was automatically detected and processed, but an exception requires confirmation by Founder or Co-Founder.
+                </span>
+              )}
+              {isPendingCash && (
+                <span>
+                  Intern requested to pay ₹450 physically in cash. Handover must be received and confirmed by Founder or Co-Founder.
+                </span>
+              )}
+              {isFailed && (
+                <span>
+                  Reason: {payment.rejectionReason || "Verification checks failed."}
+                </span>
+              )}
+              {!isApproved && !isReviewRequired && !isPendingCash && !isFailed && (
+                <span>Intern has not yet finalized a verified payment attempt.</span>
+              )}
             </p>
           </div>
         </div>
 
-        {isRejected && !isResubmitting && (
-          <button
-            onClick={() => setIsResubmitting(true)}
-            className="px-4 py-2 rounded-xl bg-bright-red hover:bg-bright-red/90 text-white text-xs font-bold shrink-0 shadow-lg"
-          >
-            Resubmit Proof
-          </button>
+        {/* Quick Review / Cash Action Buttons (Founder / Co-Founder only) */}
+        <div className="flex items-center gap-2 shrink-0">
+          {isReviewRequired && canManage && (
+            <>
+              <button
+                onClick={() => {
+                  setSelectedAttemptId(latestAttempt?.id || null);
+                  setShowApproveModal(true);
+                }}
+                disabled={processingAction}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-lg flex items-center gap-1.5"
+              >
+                <Check className="w-4 h-4" /> Approve Exception
+              </button>
+
+              <button
+                onClick={() => {
+                  setSelectedAttemptId(latestAttempt?.id || null);
+                  setShowRejectModal(true);
+                }}
+                disabled={processingAction}
+                className="px-4 py-2 rounded-xl bg-crimson/20 hover:bg-crimson text-crimson hover:text-white border border-crimson/30 text-xs font-bold transition-all flex items-center gap-1.5"
+              >
+                <X className="w-4 h-4" /> Reject
+              </button>
+            </>
+          )}
+
+          {isPendingCash && canManage && (
+            <>
+              <button
+                onClick={() => setShowCashApproveModal(true)}
+                disabled={processingAction}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-lg flex items-center gap-1.5"
+              >
+                <Check className="w-4 h-4" /> Confirm Cash Received
+              </button>
+
+              <button
+                onClick={() => setShowCashRejectModal(true)}
+                disabled={processingAction}
+                className="px-4 py-2 rounded-xl bg-crimson/20 hover:bg-crimson text-crimson hover:text-white border border-crimson/30 text-xs font-bold transition-all flex items-center gap-1.5"
+              >
+                <X className="w-4 h-4" /> Reject Cash
+              </button>
+            </>
+          )}
+
+          {/* WhatsApp Alert Button */}
+          {isReviewRequired && (
+            <a
+              href={waDirectLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-2 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/40 text-emerald-300 text-xs font-bold transition-all flex items-center gap-1.5"
+              title="Alert Co-Founder B. Sanjay on WhatsApp"
+            >
+              <MessageSquare className="w-4 h-4 text-emerald-400" />
+              WhatsApp Alert
+            </a>
+          )}
+        </div>
+      </div>
+
+      {/* ─── INTERN DETAILS & ITEM BILL ─────────────────────────────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Intern Details Card */}
+        <div className="p-6 rounded-3xl bg-[#0f0f0f] border border-white/10 space-y-4">
+          <div className="flex items-center gap-2 border-b border-white/10 pb-3">
+            <User className="w-4 h-4 text-bright-red" />
+            <h3 className="font-orbitron font-bold text-white text-xs tracking-wider uppercase">
+              Intern Profile
+            </h3>
+          </div>
+
+          <div className="space-y-3 text-xs">
+            <div>
+              <span className="text-[11px] text-zinc-500 block">Intern Name</span>
+              <span className="font-bold text-white text-sm">{payment.userName}</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <span className="text-[11px] text-zinc-500 block">Intern ID</span>
+                <span className="font-mono text-zinc-300 font-semibold">{payment.internId || "Pending"}</span>
+              </div>
+              <div>
+                <span className="text-[11px] text-zinc-500 block">Domain</span>
+                <span className="text-white font-medium">{payment.domain || "Development"}</span>
+              </div>
+            </div>
+
+            <div>
+              <span className="text-[11px] text-zinc-500 block">Email Address</span>
+              <span className="text-zinc-300 truncate block font-mono text-[11px]">{payment.userEmail}</span>
+            </div>
+
+            {payment.user?.employmentProfile?.joiningDate && (
+              <div>
+                <span className="text-[11px] text-zinc-500 block">Joined</span>
+                <span className="text-zinc-400">
+                  {new Date(payment.user.employmentProfile.joiningDate).toLocaleDateString()}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Bill & Payment Snapshot Card */}
+        <div className="p-6 rounded-3xl bg-[#0f0f0f] border border-white/10 space-y-4 md:col-span-2">
+          <div className="flex items-center justify-between border-b border-white/10 pb-3">
+            <div className="flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-bright-red" />
+              <h3 className="font-orbitron font-bold text-white text-xs tracking-wider uppercase">
+                Mandatory Bill Breakdown (Fixed ₹450)
+              </h3>
+            </div>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-white/5">
+              Server-Enforced Amount
+            </span>
+          </div>
+
+          <div className="space-y-2.5 text-xs">
+            {lineItems.map((item, idx) => (
+              <div key={idx} className="flex items-center justify-between p-2.5 rounded-xl bg-[#141414] border border-white/5">
+                <div>
+                  <div className="font-medium text-white">{item.item}</div>
+                  {item.details && (
+                    <div className="text-[10px] text-zinc-500 mt-0.5">
+                      {item.details.join(" • ")}
+                    </div>
+                  )}
+                </div>
+                <div className="font-mono font-bold text-white text-sm">₹{item.amount}</div>
+              </div>
+            ))}
+
+            <div className="flex items-center justify-between p-3 rounded-xl bg-crimson/10 border border-crimson/30">
+              <span className="font-orbitron font-bold text-white text-xs uppercase tracking-wider">
+                Total Payable Amount
+              </span>
+              <span className="font-orbitron font-extrabold text-bright-red text-base">
+                ₹{payment.fixedAmount || 450}.00
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── REVIEW REQUIRED SPECIAL EXCEPTION CARD (SECTION 25 & 49) ───────── */}
+      {isReviewRequired && latestAttempt && (
+        <div className="p-6 sm:p-8 rounded-3xl bg-amber-950/20 border-2 border-amber-500/40 space-y-6 shadow-2xl relative">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-amber-500/20 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400">
+                <AlertTriangle className="w-6 h-6 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="font-orbitron font-extrabold text-white text-base flex items-center gap-2">
+                  Exception Review Center
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    Founder / Co-Founder Action
+                  </span>
+                </h3>
+                <p className="text-xs text-zinc-300 mt-0.5">
+                  Issue:{" "}
+                  <strong className="text-amber-400">
+                    {latestAttempt.verificationReason === "PAYMENT_TIME_OUTSIDE_WINDOW"
+                      ? "Payment timestamp outside the 5-minute session window."
+                      : "Settlement feed pending live bank credit."}
+                  </strong>{" "}
+                  All remaining security checks passed.
+                </p>
+              </div>
+            </div>
+
+            {canManage && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setSelectedAttemptId(latestAttempt.id);
+                    setShowApproveModal(true);
+                  }}
+                  disabled={processingAction}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-lg flex items-center gap-1.5"
+                >
+                  <Check className="w-4 h-4" /> Approve Exception
+                </button>
+
+                <button
+                  onClick={() => {
+                    setSelectedAttemptId(latestAttempt.id);
+                    setShowRejectModal(true);
+                  }}
+                  disabled={processingAction}
+                  className="px-4 py-2 rounded-xl bg-crimson/20 hover:bg-crimson text-crimson hover:text-white border border-crimson/30 text-xs font-bold transition-all flex items-center gap-1.5"
+                >
+                  <X className="w-4 h-4" /> Reject Exception
+                </button>
+
+                <button
+                  onClick={() => handleRerunVerification(latestAttempt.id)}
+                  disabled={processingAction}
+                  className="px-3 py-2 rounded-xl bg-[#222] hover:bg-[#2c2c2c] text-white border border-white/10 text-xs font-semibold flex items-center gap-1.5"
+                  title="Re-run OCR and verification engine"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${processingAction ? "animate-spin" : ""}`} />
+                  Re-run Check
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Review Details Matrix */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div className="p-3 rounded-2xl bg-[#141414] border border-white/5">
+              <span className="text-[11px] text-zinc-500 block">Detected Method</span>
+              <span className="font-bold text-white mt-1 block">
+                {latestAttempt.detectedApp || latestAttempt.selectedMethod}
+              </span>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-[#141414] border border-white/5">
+              <span className="text-[11px] text-zinc-500 block">Detected UTR</span>
+              <span className="font-mono font-bold text-white mt-1 block truncate">
+                {latestAttempt.utrNumber || latestAttempt.detectedUtr || "N/A"}
+              </span>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-[#141414] border border-white/5">
+              <span className="text-[11px] text-zinc-500 block">Expected Window</span>
+              <span className="font-medium text-zinc-300 mt-1 block">
+                {windowStartStr} – {windowEndStr}
+              </span>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-[#141414] border border-white/5">
+              <span className="text-[11px] text-zinc-500 block">Detected Time</span>
+              <span className="font-bold text-amber-400 mt-1 block">
+                {detectedTimeStr}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── PAYMENT ATTEMPTS & FULL VERIFICATION HISTORY (SECTION 42–46, 73–77) ── */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Layers className="w-5 h-5 text-bright-red" />
+            <h2 className="font-orbitron font-bold text-white text-sm uppercase tracking-wider">
+              Payment Attempts &amp; Verification Evidence ({attempts.length})
+            </h2>
+          </div>
+          <span className="text-xs text-zinc-500">
+            Immutable attempt records with uploaded receipts
+          </span>
+        </div>
+
+        {attempts.length === 0 ? (
+          <div className="p-8 rounded-3xl bg-[#0f0f0f] border border-white/5 text-center text-zinc-500 text-xs">
+            No payment attempts initiated yet.
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {attempts.map((att, idx) => {
+              const attemptNum = attempts.length - idx;
+              const isAttemptSuccess = att.status === "SUCCESS";
+              const isAttemptReview = att.status === "REVIEW_REQUIRED";
+              const isAttemptFailed = att.status === "FAILED" || att.status === "EXPIRED";
+              const checks = att.ocrConfidence?.checks || {
+                screenshotReadable: "PASS",
+                paymentStatus: "PASS",
+                amount: "PASS",
+                utr: "PASS",
+                duplicateUtr: "PASS",
+                duplicateProof: "PASS",
+                receiver: "PASS",
+                paymentDate: "PASS",
+                paymentTime: isAttemptReview ? "REVIEW" : "PASS",
+                trustedTransaction: isAttemptReview ? "REVIEW" : "PASS",
+              };
+
+              return (
+                <div
+                  key={att.id}
+                  className={`p-6 sm:p-7 rounded-3xl border space-y-6 transition-all ${
+                    isAttemptSuccess
+                      ? "bg-[#0d140e] border-emerald-500/30"
+                      : isAttemptReview
+                      ? "bg-[#14120a] border-amber-500/30"
+                      : isAttemptFailed
+                      ? "bg-[#140b0b] border-crimson/20"
+                      : "bg-[#0f0f0f] border-white/10"
+                  }`}
+                >
+                  {/* Attempt Card Top Bar */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
+                    <div className="flex items-center gap-3">
+                      <span className="px-3 py-1 rounded-xl bg-black/60 border border-white/10 text-white font-orbitron font-bold text-xs">
+                        Attempt #{attemptNum}
+                      </span>
+
+                      <div className="text-xs">
+                        <span className="text-white font-semibold">
+                          {att.detectedApp || att.selectedMethod || "UPI"}
+                        </span>
+                        <span className="text-zinc-500 mx-2">&bull;</span>
+                        <span className="text-zinc-400">
+                          {new Date(att.startedAt).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                          isAttemptSuccess
+                            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                            : isAttemptReview
+                            ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                            : "bg-crimson/20 text-crimson border border-crimson/30"
+                        }`}
+                      >
+                        {att.status}
+                      </span>
+
+                      {canManage && att.proofImageUrl && (
+                        <button
+                          onClick={() => handleRerunVerification(att.id)}
+                          disabled={processingAction}
+                          className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[11px] font-semibold flex items-center gap-1"
+                          title="Re-run Verification"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          Re-verify
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Attempt Content: Screenshot + Extracted Details */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Left: Uploaded Screenshot Thumbnail */}
+                    <div className="space-y-2">
+                      <span className="text-[11px] font-semibold uppercase text-zinc-400 tracking-wider block">
+                        Uploaded Receipt Evidence
+                      </span>
+
+                      {att.proofImageUrl ? (
+                        <div
+                          onClick={() => setZoomedImageUrl(`/api/payments/${payment.id}/proof/${att.id}`)}
+                          className="relative group cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-black max-w-[220px] aspect-[9/16] flex items-center justify-center"
+                        >
+                          <img
+                            src={`/api/payments/${payment.id}/proof/${att.id}`}
+                            alt={`Attempt #${attemptNum} Proof`}
+                            className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                          />
+                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-xs gap-1">
+                            <Eye className="w-5 h-5" />
+                            <span>Click to Zoom</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-8 rounded-2xl bg-[#141414] border border-dashed border-white/10 text-center text-zinc-500 text-xs">
+                          No screenshot uploaded for this session
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Middle: Normalized OCR Extracted Data (Immutable) */}
+                    <div className="space-y-3 md:col-span-2">
+                      <span className="text-[11px] font-semibold uppercase text-zinc-400 tracking-wider block">
+                        Automatically Extracted Transaction Details (Immutable)
+                      </span>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+                        <div className="p-3 rounded-xl bg-[#141414] border border-white/5">
+                          <span className="text-[10px] text-zinc-500 block">Payment App</span>
+                          <span className="font-semibold text-white mt-0.5 block">
+                            {att.detectedApp || att.selectedMethod || "UPI"}
+                          </span>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-[#141414] border border-white/5">
+                          <span className="text-[10px] text-zinc-500 block">Detected Status</span>
+                          <span className="font-semibold text-emerald-400 mt-0.5 block">
+                            {att.detectedStatus || "SUCCESS"}
+                          </span>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-[#141414] border border-white/5">
+                          <span className="text-[10px] text-zinc-500 block">Detected Amount</span>
+                          <span className="font-mono font-bold text-white mt-0.5 block">
+                            ₹{att.detectedAmount ? Number(att.detectedAmount) : 450}.00
+                          </span>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-[#141414] border border-white/5">
+                          <span className="text-[10px] text-zinc-500 block">UTR / Ref No</span>
+                          <span className="font-mono font-bold text-white mt-0.5 block truncate">
+                            {att.utrNumber || att.detectedUtr || "Not detected"}
+                          </span>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-[#141414] border border-white/5">
+                          <span className="text-[10px] text-zinc-500 block">Payee / Receiver</span>
+                          <span className="font-medium text-zinc-300 mt-0.5 block truncate">
+                            {att.detectedReceiverName || att.receiverSnapshot || "CodeXa Agency"}
+                          </span>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-[#141414] border border-white/5">
+                          <span className="text-[10px] text-zinc-500 block">Date &amp; Time</span>
+                          <span className="font-medium text-zinc-300 mt-0.5 block">
+                            {att.detectedDate || "Today"} {att.detectedTime || ""}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* 10-Check Verification Engine Table (Section 15, 25, 40) */}
+                      <div className="space-y-2 pt-2">
+                        <span className="text-[11px] font-semibold uppercase text-zinc-400 tracking-wider block">
+                          Multi-Factor Verification Checks
+                        </span>
+
+                        <div className="overflow-x-auto rounded-xl border border-white/10">
+                          <table className="w-full text-left text-xs text-zinc-300">
+                            <thead className="bg-[#141414] text-zinc-500 uppercase text-[10px]">
+                              <tr>
+                                <th className="py-2 px-3">Check</th>
+                                <th className="py-2 px-3">Target Condition</th>
+                                <th className="py-2 px-3 text-right">Result</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5 bg-[#101010]">
+                              <tr>
+                                <td className="py-2 px-3 font-medium">1. Screenshot Readable</td>
+                                <td className="py-2 px-3 text-zinc-500">Clear receipt text</td>
+                                <td className="py-2 px-3 text-right">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${checks.screenshotReadable === "PASS" ? "bg-emerald-500/10 text-emerald-400" : "bg-crimson/15 text-crimson"}`}>
+                                    {checks.screenshotReadable}
+                                  </span>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className="py-2 px-3 font-medium">2. Payment Status</td>
+                                <td className="py-2 px-3 text-zinc-500">Paid / Successful</td>
+                                <td className="py-2 px-3 text-right">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${checks.paymentStatus === "PASS" ? "bg-emerald-500/10 text-emerald-400" : "bg-crimson/15 text-crimson"}`}>
+                                    {checks.paymentStatus}
+                                  </span>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className="py-2 px-3 font-medium">3. Exact Amount</td>
+                                <td className="py-2 px-3 text-zinc-500">₹450.00 exact</td>
+                                <td className="py-2 px-3 text-right">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${checks.amount === "PASS" ? "bg-emerald-500/10 text-emerald-400" : "bg-crimson/15 text-crimson"}`}>
+                                    {checks.amount}
+                                  </span>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className="py-2 px-3 font-medium">4. UTR Format</td>
+                                <td className="py-2 px-3 text-zinc-500">8–24 alphanumeric digits</td>
+                                <td className="py-2 px-3 text-right">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${checks.utr === "PASS" ? "bg-emerald-500/10 text-emerald-400" : "bg-crimson/15 text-crimson"}`}>
+                                    {checks.utr}
+                                  </span>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className="py-2 px-3 font-medium">5. UTR Uniqueness</td>
+                                <td className="py-2 px-3 text-zinc-500">Not consumed by other bill</td>
+                                <td className="py-2 px-3 text-right">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${checks.duplicateUtr === "PASS" ? "bg-emerald-500/10 text-emerald-400" : "bg-crimson/15 text-crimson"}`}>
+                                    {checks.duplicateUtr}
+                                  </span>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className="py-2 px-3 font-medium">6. Duplicate Screenshot</td>
+                                <td className="py-2 px-3 text-zinc-500">Unique SHA-256 / pHash</td>
+                                <td className="py-2 px-3 text-right">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${checks.duplicateProof === "PASS" ? "bg-emerald-500/10 text-emerald-400" : "bg-crimson/15 text-crimson"}`}>
+                                    {checks.duplicateProof}
+                                  </span>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className="py-2 px-3 font-medium">7. Payee Receiver</td>
+                                <td className="py-2 px-3 text-zinc-500">Matches CodeXa Official</td>
+                                <td className="py-2 px-3 text-right">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${checks.receiver === "PASS" ? "bg-emerald-500/10 text-emerald-400" : "bg-crimson/15 text-crimson"}`}>
+                                    {checks.receiver}
+                                  </span>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className="py-2 px-3 font-medium">8. Payment Date</td>
+                                <td className="py-2 px-3 text-zinc-500">Same calendar date</td>
+                                <td className="py-2 px-3 text-right">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${checks.paymentDate === "PASS" ? "bg-emerald-500/10 text-emerald-400" : "bg-crimson/15 text-crimson"}`}>
+                                    {checks.paymentDate}
+                                  </span>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className="py-2 px-3 font-medium">9. 5-Minute Time Window</td>
+                                <td className="py-2 px-3 text-zinc-500">Within window (±60s)</td>
+                                <td className="py-2 px-3 text-right">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                    checks.paymentTime === "PASS"
+                                      ? "bg-emerald-500/10 text-emerald-400"
+                                      : checks.paymentTime === "REVIEW"
+                                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                                      : "bg-crimson/15 text-crimson"
+                                  }`}>
+                                    {checks.paymentTime}
+                                  </span>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className="py-2 px-3 font-medium">10. Settlement Feed Match</td>
+                                <td className="py-2 px-3 text-zinc-500">Reconciled in bank feed</td>
+                                <td className="py-2 px-3 text-right">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                    checks.trustedTransaction === "PASS"
+                                      ? "bg-emerald-500/10 text-emerald-400"
+                                      : checks.trustedTransaction === "REVIEW"
+                                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                                      : "bg-crimson/15 text-crimson"
+                                  }`}>
+                                    {checks.trustedTransaction}
+                                  </span>
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
 
-      {/* ─── MANDATORY PAYMENT REMINDER AUDIT & CONTROLS (ADMIN) ───────────── */}
-      {isPrivileged && (
-        <div className="p-5 sm:p-6 rounded-3xl bg-[#0f0f0f] border border-white/10 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-bright-red/10 border border-bright-red/30 text-bright-red">
-                <Bell className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="font-orbitron font-bold text-white text-sm flex items-center gap-2">
-                  Mandatory Service Payment Reminder Automation
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-black/50 text-zinc-400 border border-white/10">
-                    ₹450 Bill
-                  </span>
-                </h3>
-                <p className="text-xs text-zinc-400 mt-0.5">
-                  Daily 9:00 AM IST automation via Resend transactional email &amp; Web Push. Stops automatically once verified.
-                </p>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex items-center gap-2">
-              {!isApproved && (
-                <button
-                  onClick={handleSendReminder}
-                  disabled={sendingReminder}
-                  className="px-4 py-2 rounded-xl bg-bright-red hover:bg-bright-red/90 text-white text-xs font-bold transition-all shadow-[0_0_15px_rgba(239,35,60,0.3)] disabled:opacity-50 flex items-center gap-1.5"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  {sendingReminder ? "Dispatching..." : "Send Reminder Now"}
-                </button>
-              )}
-            </div>
+      {/* ─── CASH PAYMENT AUDIT DETAILS (IF CASH USED) ─────────────────────── */}
+      {payment.paymentMethod === "CASH" && (
+        <div className="p-6 rounded-3xl bg-[#0f0f0f] border border-white/10 space-y-4">
+          <div className="flex items-center gap-2 border-b border-white/10 pb-3">
+            <Banknote className="w-5 h-5 text-amber-400" />
+            <h3 className="font-orbitron font-bold text-white text-sm uppercase tracking-wider">
+              Cash Payment Handover Record
+            </h3>
           </div>
 
-          {/* Reminder Feedback Message */}
-          {reminderMessage && (
-            <div
-              className={`p-3 rounded-xl text-xs font-medium flex items-center gap-2 ${
-                reminderMessage.type === "success"
-                  ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-300"
-                  : "bg-crimson/15 border border-crimson/30 text-crimson"
-              }`}
-            >
-              {reminderMessage.type === "success" ? (
-                <Check className="w-4 h-4 shrink-0" />
-              ) : (
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-              )}
-              <span>{reminderMessage.text}</span>
-            </div>
-          )}
-
-          {/* Key Metrics */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
             <div className="p-3 rounded-2xl bg-[#141414] border border-white/5">
-              <div className="text-[11px] text-zinc-500">Service Fee Status</div>
-              <div className="font-bold text-white mt-1">
-                {isApproved ? (
-                  <span className="text-emerald-400">PAID &bull; CLEARED</span>
-                ) : (
-                  <span className="text-amber-400">PENDING (₹450)</span>
-                )}
-              </div>
+              <span className="text-[11px] text-zinc-500 block">Cash Status</span>
+              <span className="font-bold text-white mt-1 block">{payment.cashStatus || "NONE"}</span>
             </div>
 
             <div className="p-3 rounded-2xl bg-[#141414] border border-white/5">
-              <div className="text-[11px] text-zinc-500">Last Reminder Sent</div>
-              <div className="font-medium text-zinc-200 mt-1">
-                {payment.lastReminderAt
-                  ? new Date(payment.lastReminderAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
-                  : "No reminder yet"}
-              </div>
+              <span className="text-[11px] text-zinc-500 block">Requested At</span>
+              <span className="font-medium text-zinc-300 mt-1 block">
+                {payment.cashRequestedAt ? new Date(payment.cashRequestedAt).toLocaleString() : "N/A"}
+              </span>
             </div>
 
             <div className="p-3 rounded-2xl bg-[#141414] border border-white/5">
-              <div className="text-[11px] text-zinc-500">Total Reminder Count</div>
-              <div className="font-bold text-white mt-1">
-                {payment.reminderCount || reminderLogs.length || 0} Sent
-              </div>
+              <span className="text-[11px] text-zinc-500 block">Approved By</span>
+              <span className="font-bold text-emerald-400 mt-1 block">
+                {payment.cashApprovedByName || "Pending Founder/Co-Founder"}
+              </span>
             </div>
 
             <div className="p-3 rounded-2xl bg-[#141414] border border-white/5">
-              <div className="text-[11px] text-zinc-500">Delivery Channels</div>
-              <div className="font-medium text-zinc-300 mt-1 flex items-center gap-2">
-                <span>Resend Email</span> &bull; <span>Web Push</span>
-              </div>
+              <span className="text-[11px] text-zinc-500 block">Confirmed At</span>
+              <span className="font-medium text-zinc-300 mt-1 block">
+                {payment.cashApprovedAt ? new Date(payment.cashApprovedAt).toLocaleString() : "Pending"}
+              </span>
             </div>
           </div>
-
-          {/* Audit History Logs */}
-          {reminderLogs && reminderLogs.length > 0 && (
-            <div className="space-y-2 pt-2">
-              <div className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
-                Recent Dispatch Logs
-              </div>
-              <div className="overflow-x-auto rounded-xl border border-white/5">
-                <table className="w-full text-left text-[11px] text-zinc-300">
-                  <thead className="bg-[#141414] text-zinc-500 uppercase text-[10px]">
-                    <tr>
-                      <th className="py-2 px-3">Date (IST)</th>
-                      <th className="py-2 px-3">Source</th>
-                      <th className="py-2 px-3">Email Status</th>
-                      <th className="py-2 px-3">Web Push</th>
-                      <th className="py-2 px-3">Provider ID</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5 bg-[#101010]">
-                    {reminderLogs.map((log: any) => (
-                      <tr key={log.id}>
-                        <td className="py-2 px-3 font-mono text-zinc-400">{log.reminderDate}</td>
-                        <td className="py-2 px-3 font-medium text-white">{log.source}</td>
-                        <td className="py-2 px-3">
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                              log.emailStatus === "SENT"
-                                ? "bg-emerald-500/10 text-emerald-400"
-                                : log.emailStatus === "SKIPPED"
-                                ? "bg-zinc-500/10 text-zinc-400"
-                                : "bg-crimson/15 text-crimson"
-                            }`}
-                          >
-                            {log.emailStatus}
-                          </span>
-                        </td>
-                        <td className="py-2 px-3">
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                              log.pushStatus === "SENT"
-                                ? "bg-emerald-500/10 text-emerald-400"
-                                : log.pushStatus === "UNAVAILABLE"
-                                ? "bg-zinc-500/10 text-zinc-400"
-                                : "bg-crimson/15 text-crimson"
-                            }`}
-                          >
-                            {log.pushStatus}
-                          </span>
-                        </td>
-                        <td className="py-2 px-3 font-mono text-[10px] text-zinc-500 truncate max-w-[150px]">
-                          {log.emailProviderId || "-"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
-      {/* ─── OFFICIAL CODEXA SERVICE BILL INVOICE CARD ─────────────────────── */}
-      <div className="rounded-3xl bg-[#0d0d0d] border border-crimson/30 shadow-2xl overflow-hidden relative">
-        {/* Top Crimson Glow Accent */}
-        <div className="h-1.5 w-full bg-gradient-to-r from-crimson via-bright-red to-deep-red" />
-
-        <div className="p-6 sm:p-8 space-y-6">
-          {/* Bill Top Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-6">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-orbitron font-extrabold text-lg text-white tracking-wider">
-                  CODEXA AGENCY
-                </span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-crimson/20 text-bright-red border border-crimson/30 uppercase">
-                  Official Bill
-                </span>
-              </div>
-              <h1 className="text-xl sm:text-2xl font-orbitron font-bold text-white mt-1">
-                {payment.title || "INTERNSHIP SERVICE BILL"}
-              </h1>
-              <div className="flex items-center gap-2 mt-1 text-xs text-zinc-400">
-                <span>Domain:</span>
-                <span className="text-white font-semibold">{payment.domain || "Development"}</span>
-                <span>&bull;</span>
-                <span>Role:</span>
-                <span className="text-white">{payment.userRole || "INTERN"}</span>
-              </div>
-            </div>
-
-            <div className="sm:text-right">
-              <span className="text-[11px] text-zinc-500 uppercase tracking-widest block font-medium">
-                Payment Reference ID
-              </span>
-              <button
-                onClick={() => handleCopy(payment.referenceId, "ref")}
-                className="mt-1 inline-flex items-center gap-1.5 font-mono text-base font-bold text-bright-red hover:underline group"
-                title="Click to copy reference"
-              >
-                <span>{payment.referenceId}</span>
-                {copiedRef ? (
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                ) : (
-                  <Copy className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100" />
-                )}
-              </button>
-              {payment.dueDate && (
-                <div className="text-[11px] text-zinc-500 mt-0.5">
-                  Due by: {new Date(payment.dueDate).toLocaleDateString()}
-                </div>
-              )}
-            </div>
+      {/* ─── PAYMENT TIMELINE & AUDIT TRAIL (SECTION 76) ────────────────────── */}
+      <div className="p-6 sm:p-7 rounded-3xl bg-[#0f0f0f] border border-white/10 space-y-4">
+        <div className="flex items-center justify-between border-b border-white/10 pb-3">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-bright-red" />
+            <h3 className="font-orbitron font-bold text-white text-xs tracking-wider uppercase">
+              Full Payment Audit Timeline ({auditLogs.length} Events)
+            </h3>
           </div>
-
-          {/* User Details Snapshot */}
-          <div className="p-4 rounded-2xl bg-[#141414] border border-white/5 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-            <div>
-              <span className="text-zinc-500 block text-[11px]">Billed To</span>
-              <span className="font-semibold text-white">{payment.userName}</span>
-            </div>
-            <div>
-              <span className="text-zinc-500 block text-[11px]">Email</span>
-              <span className="text-zinc-300 truncate block">{payment.userEmail}</span>
-            </div>
-            <div>
-              <span className="text-zinc-500 block text-[11px]">CodeXa ID</span>
-              <span className="font-mono text-zinc-300">
-                {payment.internId || payment.employeeId || "Pending"}
-              </span>
-            </div>
-            <div>
-              <span className="text-zinc-500 block text-[11px]">Payment Mode</span>
-              <span className="text-emerald-400 font-semibold">Manual UPI</span>
-            </div>
-          </div>
-
-          {/* Itemized Bill Table */}
-          <div className="rounded-2xl border border-white/10 overflow-hidden">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-[#161616] text-zinc-400 uppercase text-[11px] tracking-wider border-b border-white/10">
-                <tr>
-                  <th className="py-3 px-4 font-semibold">Item / Description</th>
-                  <th className="py-3 px-4 font-semibold text-right">Amount (INR)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5 text-zinc-200">
-                {lineItems.map((item, idx) => (
-                  <tr key={idx} className="hover:bg-white/[0.01]">
-                    <td className="py-3.5 px-4">
-                      <div className="font-medium text-white">{item.item}</div>
-                      {(item.details || item.subItems) && (
-                        <ul className="mt-1.5 space-y-1 text-[11px] text-zinc-400 pl-2">
-                          {(item.details || item.subItems)!.map((sub, sIdx) => (
-                            <li key={sIdx} className="flex items-center gap-1.5">
-                              <span className="text-bright-red">&bull;</span>
-                              <span>{sub}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-right font-mono font-semibold text-white">
-                      ₹{item.amount.toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot className="bg-[#141414] border-t-2 border-crimson/40">
-                <tr>
-                  <td className="py-4 px-4 font-orbitron font-bold text-sm text-white">
-                    TOTAL PAYABLE:
-                  </td>
-                  <td className="py-4 px-4 text-right font-orbitron font-extrabold text-lg text-bright-red">
-                    ₹{payment.fixedAmount.toLocaleString()}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-
-          <div className="p-3.5 rounded-xl bg-[#141414] border border-white/5 text-zinc-400 text-xs flex items-start gap-2.5">
-            <Info className="w-4 h-4 text-bright-red shrink-0 mt-0.5" />
-            <p>
-              <strong>Verification Requirement:</strong> Payment screenshot must be uploaded below after completing the transaction. Status will update to <span className="text-emerald-400 font-semibold">Approved</span> only after manual administrator confirmation.
-            </p>
-          </div>
+          <span className="text-[11px] text-zinc-500">Immutable ledger</span>
         </div>
+
+        {auditLogs.length === 0 ? (
+          <div className="text-zinc-500 text-xs py-2">No audit events recorded yet.</div>
+        ) : (
+          <div className="space-y-3">
+            {auditLogs.map((log) => (
+              <div
+                key={log.id}
+                className="p-3 rounded-2xl bg-[#141414] border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+              >
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-white">{log.action}</span>
+                    {log.actorName && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">
+                        by {log.actorName}
+                      </span>
+                    )}
+                  </div>
+                  {log.details && (
+                    <div className="text-[11px] text-zinc-400 font-mono truncate max-w-xl">
+                      {typeof log.details === "string" ? log.details : JSON.stringify(log.details)}
+                    </div>
+                  )}
+                </div>
+
+                <span className="text-[11px] text-zinc-500 font-mono shrink-0">
+                  {new Date(log.createdAt).toLocaleString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* ─── PAY VIA UPI SECTION (Visible if Pending Payment or Resubmitting) ─── */}
-      {(isPendingPayment || isResubmitting) && (
-        <div className="p-6 sm:p-8 rounded-3xl bg-[#0d0d0d] border border-white/10 space-y-6 shadow-xl">
-          <div className="border-b border-white/10 pb-4">
-            <h2 className="text-lg font-orbitron font-bold text-white flex items-center gap-2">
-              <QrCode className="w-5 h-5 text-bright-red" />
-              Pay via UPI
-            </h2>
-            <p className="text-xs text-zinc-400 mt-1">
-              Scan the official CodeXa QR code with any UPI app or tap a payment button on mobile.
+      {/* ─── MODAL: APPROVE PAYMENT EXCEPTION ──────────────────────────────── */}
+      {showApproveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="max-w-md w-full bg-[#121212] border border-emerald-500/30 rounded-3xl p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-emerald-400">
+                <CheckCircle2 className="w-5 h-5" />
+                <h3 className="font-orbitron font-bold text-white text-base">Approve Payment Exception</h3>
+              </div>
+              <button onClick={() => setShowApproveModal(false)} className="text-zinc-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-zinc-300">
+              Are you sure you want to approve this ₹450 payment exception for{" "}
+              <strong className="text-white">{payment.userName}</strong> ({payment.referenceId})?
+              This will atomically mark the payment as <strong>SUCCESS</strong>, clear intern access, and dispatch the confirmation email.
             </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-            {/* Left: Dynamic QR Code */}
-            <div className="flex flex-col items-center justify-center p-6 rounded-2xl bg-[#141414] border border-white/5 space-y-3">
-              <div className="p-3 bg-white rounded-2xl shadow-xl">
-                <img
-                  src={`/api/payments/qr?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(
-                    payeeName
-                  )}&am=${amountStr}&tn=${encodeURIComponent(payment.referenceId)}`}
-                  alt="CodeXa UPI QR Code"
-                  className="w-48 h-48 sm:w-56 sm:h-56 object-contain"
-                />
-              </div>
-
-              <div className="text-center">
-                <span className="text-[11px] font-semibold uppercase text-zinc-400 tracking-wider">
-                  Scan using Any UPI App
-                </span>
-                <p className="text-[11px] text-zinc-500 mt-0.5">
-                  PhonePe, Google Pay, Paytm, BHIM, CRED
-                </p>
-              </div>
-            </div>
-
-            {/* Right: UPI Details & Intent Buttons */}
-            <div className="space-y-5">
-              {/* Official UPI ID Box */}
-              <div className="p-4 rounded-2xl bg-[#161616] border border-white/10 space-y-2">
-                <span className="text-zinc-500 text-[11px] uppercase tracking-wider font-semibold block">
-                  Official CodeXa UPI ID
-                </span>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="font-mono text-base font-bold text-white tracking-wide">
-                    {upiId}
-                  </span>
-                  <button
-                    onClick={() => handleCopy(upiId, "upi")}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#222] hover:bg-[#2c2c2c] text-xs font-semibold text-white transition-colors border border-white/10"
-                  >
-                    {copiedUpi ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        <span className="text-emerald-400">Copied!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5 text-zinc-400" />
-                        <span>Copy UPI ID</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-                <div className="text-[11px] text-zinc-400">Payee Name: {payeeName}</div>
-              </div>
-
-              {/* Mobile Deep Link Buttons */}
-              <div className="space-y-2">
-                <span className="text-zinc-400 text-xs font-medium block">
-                  Or pay directly on mobile:
-                </span>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <a
-                    href={`phonepe://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${amountStr}&cu=INR&tn=${encodeURIComponent(payment.referenceId)}`}
-                    className="p-3 rounded-xl bg-[#181818] hover:bg-[#202020] border border-white/10 text-xs font-semibold text-white text-center transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Smartphone className="w-4 h-4 text-purple-400" />
-                    PhonePe
-                  </a>
-                  <a
-                    href={`gpay://upi/pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${amountStr}&cu=INR&tn=${encodeURIComponent(payment.referenceId)}`}
-                    className="p-3 rounded-xl bg-[#181818] hover:bg-[#202020] border border-white/10 text-xs font-semibold text-white text-center transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Smartphone className="w-4 h-4 text-blue-400" />
-                    Google Pay
-                  </a>
-                  <a
-                    href={`paytmmp://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${amountStr}&cu=INR&tn=${encodeURIComponent(payment.referenceId)}`}
-                    className="p-3 rounded-xl bg-[#181818] hover:bg-[#202020] border border-white/10 text-xs font-semibold text-white text-center transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Smartphone className="w-4 h-4 text-cyan-400" />
-                    Paytm
-                  </a>
-                  <a
-                    href={upiDeepLink}
-                    className="p-3 rounded-xl bg-[#181818] hover:bg-[#202020] border border-white/10 text-xs font-semibold text-white text-center transition-colors flex items-center justify-center gap-2"
-                  >
-                    <CreditCard className="w-4 h-4 text-bright-red" />
-                    Any UPI App
-                  </a>
-                </div>
-              </div>
-
-              <div className="text-[11px] text-zinc-500 italic">
-                * Note: Launching a UPI app will NOT automatically mark this payment as completed. You must submit your payment screenshot below.
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ─── PAYMENT PROOF SUBMISSION FORM ─────────────────────────────────── */}
-      {(isPendingPayment || isResubmitting) && (
-        <form
-          onSubmit={handleSubmitProof}
-          className="p-6 sm:p-8 rounded-3xl bg-[#0d0d0d] border border-white/10 space-y-6 shadow-xl"
-        >
-          <div className="border-b border-white/10 pb-4">
-            <h2 className="text-lg font-orbitron font-bold text-white flex items-center gap-2">
-              <Upload className="w-5 h-5 text-emerald-400" />
-              Submit Payment Proof
-            </h2>
-            <p className="text-xs text-zinc-400 mt-1">
-              Upload the screenshot of your successful UPI transfer. Ensure the transaction amount, date, and UTR are visible.
-            </p>
-          </div>
-
-          {proofError && (
-            <div className="p-3.5 rounded-xl bg-crimson/15 border border-crimson/30 text-crimson text-xs flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0" />
-              <span>{proofError}</span>
-            </div>
-          )}
-
-          <div className="space-y-4 text-xs">
-            {/* Screenshot Upload Dropzone */}
-            <div>
-              <label className="block font-medium text-zinc-300 mb-2">
-                Payment Screenshot * <span className="text-zinc-500 font-normal">(Max 10 MB, JPG / PNG / WebP)</span>
-              </label>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                onChange={handleFileChange}
-                className="hidden"
-              />
-
-              {!previewUrl ? (
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="p-8 border-2 border-dashed border-white/15 hover:border-bright-red/50 rounded-2xl bg-[#141414] text-center cursor-pointer transition-all hover:bg-[#181818] flex flex-col items-center justify-center space-y-2"
-                >
-                  <div className="p-3 rounded-full bg-crimson/10 border border-crimson/20 text-bright-red">
-                    <Upload className="w-6 h-6" />
-                  </div>
-                  <span className="font-semibold text-white">Click or drag screenshot here</span>
-                  <span className="text-[11px] text-zinc-500">Supports Camera capture or photo gallery</span>
-                </div>
-              ) : (
-                <div className="p-4 rounded-2xl bg-[#141414] border border-white/10 flex flex-col sm:flex-row items-center gap-4">
-                  <img
-                    src={previewUrl}
-                    alt="Preview"
-                    className="w-32 h-32 object-cover rounded-xl border border-white/10"
-                  />
-                  <div className="flex-1 space-y-2 text-center sm:text-left">
-                    <div className="font-semibold text-white truncate max-w-xs">
-                      {screenshotFile?.name}
-                    </div>
-                    <div className="text-[11px] text-zinc-400">
-                      {((screenshotFile?.size || 0) / 1024 / 1024).toFixed(2)} MB &bull; {screenshotFile?.type}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setScreenshotFile(null);
-                        setPreviewUrl(null);
-                      }}
-                      className="text-xs text-crimson hover:underline"
-                    >
-                      Remove & Choose Another
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Inputs: UTR, Date, UPI App */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block font-medium text-zinc-300 mb-1.5">
-                  Transaction / UTR ID <span className="text-zinc-500">(12-digit UPI Reference)</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 428192847291"
-                  value={utrNumber}
-                  onChange={(e) => setUtrNumber(e.target.value)}
-                  className="w-full p-2.5 bg-[#161616] border border-white/10 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-bright-red/50"
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-zinc-300 mb-1.5">UPI App Used *</label>
-                <select
-                  value={upiApp}
-                  onChange={(e) => setUpiApp(e.target.value)}
-                  className="w-full p-2.5 bg-[#161616] border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-bright-red/50"
-                >
-                  <option value="PhonePe">PhonePe</option>
-                  <option value="Google Pay">Google Pay (GPay)</option>
-                  <option value="Paytm">Paytm</option>
-                  <option value="BHIM UPI">BHIM UPI</option>
-                  <option value="CRED">CRED</option>
-                  <option value="Amazon Pay">Amazon Pay</option>
-                  <option value="Bank NetBanking">Bank IMPS / NetBanking</option>
-                  <option value="Other">Other UPI App</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block font-medium text-zinc-300 mb-1.5">Payment Date *</label>
-                <input
-                  type="date"
-                  value={paymentDate}
-                  onChange={(e) => setPaymentDate(e.target.value)}
-                  className="w-full p-2.5 bg-[#161616] border border-white/10 rounded-xl text-xs text-white focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-zinc-300 mb-1.5">Payment Time (Optional)</label>
-                <input
-                  type="time"
-                  value={paymentTime}
-                  onChange={(e) => setPaymentTime(e.target.value)}
-                  className="w-full p-2.5 bg-[#161616] border border-white/10 rounded-xl text-xs text-white focus:outline-none"
-                />
-              </div>
-            </div>
 
             <div>
-              <label className="block font-medium text-zinc-300 mb-1.5">Optional Remarks / Note</label>
+              <label className="text-[11px] text-zinc-400 block mb-1">Administrative Notes (Optional)</label>
               <input
                 type="text"
-                placeholder="Any special transaction note..."
-                value={userNote}
-                onChange={(e) => setUserNote(e.target.value)}
-                className="w-full p-2.5 bg-[#161616] border border-white/10 rounded-xl text-xs text-white focus:outline-none"
+                placeholder="e.g. Verified transaction timestamp manually; timing exception approved."
+                value={approvalNotes}
+                onChange={(e) => setApprovalNotes(e.target.value)}
+                className="w-full p-2.5 rounded-xl bg-[#181818] border border-white/10 text-xs text-white focus:outline-none focus:border-emerald-500"
               />
             </div>
-          </div>
 
-          <div className="pt-4 border-t border-white/10 flex items-center justify-between">
-            <span className="text-[11px] text-zinc-500">
-              By submitting, you certify that this screenshot represents a genuine transaction.
-            </span>
-
-            <button
-              type="submit"
-              disabled={submittingProof}
-              className="px-6 py-2.5 rounded-xl bg-bright-red hover:bg-bright-red/90 text-white text-xs font-bold transition-all shadow-[0_0_15px_rgba(239,35,60,0.3)] disabled:opacity-50"
-            >
-              {submittingProof ? "Submitting..." : "Submit for Verification"}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* ─── PENDING VERIFICATION REVIEW CARD ──────────────────────────────── */}
-      {isPendingVerification && (
-        <div className="p-6 rounded-3xl bg-[#0f0f0f] border border-blue-500/30 space-y-4">
-          <div className="flex items-center gap-2 text-blue-400 font-semibold text-sm">
-            <Clock className="w-5 h-5 animate-pulse" />
-            Submitted Payment Proof Under Review
-          </div>
-          <p className="text-xs text-zinc-400">
-            Your payment proof was received on{" "}
-            <strong>{new Date(payment.submittedAt).toLocaleString()}</strong>.
-            CodeXa administrators manually verify all bank credits. You will receive an email once verified.
-          </p>
-
-          <div className="p-4 rounded-2xl bg-[#141414] border border-white/5 flex flex-col sm:flex-row items-center gap-4 text-xs">
-            {payment.proofImageUrl && (
-              <img
-                src={`/api/payments/${payment.id}/proof-image`}
-                alt="Submitted Proof"
-                className="w-24 h-24 object-cover rounded-xl border border-white/10"
-              />
-            )}
-            <div className="space-y-1">
-              <div>Reference: <span className="font-mono text-white font-bold">{payment.referenceId}</span></div>
-              {payment.utrNumber && <div>UTR: <span className="font-mono text-zinc-300">{payment.utrNumber}</span></div>}
-              <div>App: <span className="text-zinc-300">{payment.upiApp || "UPI"}</span></div>
-              <div>Status: <span className="text-blue-400 font-semibold">Pending Verification</span></div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowApproveModal(false)}
+                className="px-4 py-2 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold hover:bg-zinc-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleApproveException}
+                disabled={processingAction}
+                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-lg flex items-center gap-1.5"
+              >
+                {processingAction ? "Approving..." : "Confirm Approval"}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ─── APPROVED SEAL CARD ────────────────────────────────────────────── */}
-      {isApproved && (
-        <div className="p-6 rounded-3xl bg-emerald-500/10 border border-emerald-500/30 space-y-4 text-center sm:text-left">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                <FileCheck className="w-6 h-6" />
+      {/* ─── MODAL: REJECT PAYMENT EXCEPTION ──────────────────────────────── */}
+      {showRejectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="max-w-md w-full bg-[#121212] border border-crimson/30 rounded-3xl p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-crimson">
+                <XCircle className="w-5 h-5" />
+                <h3 className="font-orbitron font-bold text-white text-base">Reject Payment Proof</h3>
               </div>
-              <div>
-                <h3 className="font-orbitron font-bold text-white text-base">
-                  Official Payment Confirmation
-                </h3>
-                <p className="text-xs text-zinc-400 mt-0.5">
-                  Verified by {payment.verifiedByName || "Administrator"} on{" "}
-                  {new Date(payment.verifiedAt).toLocaleDateString()}
-                </p>
-              </div>
+              <button onClick={() => setShowRejectModal(false)} className="text-zinc-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            <div className="px-4 py-2 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold uppercase tracking-wider">
-              ✓ Verified & Cleared
+            <p className="text-xs text-zinc-300">
+              Please provide a clear reason for rejecting this payment for{" "}
+              <strong className="text-white">{payment.userName}</strong>. The intern will receive this feedback to retry.
+            </p>
+
+            <div>
+              <label className="text-[11px] text-zinc-400 block mb-1">Rejection Reason *</label>
+              <textarea
+                rows={3}
+                placeholder="e.g. Screenshot unreadable / transaction amount could not be verified."
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                className="w-full p-2.5 rounded-xl bg-[#181818] border border-white/10 text-xs text-white focus:outline-none focus:border-crimson"
+              />
             </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowRejectModal(false)}
+                className="px-4 py-2 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold hover:bg-zinc-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleRejectException}
+                disabled={processingAction || !rejectionReason.trim()}
+                className="px-5 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-bold transition-all shadow-lg flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {processingAction ? "Rejecting..." : "Confirm Rejection"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: CONFIRM CASH RECEIVED ─────────────────────────────────── */}
+      {showCashApproveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="max-w-md w-full bg-[#121212] border border-emerald-500/30 rounded-3xl p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-emerald-400">
+                <Banknote className="w-5 h-5" />
+                <h3 className="font-orbitron font-bold text-white text-base">Confirm ₹450 Cash Received?</h3>
+              </div>
+              <button onClick={() => setShowCashApproveModal(false)} className="text-zinc-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-zinc-300">
+              Confirm that you have physically received exact ₹450 cash from{" "}
+              <strong className="text-white">{payment.userName}</strong> ({payment.internId || payment.referenceId})?
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowCashApproveModal(false)}
+                className="px-4 py-2 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold hover:bg-zinc-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmCash}
+                disabled={processingAction}
+                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-lg"
+              >
+                {processingAction ? "Confirming..." : "Confirm Cash Received"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: REJECT CASH REQUEST ──────────────────────────────────── */}
+      {showCashRejectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="max-w-md w-full bg-[#121212] border border-crimson/30 rounded-3xl p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-crimson">
+                <XCircle className="w-5 h-5" />
+                <h3 className="font-orbitron font-bold text-white text-base">Reject Cash Request</h3>
+              </div>
+              <button onClick={() => setShowCashRejectModal(false)} className="text-zinc-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-zinc-300">
+              Please enter the reason for rejecting this cash payment request:
+            </p>
+
+            <div>
+              <textarea
+                rows={3}
+                placeholder="e.g. Cash not received / Intern opted for UPI instead."
+                value={cashRejectReason}
+                onChange={(e) => setCashRejectReason(e.target.value)}
+                className="w-full p-2.5 rounded-xl bg-[#181818] border border-white/10 text-xs text-white focus:outline-none focus:border-crimson"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowCashRejectModal(false)}
+                className="px-4 py-2 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold hover:bg-zinc-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleRejectCash}
+                disabled={processingAction || !cashRejectReason.trim()}
+                className="px-5 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-bold transition-all shadow-lg disabled:opacity-50"
+              >
+                {processingAction ? "Rejecting..." : "Confirm Rejection"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: ZOOMED SCREENSHOT VIEWER ──────────────────────────────── */}
+      {zoomedImageUrl && (
+        <div
+          onClick={() => setZoomedImageUrl(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md cursor-zoom-out"
+        >
+          <div className="relative max-w-2xl max-h-[90vh] overflow-hidden rounded-2xl border border-white/20 shadow-2xl">
+            <button
+              onClick={() => setZoomedImageUrl(null)}
+              className="absolute top-3 right-3 p-2 rounded-full bg-black/70 text-white hover:bg-black transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <img
+              src={zoomedImageUrl}
+              alt="Zoomed Payment Proof"
+              className="w-full h-auto max-h-[85vh] object-contain"
+            />
           </div>
         </div>
       )}

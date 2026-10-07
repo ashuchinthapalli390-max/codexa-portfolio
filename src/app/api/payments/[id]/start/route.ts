@@ -37,7 +37,14 @@ export async function POST(
     const validMethods: SupportedUpiMethod[] = [
       "PHONEPE",
       "GPAY",
+      "GOOGLE_PAY",
       "PAYTM",
+      "FAM",
+      "FAMPAY",
+      "AMAZON_PAY",
+      "BHIM",
+      "CRED",
+      "WHATSAPP_PAY",
       "OTHER_UPI",
     ];
 

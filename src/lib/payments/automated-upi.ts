@@ -33,7 +33,18 @@ export const DEFAULT_PROOF_WINDOW_MINUTES = 5;
 export const DEFAULT_CLOCK_TOLERANCE_SECONDS = 60;
 export const MAX_PROOF_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 
-export type SupportedUpiMethod = "PHONEPE" | "GPAY" | "PAYTM" | "OTHER_UPI";
+export type SupportedUpiMethod =
+  | "PHONEPE"
+  | "GPAY"
+  | "GOOGLE_PAY"
+  | "PAYTM"
+  | "FAM"
+  | "FAMPAY"
+  | "AMAZON_PAY"
+  | "BHIM"
+  | "CRED"
+  | "WHATSAPP_PAY"
+  | "OTHER_UPI";
 
 export const ALLOWED_PROOF_MIME_TYPES = [
   "image/jpeg",
@@ -245,7 +256,7 @@ export function buildUpiIntentUrl(params: {
   receiverName: string;
   amount: number;
   referenceId: string;
-  method?: SupportedUpiMethod;
+  method?: SupportedUpiMethod | string;
 }): {
   universalUri: string;
   appSpecificUri: string;
@@ -262,15 +273,34 @@ export function buildUpiIntentUrl(params: {
 
   let appSpecificUri = universalUri;
 
-  switch (method) {
+  const normalizedMethod = (method || "").toUpperCase();
+
+  switch (normalizedMethod) {
     case "PHONEPE":
       appSpecificUri = `phonepe://pay?pa=${upiId}&pn=${encodedName}&am=${formattedAmount}&cu=INR&tn=${encodedNote}`;
       break;
     case "GPAY":
+    case "GOOGLE_PAY":
       appSpecificUri = `gpay://upi/pay?pa=${upiId}&pn=${encodedName}&am=${formattedAmount}&cu=INR&tn=${encodedNote}`;
       break;
     case "PAYTM":
       appSpecificUri = `paytmmp://pay?pa=${upiId}&pn=${encodedName}&am=${formattedAmount}&cu=INR&tn=${encodedNote}`;
+      break;
+    case "FAM":
+    case "FAMPAY":
+      appSpecificUri = `fam://pay?pa=${upiId}&pn=${encodedName}&am=${formattedAmount}&cu=INR&tn=${encodedNote}`;
+      break;
+    case "AMAZON_PAY":
+      appSpecificUri = `amazonpay://upi/pay?pa=${upiId}&pn=${encodedName}&am=${formattedAmount}&cu=INR&tn=${encodedNote}`;
+      break;
+    case "BHIM":
+      appSpecificUri = `bhim://pay?pa=${upiId}&pn=${encodedName}&am=${formattedAmount}&cu=INR&tn=${encodedNote}`;
+      break;
+    case "CRED":
+      appSpecificUri = `cred://pay?pa=${upiId}&pn=${encodedName}&am=${formattedAmount}&cu=INR&tn=${encodedNote}`;
+      break;
+    case "WHATSAPP_PAY":
+      appSpecificUri = `whatsapp://pay?pa=${upiId}&pn=${encodedName}&am=${formattedAmount}&cu=INR&tn=${encodedNote}`;
       break;
     case "OTHER_UPI":
     default:

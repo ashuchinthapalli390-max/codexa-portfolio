@@ -104,7 +104,7 @@ export function InternAutomaticPaymentFlow({
 
   // Flow State
   const [selectedMethod, setSelectedMethod] = useState<
-    "PHONEPE" | "GPAY" | "PAYTM" | "OTHER_UPI" | "CASH"
+    "PHONEPE" | "GPAY" | "PAYTM" | "FAM" | "AMAZON_PAY" | "BHIM" | "CRED" | "OTHER_UPI" | "CASH"
   >("PHONEPE");
   const [startingPayment, setStartingPayment] = useState(false);
   const [requestingCash, setRequestingCash] = useState(false);
@@ -232,7 +232,7 @@ export function InternAutomaticPaymentFlow({
 
   // Start Payment Session (creates PaymentAttempt on server BEFORE opening app)
   const handleStartPayment = async (
-    methodOverride?: "PHONEPE" | "GPAY" | "PAYTM" | "OTHER_UPI"
+    methodOverride?: "PHONEPE" | "GPAY" | "PAYTM" | "FAM" | "AMAZON_PAY" | "BHIM" | "CRED" | "OTHER_UPI"
   ) => {
     if (!payment) return;
     const methodToUse = methodOverride || selectedMethod;
@@ -867,7 +867,7 @@ export function InternAutomaticPaymentFlow({
             </div>
 
             {/* Selectable Cards: PhonePe, Google Pay, Paytm, Other UPI, Pay with Cash */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
               {settings?.phonePeEnabled !== false && (
                 <button
                   type="button"
@@ -946,6 +946,106 @@ export function InternAutomaticPaymentFlow({
                 </button>
               )}
 
+              {/* Fam / FamPay */}
+              <button
+                type="button"
+                disabled={payment.cashStatus === "PENDING_CASH_APPROVAL"}
+                onClick={() => setSelectedMethod("FAM")}
+                className={`p-4 rounded-2xl border text-left transition-all flex flex-col justify-between gap-3 ${
+                  selectedMethod === "FAM"
+                    ? "bg-amber-950/40 border-amber-500 ring-2 ring-amber-500/30"
+                    : "bg-[#141414] border-white/5 hover:border-white/20"
+                } ${payment.cashStatus === "PENDING_CASH_APPROVAL" ? "opacity-40 cursor-not-allowed" : ""}`}
+              >
+                <div className="flex items-center justify-between w-full">
+                  <span className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-xs font-orbitron">
+                    Fam
+                  </span>
+                  {selectedMethod === "FAM" && (
+                    <CheckCircle2 className="w-4 h-4 text-amber-400" />
+                  )}
+                </div>
+                <div>
+                  <span className="font-bold text-white text-xs block">Fam / FamPay</span>
+                  <span className="text-[10px] text-zinc-400">Gen-Z UPI</span>
+                </div>
+              </button>
+
+              {/* Amazon Pay */}
+              <button
+                type="button"
+                disabled={payment.cashStatus === "PENDING_CASH_APPROVAL"}
+                onClick={() => setSelectedMethod("AMAZON_PAY")}
+                className={`p-4 rounded-2xl border text-left transition-all flex flex-col justify-between gap-3 ${
+                  selectedMethod === "AMAZON_PAY"
+                    ? "bg-orange-950/40 border-orange-500 ring-2 ring-orange-500/30"
+                    : "bg-[#141414] border-white/5 hover:border-white/20"
+                } ${payment.cashStatus === "PENDING_CASH_APPROVAL" ? "opacity-40 cursor-not-allowed" : ""}`}
+              >
+                <div className="flex items-center justify-between w-full">
+                  <span className="w-8 h-8 rounded-xl bg-orange-500/20 text-orange-400 flex items-center justify-center font-bold text-xs font-orbitron">
+                    Amz
+                  </span>
+                  {selectedMethod === "AMAZON_PAY" && (
+                    <CheckCircle2 className="w-4 h-4 text-orange-400" />
+                  )}
+                </div>
+                <div>
+                  <span className="font-bold text-white text-xs block">Amazon Pay</span>
+                  <span className="text-[10px] text-zinc-400">Amazon UPI</span>
+                </div>
+              </button>
+
+              {/* BHIM */}
+              <button
+                type="button"
+                disabled={payment.cashStatus === "PENDING_CASH_APPROVAL"}
+                onClick={() => setSelectedMethod("BHIM")}
+                className={`p-4 rounded-2xl border text-left transition-all flex flex-col justify-between gap-3 ${
+                  selectedMethod === "BHIM"
+                    ? "bg-teal-950/40 border-teal-500 ring-2 ring-teal-500/30"
+                    : "bg-[#141414] border-white/5 hover:border-white/20"
+                } ${payment.cashStatus === "PENDING_CASH_APPROVAL" ? "opacity-40 cursor-not-allowed" : ""}`}
+              >
+                <div className="flex items-center justify-between w-full">
+                  <span className="w-8 h-8 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center font-bold text-xs font-orbitron">
+                    BH
+                  </span>
+                  {selectedMethod === "BHIM" && (
+                    <CheckCircle2 className="w-4 h-4 text-teal-400" />
+                  )}
+                </div>
+                <div>
+                  <span className="font-bold text-white text-xs block">BHIM</span>
+                  <span className="text-[10px] text-zinc-400">NPCI Official</span>
+                </div>
+              </button>
+
+              {/* CRED */}
+              <button
+                type="button"
+                disabled={payment.cashStatus === "PENDING_CASH_APPROVAL"}
+                onClick={() => setSelectedMethod("CRED")}
+                className={`p-4 rounded-2xl border text-left transition-all flex flex-col justify-between gap-3 ${
+                  selectedMethod === "CRED"
+                    ? "bg-zinc-800 border-white/60 ring-2 ring-white/20"
+                    : "bg-[#141414] border-white/5 hover:border-white/20"
+                } ${payment.cashStatus === "PENDING_CASH_APPROVAL" ? "opacity-40 cursor-not-allowed" : ""}`}
+              >
+                <div className="flex items-center justify-between w-full">
+                  <span className="w-8 h-8 rounded-xl bg-white/10 text-white flex items-center justify-center font-bold text-xs font-orbitron">
+                    CR
+                  </span>
+                  {selectedMethod === "CRED" && (
+                    <CheckCircle2 className="w-4 h-4 text-white" />
+                  )}
+                </div>
+                <div>
+                  <span className="font-bold text-white text-xs block">CRED</span>
+                  <span className="text-[10px] text-zinc-400">CRED UPI</span>
+                </div>
+              </button>
+
               {settings?.otherUpiEnabled !== false && (
                 <button
                   type="button"
@@ -967,7 +1067,7 @@ export function InternAutomaticPaymentFlow({
                   </div>
                   <div>
                     <span className="font-bold text-white text-xs block">Other UPI App</span>
-                    <span className="text-[10px] text-zinc-400">BHIM / CRED / Any</span>
+                    <span className="text-[10px] text-zinc-400">Any Bank / App</span>
                   </div>
                 </button>
               )}
@@ -1234,13 +1334,28 @@ export function InternAutomaticPaymentFlow({
                     />
                   </div>
 
-                  <div className="text-center">
+                  <div className="text-center flex flex-col items-center">
                     <span className="text-[11px] font-semibold uppercase text-zinc-300 tracking-wider">
                       Scan with PhonePe / Google Pay / Paytm / Any UPI App
                     </span>
                     <p className="text-[10px] font-mono text-bright-red mt-0.5">
                       Amount: ₹450 &bull; Ref: {payment.referenceId}
                     </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const uploadEl = document.getElementById("proof-upload-section");
+                        if (uploadEl) {
+                          uploadEl.scrollIntoView({ behavior: "smooth" });
+                        } else if (!activeAttempt) {
+                          handleStartPayment("OTHER_UPI");
+                        }
+                      }}
+                      className="mt-2.5 px-4 py-1.5 rounded-xl bg-bright-red/20 hover:bg-bright-red/30 border border-bright-red/40 text-bright-red hover:text-white text-[11px] font-orbitron font-bold uppercase transition-all shadow-[0_0_12px_rgba(239,35,60,0.2)] flex items-center gap-1.5"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      IF PAID, VERIFY
+                    </button>
                   </div>
                 </div>
 
@@ -1411,6 +1526,7 @@ export function InternAutomaticPaymentFlow({
               {/* ─── 7. PURE SCREENSHOT UPLOAD FORM (ZERO MANUAL ENTRY) ──────────── */}
               {!submittingProof && !isCompleted && (
                 <form
+                  id="proof-upload-section"
                   onSubmit={handleSubmitProof}
                   className="p-6 sm:p-8 rounded-3xl bg-[#0d0d0d] border border-white/10 space-y-6 shadow-xl"
                 >

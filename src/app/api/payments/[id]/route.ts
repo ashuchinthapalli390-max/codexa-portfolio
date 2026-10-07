@@ -32,7 +32,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         paymentAccount: true,
         attempts: {
           orderBy: { createdAt: "desc" },
-          take: 5,
+          take: 20,
         },
         submissions: {
           orderBy: { submissionNumber: "desc" },
@@ -63,9 +63,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ error: "Payment request not found" }, { status: 404 });
     }
 
+    const role = (user as any).orgRole || user.role || "";
     const isOwner = user.id === payment.userId;
     const canViewAll = hasPermission(user, Permission.VIEW_ALL_PAYMENTS);
     const canVerify = hasPermission(user, Permission.VERIFY_PAYMENT);
+    const canSeeUnmaskedUtr = isOwner || role === "FOUNDER" || role === "CO_FOUNDER";
 
     if (!isOwner && !canViewAll && !canVerify) {
       return NextResponse.json({ error: "Forbidden: You cannot view this payment" }, { status: 403 });
@@ -137,20 +139,44 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       });
     }
 
-    // Return official payment record with dynamically resolved payment account
-    return NextResponse.json({
-      payment: {
-        ...payment,
-        paymentAccount: resolvedAccount || {
-          name: "CodeXa Official",
-          upiId: process.env.DEFAULT_UPI_ID || "shaikashu33@fam",
-          payeeName: process.env.DEFAULT_UPI_NAME || "CodeXa Agency",
-        },
+    // Fetch audit timeline logs for full traceability
+    const auditLogs = await db.auditLog.findMany({
+      where: { targetId: payment.id },
+      orderBy: { createdAt: "desc" },
+      take: 25,
+    });
+
+    const maskUtr = (utr?: string | null) => {
+      if (!utr) return null;
+      if (canSeeUnmaskedUtr) return utr;
+      return utr.length > 4 ? `••••••••${utr.slice(-4)}` : "••••••••";
+    };
+
+    const sanitizedAttempts = payment.attempts.map((att) => ({
+      ...att,
+      utrNumber: maskUtr(att.utrNumber),
+      detectedUtr: maskUtr(att.detectedUtr),
+    }));
+
+    const sanitizedPayment = {
+      ...payment,
+      utrNumber: maskUtr(payment.utrNumber),
+      attempts: sanitizedAttempts,
+      paymentAccount: resolvedAccount || {
+        name: "CodeXa Official",
+        upiId: process.env.DEFAULT_UPI_ID || "shaikashu33@fam",
+        payeeName: process.env.DEFAULT_UPI_NAME || "CodeXa Agency",
       },
+    };
+
+    return NextResponse.json({
+      payment: sanitizedPayment,
       reminderLogs,
+      auditLogs,
       duplicateWarnings,
       isOwner,
       canVerify,
+      canManage: role === "FOUNDER" || role === "CO_FOUNDER",
     });
   } catch (error: any) {
     console.error("GET /api/payments/[id] error:", error);
