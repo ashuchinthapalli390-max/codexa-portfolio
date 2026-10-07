@@ -24,13 +24,17 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status");
+    const method = searchParams.get("method");
+    const domain = searchParams.get("domain");
     const purpose = searchParams.get("purpose");
     const query = searchParams.get("q")?.trim();
-    const limit = parseInt(searchParams.get("limit") || "50", 10);
+    const limit = parseInt(searchParams.get("limit") || "100", 10);
     const page = parseInt(searchParams.get("page") || "1", 10);
     const skip = (page - 1) * limit;
 
     const canViewAll = hasPermission(user, Permission.VIEW_ALL_PAYMENTS);
+    const effectiveRole = getEffectiveRole(user);
+    const isFullAdmin = effectiveRole === "FOUNDER" || effectiveRole === "CO_FOUNDER";
 
     const where: any = {};
 
@@ -40,8 +44,55 @@ export async function GET(req: NextRequest) {
       where.userId = searchParams.get("userId");
     }
 
+    // Status filter mapping
     if (status && status !== "ALL") {
-      where.paymentStatus = status;
+      switch (status) {
+        case "PAID":
+        case "SUCCESS":
+          where.OR = [
+            { paymentStatus: { in: ["APPROVED", "SUCCESS"] } },
+            { cashStatus: "CASH_RECEIVED" },
+          ];
+          break;
+        case "NOT_PAID":
+          where.paymentStatus = { notIn: ["APPROVED", "SUCCESS"] };
+          where.cashStatus = { not: "CASH_RECEIVED" };
+          break;
+        case "PENDING":
+          where.paymentStatus = { in: ["PENDING_PAYMENT", "PAYMENT_STARTED"] };
+          break;
+        case "UPI_VERIFYING":
+          where.paymentStatus = { in: ["PENDING_VERIFICATION", "VERIFYING"] };
+          break;
+        case "CASH_PENDING":
+          where.cashStatus = "PENDING_CASH_APPROVAL";
+          break;
+        case "FAILED":
+          where.paymentStatus = "FAILED";
+          break;
+        case "EXPIRED":
+          where.paymentStatus = "EXPIRED";
+          break;
+        default:
+          where.paymentStatus = status;
+          break;
+      }
+    }
+
+    // Method filter mapping
+    if (method && method !== "ALL") {
+      if (method === "NOT_SELECTED") {
+        where.paymentMethod = null;
+      } else if (method === "GOOGLE_PAY" || method === "GPAY") {
+        where.paymentMethod = { in: ["GOOGLE_PAY", "GPAY"] };
+      } else {
+        where.paymentMethod = method;
+      }
+    }
+
+    // Domain filter
+    if (domain && domain !== "ALL") {
+      where.domain = { contains: domain, mode: "insensitive" };
     }
 
     if (purpose && purpose !== "ALL") {
@@ -55,12 +106,13 @@ export async function GET(req: NextRequest) {
         { userEmail: { contains: query, mode: "insensitive" } },
         { internId: { contains: query, mode: "insensitive" } },
         { employeeId: { contains: query, mode: "insensitive" } },
+        { domain: { contains: query, mode: "insensitive" } },
         { utrNumber: { contains: query, mode: "insensitive" } },
         { title: { contains: query, mode: "insensitive" } },
       ];
     }
 
-    const [total, payments] = await Promise.all([
+    const [total, payments, allInternsCount, allPaymentsSummary] = await Promise.all([
       db.paymentRequest.count({ where }),
       db.paymentRequest.findMany({
         where,
@@ -68,6 +120,26 @@ export async function GET(req: NextRequest) {
         take: limit,
         skip,
         include: {
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              username: true,
+              email: true,
+              role: true,
+              department: true,
+              internServicePaymentPaid: true,
+              employmentProfile: {
+                select: {
+                  employeeId: true,
+                  designation: true,
+                  department: true,
+                  joiningDate: true,
+                  endDate: true,
+                },
+              },
+            },
+          },
           paymentAccount: {
             select: {
               name: true,
@@ -85,17 +157,137 @@ export async function GET(req: NextRequest) {
             },
             orderBy: { submissionNumber: "desc" },
           },
+          attempts: {
+            select: {
+              id: true,
+              status: true,
+              selectedMethod: true,
+              utrNumber: true,
+              detectedUtr: true,
+              detectedApp: true,
+              startedAt: true,
+              expiresAt: true,
+            },
+            orderBy: { createdAt: "desc" },
+            take: 2,
+          },
         },
       }),
+      // Count total interns in database
+      canViewAll ? db.user.count({ where: { role: "INTERN" } }) : Promise.resolve(0),
+      // Summary data for live metrics
+      canViewAll
+        ? db.paymentRequest.findMany({
+            select: {
+              id: true,
+              userId: true,
+              paymentStatus: true,
+              paymentMethod: true,
+              cashStatus: true,
+              fixedAmount: true,
+              utrNumber: true,
+            },
+          })
+        : Promise.resolve([]),
     ]);
 
+    // Live Metrics Calculation
+    let metrics: any = null;
+    if (canViewAll) {
+      let paidCount = 0;
+      let pendingPaymentCount = 0;
+      let upiVerifyingCount = 0;
+      let cashPendingCount = 0;
+      let failedCount = 0;
+      let expiredCount = 0;
+
+      const byMethod: Record<string, number> = {
+        PHONEPE: 0,
+        GOOGLE_PAY: 0,
+        PAYTM: 0,
+        OTHER_UPI: 0,
+        CASH: 0,
+        NOT_SELECTED: 0,
+      };
+
+      for (const p of allPaymentsSummary) {
+        const isPaid =
+          p.paymentStatus === "APPROVED" ||
+          p.paymentStatus === "SUCCESS" ||
+          p.cashStatus === "CASH_RECEIVED";
+
+        if (isPaid) {
+          paidCount += 1;
+        } else if (p.cashStatus === "PENDING_CASH_APPROVAL") {
+          cashPendingCount += 1;
+        } else if (p.paymentStatus === "PENDING_VERIFICATION" || p.paymentStatus === "VERIFYING") {
+          upiVerifyingCount += 1;
+        } else if (p.paymentStatus === "FAILED") {
+          failedCount += 1;
+        } else if (p.paymentStatus === "EXPIRED") {
+          expiredCount += 1;
+        } else {
+          pendingPaymentCount += 1;
+        }
+
+        // Method analytics
+        if (p.paymentMethod === "PHONEPE") byMethod.PHONEPE += 1;
+        else if (p.paymentMethod === "GOOGLE_PAY" || p.paymentMethod === "GPAY") byMethod.GOOGLE_PAY += 1;
+        else if (p.paymentMethod === "PAYTM") byMethod.PAYTM += 1;
+        else if (p.paymentMethod === "OTHER_UPI") byMethod.OTHER_UPI += 1;
+        else if (p.paymentMethod === "CASH") byMethod.CASH += 1;
+        else byMethod.NOT_SELECTED += 1;
+      }
+
+      const totalInterns = allInternsCount > 0 ? allInternsCount : allPaymentsSummary.length;
+      const notPaidCount = Math.max(0, totalInterns - paidCount);
+      const fixedAmt = 450;
+      const totalExpectedAmount = totalInterns * fixedAmt;
+      const totalCollectedAmount = paidCount * fixedAmt;
+      const pendingAmount = totalExpectedAmount - totalCollectedAmount;
+
+      metrics = {
+        totalInterns,
+        paidCount,
+        notPaidCount,
+        pendingPaymentCount,
+        upiVerifyingCount,
+        cashPendingCount,
+        successfulCount: paidCount,
+        failedCount,
+        expiredCount,
+        totalExpectedAmount,
+        totalCollectedAmount,
+        pendingAmount,
+        byMethod,
+      };
+    }
+
+    // Sanitize UTR for CEO/CTO/HR: mask sensitive digits
+    const sanitizedPayments = payments.map((p) => {
+      let utr = p.utrNumber;
+      if (!isFullAdmin && utr) {
+        utr = utr.length > 4 ? `********${utr.slice(-4)}` : "********";
+      }
+
+      return {
+        ...p,
+        utrNumber: utr,
+      };
+    });
+
     return NextResponse.json({
-      payments,
+      payments: sanitizedPayments,
       total,
       page,
       totalPages: Math.ceil(total / limit),
+      metrics,
+      serverTime: new Date().toISOString(),
       canManage: hasPermission(user, Permission.CREATE_PAYMENT_REQUEST),
       canVerify: hasPermission(user, Permission.VERIFY_PAYMENT),
+      canApproveCash: isFullAdmin,
+      canManageSettings: isFullAdmin,
+      userRole: effectiveRole,
     });
   } catch (error: any) {
     console.error("GET /api/payments error:", error);

@@ -309,6 +309,12 @@ export async function startPaymentAttempt(params: {
     throw new Error("Payment has already been successfully verified and completed.");
   }
 
+  if (payment.cashStatus === "PENDING_CASH_APPROVAL") {
+    throw new Error(
+      "A Cash payment request is currently pending confirmation. Please cancel your Cash request first if you wish to pay via UPI."
+    );
+  }
+
   // 2. Fetch active settings
   const settings = await getPaymentSettings();
 
@@ -405,15 +411,20 @@ export async function startPaymentAttempt(params: {
     },
   });
 
-  // Update payment request status if pending
-  if (payment.paymentStatus === "PENDING_PAYMENT" || payment.paymentStatus === "FAILED" || payment.paymentStatus === "EXPIRED") {
-    await db.paymentRequest.update({
-      where: { id: paymentId },
-      data: {
-        paymentStatus: "PAYMENT_STARTED",
-      },
-    });
-  }
+  // Map method to canonical enum (PHONEPE, GOOGLE_PAY, PAYTM, OTHER_UPI)
+  const canonicalMethod = selectedMethod === "GPAY" ? "GOOGLE_PAY" : selectedMethod;
+
+  // Update payment request status and selected method
+  await db.paymentRequest.update({
+    where: { id: paymentId },
+    data: {
+      paymentMethod: canonicalMethod,
+      paymentStatus:
+        payment.paymentStatus === "APPROVED" || payment.paymentStatus === "SUCCESS"
+          ? payment.paymentStatus
+          : "PAYMENT_STARTED",
+    },
+  });
 
   await logPaymentAudit({
     action: "PAYMENT_ATTEMPT_STARTED",

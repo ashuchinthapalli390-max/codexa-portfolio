@@ -41,6 +41,11 @@ export function FounderPaymentSettingsTab() {
   const [proofWindowMinutes, setProofWindowMinutes] = useState(5);
   const [clockToleranceSeconds, setClockToleranceSeconds] = useState(60);
   const [systemEnabled, setSystemEnabled] = useState(true);
+  const [cashEnabled, setCashEnabled] = useState(true);
+  const [coFounderWhatsApp, setCoFounderWhatsApp] = useState("7075920852");
+  const [cashInstructions, setCashInstructions] = useState(
+    "Please hand the exact ₹450 cash amount to an authorized CodeXa representative. Payment will become successful only after confirmation by Founder or Co-Founder."
+  );
   const [paymentInstructions, setPaymentInstructions] = useState(
     "Scan the QR code or tap your preferred UPI app. Pay exactly ₹450 and upload your transaction screenshot with UTR within 5 minutes."
   );
@@ -78,6 +83,12 @@ export function FounderPaymentSettingsTab() {
       setGooglePayEnabled(s.googlePayEnabled ?? true);
       setPaytmEnabled(s.paytmEnabled ?? true);
       setOtherUpiEnabled(s.otherUpiEnabled ?? true);
+      setCashEnabled(s.cashEnabled ?? true);
+      setCoFounderWhatsApp(s.coFounderWhatsApp || "7075920852");
+      setCashInstructions(
+        s.cashInstructions ||
+          "Please hand the exact ₹450 cash amount to an authorized CodeXa representative. Payment will become successful only after confirmation by Founder or Co-Founder."
+      );
       setProofWindowMinutes(s.proofWindowMinutes ?? 5);
       setClockToleranceSeconds(s.clockToleranceSeconds ?? 60);
       setSystemEnabled(s.systemEnabled ?? true);
@@ -114,6 +125,9 @@ export function FounderPaymentSettingsTab() {
           googlePayEnabled,
           paytmEnabled,
           otherUpiEnabled,
+          cashEnabled,
+          coFounderWhatsApp,
+          cashInstructions,
           proofWindowMinutes,
           clockToleranceSeconds,
           systemEnabled,
@@ -389,6 +403,80 @@ export function FounderPaymentSettingsTab() {
                 className="w-5 h-5 accent-crimson cursor-pointer"
               />
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── 3. CASH PAYMENT WORKFLOW SETTINGS ──────────────────────────────────── */}
+      <div className="p-6 sm:p-8 rounded-3xl bg-[#0d0d0d] border border-white/10 space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 uppercase font-mono">
+                Manual Physical Receipt Flow
+              </span>
+            </div>
+            <h3 className="text-base font-orbitron font-bold text-white mt-1">
+              Cash Payment Workflow Configuration
+            </h3>
+            <p className="text-xs text-zinc-400 mt-0.5">
+              Configure cash acceptance for the mandatory ₹450 bill, Co-Founder WhatsApp notification routing, and approval policies.
+            </p>
+          </div>
+
+          <label className="flex items-center gap-2 p-3 rounded-2xl bg-[#141414] border border-white/10 cursor-pointer shrink-0">
+            <input
+              type="checkbox"
+              checked={cashEnabled}
+              onChange={(e) => setCashEnabled(e.target.checked)}
+              className="w-5 h-5 accent-crimson rounded"
+            />
+            <div>
+              <span className="text-xs font-bold text-white block">Pay with Cash Option</span>
+              <span className="text-[10px] text-zinc-400">
+                {cashEnabled ? "Active for all interns" : "Hidden from payment screen"}
+              </span>
+            </div>
+          </label>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          <div className="space-y-1">
+            <label className="text-zinc-300 font-semibold block">Co-Founder WhatsApp Contact (International / National)</label>
+            <input
+              type="text"
+              value={coFounderWhatsApp}
+              onChange={(e) => setCoFounderWhatsApp(e.target.value)}
+              placeholder="e.g. 7075920852"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-[#141414] border border-white/10 text-white font-mono focus:outline-none focus:border-bright-red"
+            />
+            <span className="text-[10px] text-zinc-500 block">
+              Default: <strong>7075920852</strong> (B. Sanjay). Interns will dispatch their cash requests to this number.
+            </span>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-zinc-300 font-semibold block">Authorized Cash Approval Authority</label>
+            <div className="px-3.5 py-2.5 rounded-xl bg-[#141414] border border-white/10 text-zinc-300 font-medium">
+              <span className="text-rose-400 font-semibold">FOUNDER</span> and{" "}
+              <span className="text-rose-400 font-semibold">CO_FOUNDER</span> only.
+            </div>
+            <span className="text-[10px] text-zinc-500 block">
+              CEO, CTO, HR, and Interns have strictly view-only access and cannot confirm physical cash.
+            </span>
+          </div>
+
+          <div className="md:col-span-2 space-y-1">
+            <label className="text-zinc-300 font-semibold block">Intern Cash Payment Instructions</label>
+            <textarea
+              rows={2}
+              value={cashInstructions}
+              onChange={(e) => setCashInstructions(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-[#141414] border border-white/10 text-white focus:outline-none focus:border-bright-red text-xs resize-none"
+            />
+            <span className="text-[10px] text-zinc-500 block">
+              Shown to interns on the payment page upon choosing &quot;Pay with Cash&quot;.
+            </span>
           </div>
         </div>
       </div>

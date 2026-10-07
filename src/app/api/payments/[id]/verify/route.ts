@@ -29,10 +29,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const body = await req.json();
     const { action, rejectionReason, adminNotes } = body;
 
-    if (!action || !["APPROVE", "REJECT"].includes(action)) {
-      return NextResponse.json({ error: "Invalid action. Must be 'APPROVE' or 'REJECT'." }, { status: 400 });
-    }
-
     const payment = await db.paymentRequest.findFirst({
       where: { OR: [{ id }, { referenceId: id }] },
       include: {
@@ -49,7 +45,50 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     const latestSubmission = payment.submissions[0];
 
-    // ─── APPROVE FLOW ─────────────────────────────────────────────────────────
+    const isMandatoryInternPayment =
+      payment.fixedAmount === 450 ||
+      payment.paymentPurpose === "INTERNSHIP_FEE" ||
+      payment.paymentPurpose === "INTERNSHIP_SERVICE_BILL" ||
+      payment.userRole === "INTERN";
+
+    // ─── SAFE ACTIONS (RETRY_VERIFY, DISPUTE, INVALIDATE) ────────────────────
+    if (action === "RETRY_VERIFY") {
+      const { runAutomaticVerificationEngine } = await import("@/lib/payments/automated-upi");
+      const latestAttempt = await db.paymentAttempt.findFirst({
+        where: { paymentId: payment.id },
+        orderBy: { createdAt: "desc" },
+      });
+      if (latestAttempt) {
+        const result = await runAutomaticVerificationEngine({ attemptId: latestAttempt.id });
+        return NextResponse.json({ success: true, result });
+      }
+      return NextResponse.json({ error: "No payment attempt found to verify." }, { status: 404 });
+    }
+
+    if (action === "INVALIDATE") {
+      await db.paymentAttempt.updateMany({
+        where: { paymentId: payment.id, status: { not: "SUCCESS" } },
+        data: { status: "EXPIRED", verificationReason: "ADMIN_INVALIDATED" },
+      });
+      await db.paymentRequest.update({
+        where: { id: payment.id },
+        data: { paymentStatus: "PENDING_PAYMENT" },
+      });
+      return NextResponse.json({ success: true, message: "Attempt invalidated." });
+    }
+
+    // ─── STRICT RULE: NO MANUAL APPROVAL FOR MANDATORY INTERN UPI PAYMENT ────
+    if (action === "APPROVE" && isMandatoryInternPayment) {
+      return NextResponse.json(
+        {
+          error:
+            "Manual approval is disabled for mandatory ₹450 internship payments. All transactions must be verified automatically by the settlement engine.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // ─── APPROVE FLOW (FOR OTHER / LEGACY PAYMENTS ONLY) ─────────────────────
     if (action === "APPROVE") {
       const updatedPayment = await db.paymentRequest.update({
         where: { id: payment.id },

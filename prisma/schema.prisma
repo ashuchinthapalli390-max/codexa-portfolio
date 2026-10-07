@@ -1393,6 +1393,18 @@ model PaymentRequest {
 
   adminNotes         String?
 
+  // Cash Payment Flow fields
+  paymentMethod      String?            // "PHONEPE" | "GOOGLE_PAY" | "PAYTM" | "OTHER_UPI" | "CASH"
+  cashStatus         String?            @default("NONE") // "NONE" | "PENDING_CASH_APPROVAL" | "CASH_RECEIVED" | "CASH_REJECTED" | "CASH_CANCELLED"
+  cashRequestedAt    DateTime?
+  cashApprovedAt     DateTime?
+  cashApprovedById   String?
+  cashApprovedByName String?
+  cashRejectionReason String?
+  cashNotes          String?
+  paidAt             DateTime?
+  verificationSource String?            // "TRUSTED_BANK_FEED" | "MANUAL_CASH_RECEIPT" | "ADMIN_OVERRIDE"
+
   lastReminderAt     DateTime?
   reminderCount      Int                @default(0)
 
@@ -1411,6 +1423,9 @@ model PaymentRequest {
   @@index([userId])
   @@index([referenceId])
   @@index([paymentStatus])
+  @@index([paymentMethod])
+  @@index([cashStatus])
+  @@index([paidAt])
   @@index([utrNumber])
   @@index([paymentDate])
   @@index([createdAt])
@@ -1480,6 +1495,10 @@ model PaymentSetting {
   googlePayEnabled      Boolean  @default(true)
   paytmEnabled          Boolean  @default(true)
   otherUpiEnabled       Boolean  @default(true)
+  cashEnabled           Boolean  @default(true)
+  coFounderWhatsApp     String   @default("7075920852")
+  cashInstructions      String?  @default("Please hand the exact ₹450 cash amount to an authorized CodeXa representative. Payment will become successful only after confirmation by Founder or Co-Founder.")
+  cashApprovalRoles     Json?    // ["FOUNDER", "CO_FOUNDER"]
   proofWindowMinutes    Int      @default(5)
   clockToleranceSeconds Int      @default(60)
   verificationProvider  String   @default("BANK_STATEMENT_MATCH")
@@ -1547,16 +1566,21 @@ model PaymentAttempt {
   userId               String
 
   selectedMethod       String          // "PHONEPE" | "GPAY" | "PAYTM" | "OTHER_UPI"
+  expectedAmount       Decimal         @default(450.00) @db.Decimal(10, 2)
   amountSnapshot       Decimal         @default(450.00) @db.Decimal(10, 2)
+  currency             String          @default("INR")
   upiIdSnapshot        String
   receiverSnapshot     String
+  receiverNameSnapshot String?
+  receiverUpiSnapshot  String?
+  referenceSnapshot    String?
   qrVersion            String?
 
   startedAt            DateTime        @default(now())
   expiresAt            DateTime        // startedAt + (proofWindowMinutes * 60)
   submittedAt          DateTime?
 
-  status               String          @default("PAYMENT_STARTED") // "PENDING_PAYMENT" | "PAYMENT_STARTED" | "AWAITING_PROOF" | "VERIFYING" | "SUCCESS" | "FAILED" | "EXPIRED"
+  status               String          @default("PAYMENT_STARTED") // "PENDING_PAYMENT" | "PAYMENT_STARTED" | "AWAITING_PROOF" | "AWAITING_SCREENSHOT" | "ANALYZING_PROOF" | "VERIFYING" | "SUCCESS" | "FAILED" | "EXPIRED"
 
   utrNumber            String?
   paymentDate          DateTime?
@@ -1564,6 +1588,22 @@ model PaymentAttempt {
   upiAppUsed           String?
   proofImageUrl        String?
   proofImageHash       String?
+  perceptualHash       String?
+
+  // Automated OCR Extraction Snapshot
+  detectedApp          String?         // "PHONEPE" | "GOOGLE_PAY" | "PAYTM" | "OTHER_UPI"
+  detectedAmount       Decimal?        @db.Decimal(10, 2)
+  detectedCurrency     String?         // "INR"
+  detectedStatus       String?         // "SUCCESS" | "FAILED" | "PENDING"
+  detectedUtr          String?
+  detectedTransactionId String?
+  detectedDate         String?
+  detectedTime         String?
+  detectedTimestamp    DateTime?
+  detectedReceiverName String?
+  detectedReceiverUpi  String?
+  detectedReference    String?
+  ocrConfidence        Json?           // { amountConfidence, utrConfidence, statusConfidence, dateConfidence, receiverConfidence }
 
   verificationReason   String?         // "MATCHED_TRUSTED_TRANSACTION", "UTR_NOT_FOUND", "AMOUNT_MISMATCH", "UPLOAD_EXPIRED", "DUPLICATE_UTR", etc.
   verificationSource   String?         // "TRUSTED_BANK_FEED" | "ADMIN_OVERRIDE"
@@ -1582,7 +1622,9 @@ model PaymentAttempt {
   @@index([startedAt])
   @@index([expiresAt])
   @@index([utrNumber])
+  @@index([detectedUtr])
   @@index([proofImageHash])
+  @@index([perceptualHash])
 }
 
 // ─── TRUSTED BANK / UPI TRANSACTION FEED FOR AUTOMATED RECONCILIATION ────────

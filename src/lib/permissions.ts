@@ -89,6 +89,8 @@ export enum Permission {
   REJECT_PAYMENT = "REJECT_PAYMENT",
   EDIT_PAYMENT = "EDIT_PAYMENT",
   MANAGE_PAYMENT_SETTINGS = "MANAGE_PAYMENT_SETTINGS",
+  APPROVE_CASH_PAYMENT = "APPROVE_CASH_PAYMENT",
+  REJECT_CASH_PAYMENT = "REJECT_CASH_PAYMENT",
 
   // Documents & Letters
   VIEW_DOCUMENTS = "VIEW_DOCUMENTS",
@@ -309,6 +311,8 @@ export const ROLE_PERMISSIONS: Record<string, Set<Permission>> = {
     Permission.VIEW_ATTENDANCE,
     Permission.OPEN_ATTENDANCE_WINDOW,
     Permission.VIEW_OWN_PAYMENTS,
+    Permission.VIEW_ALL_PAYMENTS,
+    Permission.VIEW_PAYMENT_ANALYTICS,
     Permission.VIEW_DOCUMENTS,
     Permission.MANAGE_DESKTOP_ACCESS,
     Permission.MANAGE_LICENSES,
@@ -788,3 +792,53 @@ export function canViewMobile(actor?: UserPermissionContext | null): boolean {
   const role = getEffectiveRole(actor);
   return role === "FOUNDER" || role === "CO_FOUNDER" || role === "CTO";
 }
+
+/**
+ * CODEXA PAYMENT CONTROL CENTER & CASH WORKFLOW RBAC HELPERS
+ * Only FOUNDER and CO_FOUNDER possess cash approval and rejection authority.
+ */
+export function canApproveCashPayment(actor?: UserPermissionContext | null): boolean {
+  if (!actor) return false;
+  const role = getEffectiveRole(actor);
+  return role === "FOUNDER" || role === "CO_FOUNDER";
+}
+
+export function canRejectCashPayment(actor?: UserPermissionContext | null): boolean {
+  if (!actor) return false;
+  const role = getEffectiveRole(actor);
+  return role === "FOUNDER" || role === "CO_FOUNDER";
+}
+
+export function canManagePaymentSettings(actor?: UserPermissionContext | null): boolean {
+  if (!actor) return false;
+  const role = getEffectiveRole(actor);
+  return role === "FOUNDER" || role === "CO_FOUNDER";
+}
+
+export function canViewAllPayments(actor?: UserPermissionContext | null): boolean {
+  if (!actor) return false;
+  const role = getEffectiveRole(actor);
+  return (
+    role === "FOUNDER" ||
+    role === "CO_FOUNDER" ||
+    role === "CEO" ||
+    role === "CTO" ||
+    role === "HR" ||
+    role === "COO" ||
+    role === "ADMIN"
+  );
+}
+
+export function canViewPaymentAnalytics(actor?: UserPermissionContext | null): boolean {
+  if (!actor) return false;
+  const role = getEffectiveRole(actor);
+  return (
+    role === "FOUNDER" ||
+    role === "CO_FOUNDER" ||
+    role === "CEO" ||
+    role === "CTO" ||
+    role === "HR" ||
+    role === "ADMIN"
+  );
+}
+

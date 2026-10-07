@@ -59,6 +59,15 @@ export async function GET(req: NextRequest) {
         employeeId: payment.employeeId,
         successfulAttemptId: payment.successfulAttemptId,
         lineItems: payment.lineItems || MANDATORY_BILL_BREAKDOWN.items,
+        paymentMethod: payment.paymentMethod,
+        cashStatus: payment.cashStatus || "NONE",
+        cashRequestedAt: payment.cashRequestedAt,
+        cashApprovedAt: payment.cashApprovedAt,
+        cashApprovedByName: payment.cashApprovedByName,
+        cashRejectionReason: payment.cashRejectionReason,
+        cashNotes: payment.cashNotes,
+        paidAt: payment.paidAt,
+        verificationSource: payment.verificationSource,
         createdAt: payment.createdAt,
       },
       activeAttempt: activeAttempt
@@ -86,6 +95,11 @@ export async function GET(req: NextRequest) {
         googlePayEnabled: settings.googlePayEnabled,
         paytmEnabled: settings.paytmEnabled,
         otherUpiEnabled: settings.otherUpiEnabled,
+        cashEnabled: (settings as any).cashEnabled ?? true,
+        coFounderWhatsApp: (settings as any).coFounderWhatsApp || "7075920852",
+        cashInstructions:
+          (settings as any).cashInstructions ||
+          "Please hand the exact ₹450 cash amount to an authorized CodeXa representative. Payment will become successful only after confirmation by Founder or Co-Founder.",
         proofWindowMinutes: settings.proofWindowMinutes,
         clockToleranceSeconds: settings.clockToleranceSeconds,
         paymentInstructions: settings.paymentInstructions,

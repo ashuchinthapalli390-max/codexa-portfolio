@@ -105,6 +105,15 @@ export async function PATCH(req: NextRequest) {
     if (body.otherUpiEnabled !== undefined) {
       updateData.otherUpiEnabled = Boolean(body.otherUpiEnabled);
     }
+    if (body.cashEnabled !== undefined) {
+      updateData.cashEnabled = Boolean(body.cashEnabled);
+    }
+    if (body.coFounderWhatsApp !== undefined) {
+      updateData.coFounderWhatsApp = String(body.coFounderWhatsApp).trim();
+    }
+    if (body.cashInstructions !== undefined) {
+      updateData.cashInstructions = String(body.cashInstructions).trim();
+    }
     if (body.proofWindowMinutes !== undefined) {
       updateData.proofWindowMinutes = Math.max(1, Math.min(60, Number(body.proofWindowMinutes)));
     }
