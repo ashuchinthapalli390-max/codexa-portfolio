@@ -45,17 +45,23 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "20", 10)));
     const skip = (page - 1) * limit;
 
-    const where: any = {
-      isActive: true,
-    };
+    const where: any = {};
 
-    // Role filtering
+    // Role filtering with null-safe and active status protection
     if (roleFilter === "INTERNS") {
       where.role = "INTERN";
+      where.OR = [
+        { isActive: true },
+        { employmentProfile: { status: "ACTIVE" } },
+      ];
     } else if (roleFilter === "EMPLOYEES") {
       where.role = { in: ["EMPLOYEE", "CONTRACTOR"] };
+      where.isActive = true;
     } else if (roleFilter === "MANAGEMENT") {
       where.role = { in: ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "COO", "OWNER", "ADMIN"] };
+      where.isActive = true;
+    } else {
+      where.isActive = true;
     }
 
     // Department filtering
@@ -126,7 +132,14 @@ export async function GET(req: NextRequest) {
               internshipDomain: true,
               mentorName: true,
               internshipDuration: true,
+              internshipDurationMonths: true,
+              internshipStartDate: true,
+              internshipEndDate: true,
               joiningDate: true,
+              endDate: true,
+              status: true,
+              college: true,
+              academicBranch: true,
             },
           },
           skills: {
@@ -139,26 +152,48 @@ export async function GET(req: NextRequest) {
 
     const people = users.map((u) => {
       const skillsList = u.skills.map((s) => s.skillName);
+      const emp = u.employmentProfile as any;
+      const startDate = emp?.internshipStartDate || emp?.joiningDate;
+      const endDate = emp?.internshipEndDate || emp?.endDate;
+      let daysRemaining: number | null = null;
+      if (endDate) {
+        daysRemaining = Math.max(0, Math.ceil((new Date(endDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+      }
+
       return {
         id: u.id,
         username: u.username,
         fullName: u.fullName || u.profile?.displayName || u.username,
         role: u.role,
         orgRole: u.orgRole,
-        department: (u.employmentProfile as any)?.internshipDomain || u.employmentProfile?.department || u.department || "General",
-        designation: u.employmentProfile?.designation || u.profile?.primaryRole || u.role,
-        employeeId: u.employmentProfile?.employeeId || null,
+        department: emp?.internshipDomain || emp?.department || u.department || "General",
+        designation: emp?.designation || u.profile?.primaryRole || u.role,
+        employeeId: emp?.employeeId || null,
         profileMediaUrl: u.profileMediaUrl || u.profile?.mediaUrl || null,
         headline: u.profile?.headline || null,
         bio: u.profile?.bio || null,
         skills: skillsList,
         isSelf: u.id === caller.id,
+        internship: emp ? {
+          internId: emp.employeeId || null,
+          domain: emp.internshipDomain || emp.department || "Technical Track",
+          duration: emp.internshipDuration || (emp.internshipDurationMonths ? `${emp.internshipDurationMonths} Months` : "3 Months"),
+          months: emp.internshipDurationMonths || 3,
+          startDate: startDate ? new Date(startDate).toISOString().split("T")[0] : null,
+          endDate: endDate ? new Date(endDate).toISOString().split("T")[0] : null,
+          mentor: emp.mentorName || "Shaik Ashu (Founder)",
+          status: emp.status || "ACTIVE",
+          college: emp.college || null,
+          academicBranch: emp.academicBranch || null,
+          daysRemaining,
+        } : null,
       };
     });
 
     return NextResponse.json({
       ok: true,
       people,
+      totalCount: total,
       pagination: {
         page,
         limit,
