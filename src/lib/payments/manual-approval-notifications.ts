@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { sendEmail, notificationsFromEmail } from "@/lib/email/client";
 import { sendPushNotification } from "@/lib/push";
+import { sendFcmPushToUser } from "@/lib/firebase-admin";
 import { getPaymentProofBuffer } from "@/lib/payment-storage";
 
 interface ProofSubmissionContext {
@@ -127,6 +128,25 @@ export async function dispatchProofSubmittedNotifications(
         });
       } catch (err) {
         console.error(`[In-App Notif Error for ${manager.email}]`, err);
+      }
+
+            // 2b. Android FCM Push Notification
+      try {
+        await sendFcmPushToUser(manager.id, {
+          title: "CodeXa — New Payment Approval",
+          body: `${internName} submitted ₹450 payment proof. Tap to review.`,
+          data: {
+            type: "PAYMENT_APPROVAL_REQUIRED",
+            paymentId: payment.id,
+            referenceId: payment.referenceId,
+            internName: internName,
+            internId: internId,
+            amount: "450",
+            click_action: "FLUTTER_NOTIFICATION_CLICK",
+          },
+        });
+      } catch (err) {
+        console.error(`[Android FCM Push Error for ${manager.email}]`, err);
       }
 
       // 2. Web Push Notification
@@ -310,6 +330,22 @@ export async function dispatchPaymentApprovedToIntern({
     });
   } catch (err) {
     console.error("[Intern In-App Notif Error]", err);
+  }
+
+    // 1b. Intern Android FCM Push
+  try {
+    await sendFcmPushToUser(payment.userId, {
+      title: "🎉 Payment Successfully Approved",
+      body: `Your ₹450 payment has been approved by ${approverName}. Student ID Card and AI Tools are unlocked!`,
+      data: {
+        type: "PAYMENT_APPROVED",
+        paymentId: payment.id,
+        referenceId: payment.referenceId,
+        click_action: "FLUTTER_NOTIFICATION_CLICK",
+      },
+    });
+  } catch (err) {
+    console.error("[Intern Approved FCM Push Error]", err);
   }
 
   // 2. Intern Web Push

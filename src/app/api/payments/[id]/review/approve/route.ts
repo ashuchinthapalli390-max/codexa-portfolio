@@ -49,9 +49,16 @@ export async function POST(
       return NextResponse.json({ error: "Payment request not found" }, { status: 404 });
     }
 
-    if (payment.paymentStatus === "APPROVED" || payment.paymentStatus === "SUCCESS") {
+    if (payment.paymentStatus === "APPROVED" || payment.paymentStatus === "SUCCESS" || payment.paymentStatus === "REJECTED") {
       return NextResponse.json(
-        { error: "Payment has already been approved." },
+        { ok: false, error: "PAYMENT_ALREADY_REVIEWED", message: "This payment has already been reviewed." },
+        { status: 409 }
+      );
+    }
+
+    if (body.confirmation !== true && body.confirmReceipt !== true) {
+      return NextResponse.json(
+        { ok: false, error: "CONFIRMATION_REQUIRED", message: "You must independently confirm receipt of ₹450 before approving." },
         { status: 400 }
       );
     }
@@ -73,6 +80,7 @@ export async function POST(
           successfulAttemptId: targetAttempt?.id || null,
           utrNumber: targetAttempt?.utrNumber || payment.utrNumber,
           verifiedAt: verifiedNow,
+          verifiedBy: user.id,
           verifiedByName: `${approverName} (${role})`,
           verificationSource: "MANUAL_RECEIPT_CONFIRMATION",
           adminNotes: notes ? `Approved: ${notes}` : payment.adminNotes,

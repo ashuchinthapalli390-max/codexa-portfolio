@@ -55,10 +55,10 @@ export async function POST(
       return NextResponse.json({ error: "Payment request not found" }, { status: 404 });
     }
 
-    if (payment.paymentStatus === "APPROVED" || payment.paymentStatus === "SUCCESS") {
+    if (payment.paymentStatus === "APPROVED" || payment.paymentStatus === "SUCCESS" || payment.paymentStatus === "REJECTED") {
       return NextResponse.json(
-        { error: "Cannot reject a payment that has already succeeded." },
-        { status: 400 }
+        { ok: false, error: "PAYMENT_ALREADY_REVIEWED", message: "This payment has already been reviewed." },
+        { status: 409 }
       );
     }
 

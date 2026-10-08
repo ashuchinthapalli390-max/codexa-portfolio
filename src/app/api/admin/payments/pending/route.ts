@@ -26,8 +26,10 @@ export async function GET(req: NextRequest) {
       where: {
         OR: [
           { paymentStatus: "PENDING_APPROVAL" },
+          { paymentStatus: "PENDING_VERIFICATION" },
           { paymentStatus: "REVIEW_REQUIRED" },
-          { attempts: { some: { status: "PENDING_APPROVAL" } } },
+          { paymentStatus: "VERIFYING" },
+          { attempts: { some: { status: { in: ["PENDING_APPROVAL", "PENDING_VERIFICATION", "AWAITING_PROOF", "VERIFYING"] } } } },
         ],
       },
       orderBy: { updatedAt: "desc" },

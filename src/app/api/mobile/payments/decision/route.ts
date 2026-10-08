@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { validateSessionResult, getCurrentSessionResult, generateRequestId } from "@/lib/auth";
+import { dispatchPaymentApprovedToIntern, dispatchPaymentRejectedToIntern } from "@/lib/payments/manual-approval-notifications";
+import { sendFcmPushToUser } from "@/lib/firebase-admin";
 import { canApproveCashPayment, getEffectiveRole } from "@/lib/permissions";
 import { logPaymentAudit, runAutomaticVerificationEngine } from "@/lib/payments/automated-upi";
 import { sendPaymentApprovedEmail, sendPaymentRejectedEmail } from "@/lib/email/notifications";
@@ -73,6 +75,18 @@ export async function POST(req: NextRequest) {
       }, { status: 404, headers: NO_CACHE_HEADERS });
     }
 
+    // Concurrency protection: verify payment hasn't already been decided
+    if (payment.paymentStatus === "APPROVED" || payment.paymentStatus === "SUCCESS" || payment.paymentStatus === "REJECTED") {
+      return NextResponse.json({
+        ok: false,
+        error: {
+          code: "PAYMENT_ALREADY_REVIEWED",
+          message: "This payment has already been reviewed.",
+          currentStatus: payment.paymentStatus,
+        },
+      }, { status: 409, headers: NO_CACHE_HEADERS });
+    }
+
     const now = new Date();
     const approverName = user.displayName || user.username || "CodeXa Founder/Co-Founder";
     const latestAttempt = payment.attempts[0];
@@ -131,6 +145,12 @@ export async function POST(req: NextRequest) {
         tag: "payment-approved",
       }).catch(() => {});
 
+      sendFcmPushToUser(payment.userId, {
+        title: "Cash Payment Confirmed! 🎉",
+        body: `Your cash payment of ₹${payment.fixedAmount} for CodeXa Internship Service Bill has been confirmed.`,
+        data: { type: "PAYMENT_APPROVED", paymentId: payment.id, referenceId: payment.referenceId, click_action: "FLUTTER_NOTIFICATION_CLICK" },
+      }).catch(() => {});
+
       return NextResponse.json({
         ok: true,
         message: "Cash payment confirmed successfully.",
@@ -157,26 +177,73 @@ export async function POST(req: NextRequest) {
       }, { headers: NO_CACHE_HEADERS });
     }
 
-    // ── 3. APPROVE EXCEPTION ──
+    // ── 3. APPROVE EXCEPTION (MANUAL RECEIPT CONFIRMATION) ──
     if (action === "APPROVE") {
+      if (body.confirmation !== true && body.confirmReceipt !== true) {
+        return NextResponse.json({
+          ok: false,
+          error: {
+            code: "CONFIRMATION_REQUIRED",
+            message: "You must independently confirm receipt of ₹450 in the official receiving account before approving.",
+          },
+        }, { status: 400, headers: NO_CACHE_HEADERS });
+      }
+
       const [updatedPayment] = await db.$transaction([
         db.paymentRequest.update({
           where: { id: payment.id },
           data: {
             paymentStatus: "APPROVED",
             verifiedBy: user.id,
-            verifiedByName: approverName,
+            verifiedByName: `${approverName} (${effectiveRole})`,
             verifiedAt: now,
+            verificationSource: "MANUAL_RECEIPT_CONFIRMATION",
             paidAt: now,
             adminNotes: notes || payment.adminNotes,
             rejectionReason: null,
+            successfulAttemptId: latestAttempt?.id || null,
           },
         }),
+        ...(latestAttempt ? [
+          db.paymentAttempt.update({
+            where: { id: latestAttempt.id },
+            data: {
+              status: "SUCCESS",
+              verifiedAt: now,
+              verificationReason: "MANUAL_RECEIPT_CONFIRMATION",
+              verificationSource: "MANUAL_RECEIPT_CONFIRMATION",
+            },
+          }),
+        ] : []),
         db.user.update({
           where: { id: payment.userId },
           data: { internServicePaymentPaid: true },
         }),
       ]);
+
+      await logPaymentAudit({
+        action: "PAYMENT_REVIEW_APPROVED_MOBILE",
+        actorId: user.id,
+        actorName: approverName,
+        targetId: payment.id,
+        details: { referenceId: payment.referenceId, amount: 450, notes, role: effectiveRole },
+      });
+
+      // Dispatch full notifications (In-App, Android FCM Push, Email)
+      dispatchPaymentApprovedToIntern({
+        payment: {
+          id: payment.id,
+          referenceId: payment.referenceId,
+          userId: payment.userId,
+          userName: payment.userName || payment.user?.fullName,
+          userEmail: payment.userEmail || payment.user?.email,
+          internId: payment.internId,
+          fixedAmount: Number(payment.fixedAmount) || 450,
+          paymentMethod: latestAttempt?.selectedMethod || payment.paymentMethod || "UPI",
+        },
+        approverName,
+        approverRole: effectiveRole,
+      }).catch((err) => console.error("[Payment Approved Dispatch Error]", err));
 
       if (payment.user?.email) {
         sendPaymentApprovedEmail({
@@ -200,18 +267,52 @@ export async function POST(req: NextRequest) {
 
     // ── 4. REJECT PAYMENT ──
     if (action === "REJECT") {
-      const rejectionReason = (reason || notes || "Rejected by administration").trim();
+      const rejectionReason = (reason || notes || "Payment not received in official CodeXa account").trim();
 
-      const updatedPayment = await db.paymentRequest.update({
-        where: { id: payment.id },
-        data: {
-          paymentStatus: "REJECTED",
-          rejectedBy: user.id,
-          rejectedByName: approverName,
-          rejectedAt: now,
-          rejectionReason,
-        },
+      const [updatedPayment] = await db.$transaction([
+        db.paymentRequest.update({
+          where: { id: payment.id },
+          data: {
+            paymentStatus: "REJECTED",
+            rejectedBy: user.id,
+            rejectedByName: `${approverName} (${effectiveRole})`,
+            rejectedAt: now,
+            rejectionReason,
+          },
+        }),
+        ...(latestAttempt ? [
+          db.paymentAttempt.update({
+            where: { id: latestAttempt.id },
+            data: {
+              status: "FAILED",
+              verificationReason: `ADMIN_REJECTED: ${rejectionReason}`,
+            },
+          }),
+        ] : []),
+      ]);
+
+      await logPaymentAudit({
+        action: "PAYMENT_REVIEW_REJECTED_MOBILE",
+        actorId: user.id,
+        actorName: approverName,
+        targetId: payment.id,
+        details: { referenceId: payment.referenceId, reason: rejectionReason, role: effectiveRole },
       });
+
+      // Dispatch full rejection notifications (In-App, Android FCM Push, Email)
+      dispatchPaymentRejectedToIntern({
+        payment: {
+          id: payment.id,
+          referenceId: payment.referenceId,
+          userId: payment.userId,
+          userName: payment.userName || payment.user?.fullName,
+          userEmail: payment.userEmail || payment.user?.email,
+          internId: payment.internId,
+        },
+        reason: rejectionReason,
+        reviewerName: approverName,
+        reviewerRole: effectiveRole,
+      }).catch((err) => console.error("[Payment Rejected Dispatch Error]", err));
 
       if (payment.user?.email) {
         sendPaymentRejectedEmail({

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, validateSessionResult } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { hasPermission, Permission, getEffectiveRole } from "@/lib/permissions";
 import { getPaymentProofBuffer } from "@/lib/payment-storage";
@@ -15,7 +15,16 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const user = await getCurrentUser();
+    let user = await getCurrentUser();
+    if (!user) {
+      const queryToken = req.nextUrl.searchParams.get("token");
+      if (queryToken) {
+        const authRes = await validateSessionResult(queryToken);
+        if (authRes.status === "authenticated") {
+          user = authRes.user;
+        }
+      }
+    }
     if (!user) {
       return NextResponse.json({ error: "Unauthorized. Please log in." }, { status: 401 });
     }
