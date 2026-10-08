@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { validateSessionResult, getCurrentSessionResult, generateRequestId } from "@/lib/auth";
+import path from "path";
+import crypto from "crypto";
+import fs from "fs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,22 +37,71 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized." } }, { status: 401, headers: NO_CACHE_HEADERS });
     }
 
-    const body = await req.json().catch(() => ({}));
-    const { mediaUrl, cropX = 0, cropY = 0, zoom = 1 } = body;
+    let mediaUrl = "";
+    let cropX = 0;
+    let cropY = 0;
+    let zoom = 1;
 
-    if (!mediaUrl) {
-      return NextResponse.json({ ok: false, error: { code: "MISSING_MEDIA_URL", message: "Media URL is required." } }, { status: 400, headers: NO_CACHE_HEADERS });
+    const contentType = req.headers.get("content-type") || "";
+
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await req.formData();
+      const file = formData.get("file") as File | null;
+      cropX = Number(formData.get("cropX") || 0);
+      cropY = Number(formData.get("cropY") || 0);
+      zoom = Number(formData.get("zoom") || 1);
+
+      if (file && file.size > 0) {
+        const bytes = await file.arrayBuffer();
+        const buffer = Buffer.from(bytes);
+        const ext = path.extname(file.name) || ".jpg";
+        const safeExt = [".jpg", ".jpeg", ".png", ".webp"].includes(ext.toLowerCase()) ? ext.toLowerCase() : ".jpg";
+        const filename = `avatar_${user.id}_${Date.now()}_${crypto.randomBytes(4).toString("hex")}${safeExt}`;
+        
+        const uploadsDir = path.join(process.cwd(), "public", "uploads", "avatars");
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+        
+        fs.writeFileSync(path.join(uploadsDir, filename), buffer);
+        mediaUrl = `https://codxa-agency.online/uploads/avatars/${filename}`;
+      } else {
+        mediaUrl = (formData.get("mediaUrl") as string) || "";
+      }
+    } else {
+      const body = await req.json().catch(() => ({}));
+      cropX = Number(body.cropX || 0);
+      cropY = Number(body.cropY || 0);
+      zoom = Number(body.zoom || 1);
+
+      if (body.base64) {
+        const cleanBase64 = body.base64.replace(/^data:image\/\w+;base64,/, "");
+        const buffer = Buffer.from(cleanBase64, "base64");
+        const filename = `avatar_${user.id}_${Date.now()}_${crypto.randomBytes(4).toString("hex")}.jpg`;
+        const uploadsDir = path.join(process.cwd(), "public", "uploads", "avatars");
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+        fs.writeFileSync(path.join(uploadsDir, filename), buffer);
+        mediaUrl = `https://codxa-agency.online/uploads/avatars/${filename}`;
+      } else {
+        mediaUrl = body.mediaUrl || "";
+      }
     }
 
-    // Update user profile image
+    if (!mediaUrl) {
+      return NextResponse.json({ ok: false, error: { code: "MISSING_IMAGE", message: "Image file or valid data is required." } }, { status: 400, headers: NO_CACHE_HEADERS });
+    }
+
+    // Update user profile image in database
     await Promise.all([
       db.user.update({
         where: { id: user.id },
         data: {
           profileMediaUrl: mediaUrl,
-          cropX: Number(cropX),
-          cropY: Number(cropY),
-          zoom: Number(zoom),
+          cropX,
+          cropY,
+          zoom,
         },
       }),
       db.teamProfile.upsert({
@@ -57,18 +109,18 @@ export async function POST(req: NextRequest) {
         update: {
           profileMediaUrl: mediaUrl,
           mediaUrl: mediaUrl,
-          cropX: Number(cropX),
-          cropY: Number(cropY),
-          zoom: Number(zoom),
+          cropX,
+          cropY,
+          zoom,
         },
         create: {
           userId: user.id,
           displayName: user.displayName || user.username || "Team Member",
           profileMediaUrl: mediaUrl,
           mediaUrl: mediaUrl,
-          cropX: Number(cropX),
-          cropY: Number(cropY),
-          zoom: Number(zoom),
+          cropX,
+          cropY,
+          zoom,
         },
       }),
       db.mediaAsset.create({
@@ -76,9 +128,9 @@ export async function POST(req: NextRequest) {
           userId: user.id,
           mediaType: "AVATAR",
           publicUrl: mediaUrl,
-          cropX: Number(cropX),
-          cropY: Number(cropY),
-          zoom: Number(zoom),
+          cropX,
+          cropY,
+          zoom,
         },
       }).catch(() => {}),
     ]);
