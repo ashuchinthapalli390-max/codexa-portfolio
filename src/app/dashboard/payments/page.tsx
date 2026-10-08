@@ -178,6 +178,47 @@ export default function PaymentsPage() {
   const [rejectionReason, setRejectionReason] = useState("");
   const [reviewAdminNotes, setReviewAdminNotes] = useState("");
   const [duplicateWarnings, setDuplicateWarnings] = useState<any>({});
+  const [zoomedProofUrl, setZoomedProofUrl] = useState<string | null>(null);
+
+  // Keyboard Escape listener to dismiss any active payment modal or lightbox
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (zoomedProofUrl) {
+          setZoomedProofUrl(null);
+        } else if (selectedReviewPayment) {
+          setSelectedReviewPayment(null);
+        } else if (selectedCashApproveItem) {
+          setSelectedCashApproveItem(null);
+        } else if (selectedCashRejectItem) {
+          setSelectedCashRejectItem(null);
+        } else if (selectedCashCardItem) {
+          setSelectedCashCardItem(null);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [zoomedProofUrl, selectedReviewPayment, selectedCashApproveItem, selectedCashRejectItem, selectedCashCardItem]);
+
+  // Lock body scroll when any modal or lightbox is active
+  useEffect(() => {
+    const isAnyModalOpen = Boolean(
+      zoomedProofUrl ||
+      selectedReviewPayment ||
+      selectedCashApproveItem ||
+      selectedCashRejectItem ||
+      selectedCashCardItem
+    );
+    if (isAnyModalOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "unset";
+    }
+    return () => {
+      document.body.style.overflow = "unset";
+    };
+  }, [zoomedProofUrl, selectedReviewPayment, selectedCashApproveItem, selectedCashRejectItem, selectedCashCardItem]);
 
   // Single & Bulk Request Creator State
   const [creatorMode, setCreatorMode] = useState<"single" | "bulk">("bulk");
@@ -356,6 +397,16 @@ export default function PaymentsPage() {
     );
   }, [payments]);
 
+  const reviewRequiredList = useMemo(() => {
+    return payments.filter(
+      (p) =>
+        p.paymentStatus === "VERIFYING" ||
+        p.paymentStatus === "PENDING_VERIFICATION" ||
+        p.paymentStatus === "FAILED" ||
+        (p.submissions && p.submissions.length > 0 && p.paymentStatus !== "APPROVED" && p.paymentStatus !== "SUCCESS")
+    );
+  }, [payments]);
+
   // Trigger individual payment reminder
   const handleTriggerTableReminder = async (e: React.MouseEvent, paymentId: string) => {
     e.preventDefault();
@@ -488,6 +539,65 @@ export default function PaymentsPage() {
       await fetchData(true);
     } catch (err: any) {
       alert(err.message || "Network error while processing verification.");
+    } finally {
+      setReviewLoading(false);
+    }
+  };
+
+  // Founder / Co-Founder Exception Approval (Calls /api/payments/[id]/review/approve)
+  const handleApproveException = async () => {
+    if (!selectedReviewPayment) return;
+    try {
+      setReviewLoading(true);
+      const res = await fetch(`/api/payments/${selectedReviewPayment.id}/review/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          notes: reviewAdminNotes || "Manual exception approval by Founder/Co-Founder",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "Failed to approve payment exception.");
+        return;
+      }
+      alert(`Payment ${selectedReviewPayment.referenceId} approved successfully! Intern access cleared.`);
+      setSelectedReviewPayment(null);
+      await fetchData(true);
+    } catch (err: any) {
+      alert(err.message || "Network error approving payment exception.");
+    } finally {
+      setReviewLoading(false);
+    }
+  };
+
+  // Founder / Co-Founder Exception Rejection (Calls /api/payments/[id]/review/reject)
+  const handleRejectException = async () => {
+    if (!selectedReviewPayment) return;
+    if (!rejectionReason.trim()) {
+      alert("Please select or enter a rejection reason.");
+      return;
+    }
+    try {
+      setReviewLoading(true);
+      const res = await fetch(`/api/payments/${selectedReviewPayment.id}/review/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reason: rejectionReason.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "Failed to reject payment proof.");
+        return;
+      }
+      alert(`Payment proof for ${selectedReviewPayment.referenceId} rejected.`);
+      setSelectedReviewPayment(null);
+      setReviewAction(null);
+      await fetchData(true);
+    } catch (err: any) {
+      alert(err.message || "Network error rejecting payment.");
     } finally {
       setReviewLoading(false);
     }
@@ -998,129 +1108,505 @@ export default function PaymentsPage() {
         </div>
       )}
 
-      {/* ─── ROLE-SCOPED TABS (FOUNDER/CO-FOUNDER vs CEO/CTO/HR) ─────────────── */}
+      {/* ─── ROLE-SCOPED TABS & RESPONSIVE MOBILE NAVIGATION ────────────────── */}
       {isPrivileged && (
-        <div className="flex items-center gap-1 border-b border-white/10 overflow-x-auto pb-1">
-          <button
-            onClick={() => setActiveTab("all")}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
-              activeTab === "all"
-                ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
-                : "text-zinc-400 hover:text-white hover:bg-white/5"
-            }`}
-          >
-            <CreditCard className="w-4 h-4 text-zinc-300" />
-            All Payments ({payments.length})
-          </button>
+        <div className="space-y-3">
+          {/* Mobile Tab Dropdown (Prevents horizontal overflow clipping on phone viewports) */}
+          <div className="block md:hidden">
+            <label className="text-[10px] font-mono uppercase text-zinc-400 mb-1.5 flex items-center justify-between">
+              <span>Payment Control Section</span>
+              <span className="text-bright-red font-bold">{activeTab.toUpperCase().replace("-", " ")}</span>
+            </label>
+            <select
+              value={activeTab}
+              onChange={(e) => setActiveTab(e.target.value)}
+              className="w-full p-3 rounded-xl bg-[#141414] border border-crimson/30 text-white text-xs font-semibold focus:outline-none focus:border-bright-red transition-all"
+            >
+              <option value="overview">📊 Overview & Metrics</option>
+              <option value="all">💳 All Payments ({payments.length})</option>
+              <option value="paid">✅ Paid Interns ({paidList.length})</option>
+              <option value="not-paid">⏳ Not Paid Roster ({notPaidList.length})</option>
+              {canApproveCash && <option value="queue">⏱ UPI Queue ({verificationQueue.length})</option>}
+              <option value="review-required">⚠️ Review Required ({reviewRequiredList.length})</option>
+              {canApproveCash && <option value="cash-approvals">💵 Cash Approvals ({cashApprovalsList.length})</option>}
+              <option value="analytics">📈 Analytics & Methods</option>
+              <option value="history">📜 Audit Logs & History</option>
+              {canManage && <option value="create">➕ Create Request</option>}
+              {canManageSettings && <option value="settings">⚙️ Payment Settings</option>}
+            </select>
+          </div>
 
-          {/* Cash Approvals Tab (ONLY Founder & Co-Founder) */}
-          {canApproveCash && (
+          {/* Desktop Horizontal Tabs */}
+          <div className="hidden md:flex items-center gap-1 border-b border-white/10 overflow-x-auto pb-1 scrollbar-none">
+            {/* Overview Tab */}
             <button
-              onClick={() => setActiveTab("cash-approvals")}
-              className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
-                activeTab === "cash-approvals"
+              onClick={() => setActiveTab("overview")}
+              className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
+                activeTab === "overview"
                   ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
                   : "text-zinc-400 hover:text-white hover:bg-white/5"
               }`}
             >
-              <Banknote className="w-4 h-4 text-amber-400" />
-              Cash Approvals
-              {cashApprovalsList.length > 0 && (
+              <TrendingUp className="w-4 h-4 text-bright-red" />
+              Overview
+            </button>
+
+            {/* All Payments Tab */}
+            <button
+              onClick={() => setActiveTab("all")}
+              className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
+                activeTab === "all"
+                  ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
+                  : "text-zinc-400 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              <CreditCard className="w-4 h-4 text-zinc-300" />
+              All ({payments.length})
+            </button>
+
+            {/* Paid Tab */}
+            <button
+              onClick={() => setActiveTab("paid")}
+              className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
+                activeTab === "paid"
+                  ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
+                  : "text-zinc-400 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              Paid ({paidList.length})
+            </button>
+
+            {/* Not Paid Tab */}
+            <button
+              onClick={() => setActiveTab("not-paid")}
+              className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
+                activeTab === "not-paid"
+                  ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
+                  : "text-zinc-400 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              <XCircle className="w-4 h-4 text-crimson" />
+              Not Paid ({notPaidList.length})
+            </button>
+
+            {/* Review Required Tab (Dedicated Exception Console) */}
+            <button
+              onClick={() => setActiveTab("review-required")}
+              className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
+                activeTab === "review-required"
+                  ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
+                  : "text-zinc-400 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              <AlertTriangle className="w-4 h-4 text-amber-400" />
+              Review Required
+              {reviewRequiredList.length > 0 && (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
-                  {cashApprovalsList.length}
+                  {reviewRequiredList.length}
                 </span>
               )}
             </button>
-          )}
 
-          {/* UPI Verification Queue (Founder & Co-Founder) */}
-          {canApproveCash && (
+            {/* Cash Approvals Tab (Founder & Co-Founder) */}
+            {canApproveCash && (
+              <button
+                onClick={() => setActiveTab("cash-approvals")}
+                className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
+                  activeTab === "cash-approvals"
+                    ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
+                    : "text-zinc-400 hover:text-white hover:bg-white/5"
+                }`}
+              >
+                <Banknote className="w-4 h-4 text-amber-400" />
+                Cash Approvals
+                {cashApprovalsList.length > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
+                    {cashApprovalsList.length}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {/* UPI Verification Queue (Founder, Co-Founder, Executive) */}
+            {canApproveCash && (
+              <button
+                onClick={() => setActiveTab("queue")}
+                className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
+                  activeTab === "queue"
+                    ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
+                    : "text-zinc-400 hover:text-white hover:bg-white/5"
+                }`}
+              >
+                <Clock className="w-4 h-4 text-blue-400" />
+                UPI Queue
+                {verificationQueue.length > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                    {verificationQueue.length}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {/* Analytics Tab */}
             <button
-              onClick={() => setActiveTab("queue")}
-              className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
-                activeTab === "queue"
+              onClick={() => setActiveTab("analytics")}
+              className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
+                activeTab === "analytics"
                   ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
                   : "text-zinc-400 hover:text-white hover:bg-white/5"
               }`}
             >
-              <Clock className="w-4 h-4 text-blue-400" />
-              UPI Queue
-              {verificationQueue.length > 0 && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 animate-pulse">
-                  {verificationQueue.length}
+              <Smartphone className="w-4 h-4 text-purple-400" />
+              Analytics
+            </button>
+
+            {/* Payment History & Audit Timeline Tab */}
+            <button
+              onClick={() => setActiveTab("history")}
+              className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
+                activeTab === "history"
+                  ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
+                  : "text-zinc-400 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              <FileText className="w-4 h-4 text-indigo-400" />
+              History &amp; Logs
+            </button>
+
+            {/* Create Request Tab (Founder / Co-Founder) */}
+            {canManage && (
+              <button
+                onClick={() => setActiveTab("create")}
+                className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
+                  activeTab === "create"
+                    ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
+                    : "text-zinc-400 hover:text-white hover:bg-white/5"
+                }`}
+              >
+                <Plus className="w-4 h-4 text-emerald-400" />
+                Create Request
+              </button>
+            )}
+
+            {/* Settings Tab (Founder / Co-Founder) */}
+            {canManageSettings && (
+              <button
+                onClick={() => setActiveTab("settings")}
+                className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
+                  activeTab === "settings"
+                    ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
+                    : "text-zinc-400 hover:text-white hover:bg-white/5"
+                }`}
+              >
+                <Settings className="w-4 h-4 text-purple-400" />
+                Settings
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── TAB: OVERVIEW DASHBOARD ────────────────────────────────────────── */}
+      {isPrivileged && activeTab === "overview" && (
+        <div className="space-y-6 animate-in fade-in duration-150">
+          {/* Action Callout Banners */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {reviewRequiredList.length > 0 && (
+              <div
+                onClick={() => setActiveTab("review-required")}
+                className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 hover:border-amber-500/60 transition-all cursor-pointer flex items-center justify-between"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white">Review Required</h4>
+                    <p className="text-[11px] text-amber-300/80">{reviewRequiredList.length} exceptions pending review</p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-amber-400" />
+              </div>
+            )}
+
+            {canApproveCash && cashApprovalsList.length > 0 && (
+              <div
+                onClick={() => setActiveTab("cash-approvals")}
+                className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 hover:border-emerald-500/60 transition-all cursor-pointer flex items-center justify-between"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
+                    <Banknote className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white">Cash Approvals</h4>
+                    <p className="text-[11px] text-emerald-300/80">{cashApprovalsList.length} handovers awaiting approval</p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-emerald-400" />
+              </div>
+            )}
+
+            {notPaidList.length > 0 && (
+              <div
+                onClick={() => setActiveTab("not-paid")}
+                className="p-4 rounded-2xl bg-crimson/10 border border-crimson/30 hover:border-crimson/60 transition-all cursor-pointer flex items-center justify-between"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-crimson/20 text-crimson">
+                    <Clock className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white">Unpaid Interns</h4>
+                    <p className="text-[11px] text-zinc-300">{notPaidList.length} interns pending payment</p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-crimson" />
+              </div>
+            )}
+          </div>
+
+          {/* Payment Method Distribution */}
+          <div className="p-6 rounded-2xl bg-[#0f0f0f] border border-white/10 space-y-4 shadow-xl">
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+              <Smartphone className="w-4 h-4 text-bright-red" />
+              Live Method Selection Breakdown
+            </h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div className="p-4 rounded-xl bg-[#141414] border border-purple-500/20">
+                <span className="text-[11px] font-semibold text-purple-400 block">PhonePe</span>
+                <span className="text-xl font-orbitron font-bold text-white mt-1 block">
+                  {currentMetrics.byMethod?.PHONEPE || 0}
                 </span>
-              )}
-            </button>
+                <span className="text-[10px] text-zinc-500">Auto UPI</span>
+              </div>
+              <div className="p-4 rounded-xl bg-[#141414] border border-blue-500/20">
+                <span className="text-[11px] font-semibold text-blue-400 block">Google Pay</span>
+                <span className="text-xl font-orbitron font-bold text-white mt-1 block">
+                  {currentMetrics.byMethod?.GOOGLE_PAY || 0}
+                </span>
+                <span className="text-[10px] text-zinc-500">Auto UPI</span>
+              </div>
+              <div className="p-4 rounded-xl bg-[#141414] border border-sky-500/20">
+                <span className="text-[11px] font-semibold text-sky-400 block">Paytm</span>
+                <span className="text-xl font-orbitron font-bold text-white mt-1 block">
+                  {currentMetrics.byMethod?.PAYTM || 0}
+                </span>
+                <span className="text-[10px] text-zinc-500">Auto UPI</span>
+              </div>
+              <div className="p-4 rounded-xl bg-[#141414] border border-indigo-500/20">
+                <span className="text-[11px] font-semibold text-indigo-400 block">Other UPI</span>
+                <span className="text-xl font-orbitron font-bold text-white mt-1 block">
+                  {currentMetrics.byMethod?.OTHER_UPI || 0}
+                </span>
+                <span className="text-[10px] text-zinc-500">Auto UPI</span>
+              </div>
+              <div className="p-4 rounded-xl bg-[#141414] border border-emerald-500/30 bg-emerald-950/10">
+                <span className="text-[11px] font-semibold text-emerald-400 block">Pay with Cash</span>
+                <span className="text-xl font-orbitron font-bold text-emerald-400 mt-1 block">
+                  {currentMetrics.byMethod?.CASH || 0}
+                </span>
+                <span className="text-[10px] text-emerald-500/80">Physical approval</span>
+              </div>
+              <div className="p-4 rounded-xl bg-[#141414] border border-white/5">
+                <span className="text-[11px] font-semibold text-zinc-400 block">Not Selected</span>
+                <span className="text-xl font-orbitron font-bold text-zinc-300 mt-1 block">
+                  {currentMetrics.byMethod?.NOT_SELECTED || 0}
+                </span>
+                <span className="text-[10px] text-zinc-500">Bill unstarted</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Domain Breakdown */}
+          {analytics && (
+            <div className="p-6 rounded-2xl bg-[#0f0f0f] border border-white/10 space-y-4 shadow-xl">
+              <h3 className="text-sm font-semibold text-white">Collection Breakdown by Internship Domain</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {Object.entries(analytics.domainBreakdown || {}).map(([domain, data]: any) => (
+                  <div
+                    key={domain}
+                    className="p-3.5 rounded-xl bg-[#141414] border border-white/5 flex items-center justify-between text-xs"
+                  >
+                    <div>
+                      <span className="font-semibold text-white">{domain}</span>
+                      <span className="text-zinc-500 ml-2">({data.count} interns)</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-emerald-400 font-bold font-mono">
+                        ₹{data.approvedAmount.toLocaleString()}
+                      </span>
+                      <span className="text-zinc-500"> / ₹{data.totalAmount.toLocaleString()}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
+        </div>
+      )}
 
-          {/* Not Paid Roster Tab (All Roles) */}
-          <button
-            onClick={() => setActiveTab("not-paid")}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
-              activeTab === "not-paid"
-                ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
-                : "text-zinc-400 hover:text-white hover:bg-white/5"
-            }`}
-          >
-            <XCircle className="w-4 h-4 text-crimson" />
-            Not Paid Roster ({notPaidList.length})
-          </button>
+      {/* ─── TAB: REVIEW REQUIRED (EXCEPTION CONSOLE) ────────────────────────── */}
+      {isPrivileged && activeTab === "review-required" && (
+        <div className="space-y-4 animate-in fade-in duration-150">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#111111] p-4 rounded-2xl border border-amber-500/30">
+            <div>
+              <h2 className="text-sm font-orbitron font-bold text-amber-400 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-400" />
+                Payment Review &amp; Exception Console ({reviewRequiredList.length})
+              </h2>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Payments flagged with UTR issues, timeout reviews, or unverified screenshots awaiting Founder/Co-Founder resolution.
+              </p>
+            </div>
+            <div className="text-xs text-amber-300 font-mono bg-amber-500/10 px-3 py-1.5 rounded-xl border border-amber-500/30 w-fit">
+              Founder / Co-Founder Auditable Controls
+            </div>
+          </div>
 
-          {/* Paid Interns Tab (All Roles) */}
-          <button
-            onClick={() => setActiveTab("paid")}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
-              activeTab === "paid"
-                ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
-                : "text-zinc-400 hover:text-white hover:bg-white/5"
-            }`}
-          >
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            Paid ({paidList.length})
-          </button>
+          {reviewRequiredList.length === 0 ? (
+            <div className="p-12 text-center rounded-2xl bg-[#0f0f0f] border border-white/5 space-y-3">
+              <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
+              <h3 className="text-base font-orbitron font-bold text-white">All Clear — Zero Review Exceptions</h3>
+              <p className="text-xs text-zinc-400 max-w-md mx-auto">
+                No payments currently require manual intervention. All submitted proofs have been automatically resolved or verified.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {reviewRequiredList.map((item) => (
+                <div
+                  key={item.id}
+                  className="p-5 rounded-2xl bg-[#0e0e0e] border border-amber-500/20 hover:border-amber-500/40 transition-all space-y-3 shadow-lg"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <span className="font-mono text-xs font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30">
+                        {item.referenceId}
+                      </span>
+                      <h4 className="text-sm font-bold text-white mt-1.5">{item.userName || "Intern"}</h4>
+                      <p className="text-xs text-zinc-400">{item.userEmail}</p>
+                      <p className="text-[11px] text-zinc-500 mt-0.5 font-mono">
+                        {item.internId} &bull; {item.domain}
+                      </p>
+                    </div>
+                    {renderStatusBadge(item)}
+                  </div>
 
-          {/* Analytics & Reports (All Privileged Roles) */}
-          <button
-            onClick={() => setActiveTab("analytics")}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
-              activeTab === "analytics"
-                ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
-                : "text-zinc-400 hover:text-white hover:bg-white/5"
-            }`}
-          >
-            <TrendingUp className="w-4 h-4 text-amber-400" />
-            Analytics &amp; Methods
-          </button>
+                  <div className="p-3 rounded-xl bg-[#141414] border border-white/5 flex items-center justify-between text-xs font-mono">
+                    <div>
+                      <span className="text-zinc-500 block text-[10px]">UTR / Ref:</span>
+                      <span className="text-white font-bold">{item.utrNumber || "NOT DETECTED"}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-zinc-500 block text-[10px]">Amount:</span>
+                      <span className="text-emerald-400 font-bold">₹{item.fixedAmount}</span>
+                    </div>
+                  </div>
 
-          {/* Create Request (Only Founder / Co-Founder) */}
-          {canManage && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => openReviewModal(item)}
+                      className="flex-1 py-2.5 px-3 rounded-xl bg-bright-red hover:bg-bright-red/90 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md"
+                    >
+                      <Eye className="w-3.5 h-3.5" /> Inspect Proof &amp; Decide
+                    </button>
+                    <Link
+                      href={`/dashboard/payments/${item.id}`}
+                      className="py-2.5 px-3.5 rounded-xl bg-[#1c1c1c] hover:bg-[#252525] text-zinc-300 text-xs font-semibold flex items-center justify-center transition-colors"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── TAB: PAYMENT HISTORY & AUDIT LOGS ───────────────────────────────── */}
+      {isPrivileged && activeTab === "history" && (
+        <div className="space-y-4 animate-in fade-in duration-150">
+          <div className="flex items-center justify-between bg-[#111111] p-4 rounded-2xl border border-white/10">
+            <div>
+              <h2 className="text-sm font-orbitron font-bold text-white flex items-center gap-2">
+                <FileText className="w-5 h-5 text-indigo-400" />
+                Payment Audit Timeline &amp; History
+              </h2>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Authoritative record of verification events, approvals, cash handovers, and exceptions.
+              </p>
+            </div>
             <button
-              onClick={() => setActiveTab("create")}
-              className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
-                activeTab === "create"
-                  ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
-                  : "text-zinc-400 hover:text-white hover:bg-white/5"
-              }`}
+              onClick={() => fetchData(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#181818] text-xs text-zinc-300 hover:text-white border border-white/10"
             >
-              <Plus className="w-4 h-4 text-emerald-400" />
-              Create Request
+              <RefreshCw className="w-3.5 h-3.5" /> Refresh
             </button>
-          )}
+          </div>
 
-          {/* Settings Tab (Only Founder / Co-Founder) */}
-          {canManageSettings && (
-            <button
-              onClick={() => setActiveTab("settings")}
-              className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
-                activeTab === "settings"
-                  ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
-                  : "text-zinc-400 hover:text-white hover:bg-white/5"
-              }`}
-            >
-              <Settings className="w-4 h-4 text-purple-400" />
-              Payment Settings
-            </button>
-          )}
+          <div className="space-y-2.5">
+            {payments
+              .filter((p) => p.paidAt || p.cashApprovedAt || p.verifiedAt || p.rejectedAt)
+              .slice(0, 30)
+              .map((p) => (
+                <div
+                  key={p.id}
+                  className="p-4 rounded-xl bg-[#0f0f0f] border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                >
+                  <div className="flex items-start sm:items-center gap-3">
+                    <div
+                      className={`p-2 rounded-xl shrink-0 ${
+                        p.cashStatus === "CASH_RECEIVED"
+                          ? "bg-emerald-500/20 text-emerald-400"
+                          : p.paymentStatus === "APPROVED"
+                          ? "bg-emerald-500/20 text-emerald-400"
+                          : "bg-crimson/20 text-crimson"
+                      }`}
+                    >
+                      {p.cashStatus === "CASH_RECEIVED" ? (
+                        <Banknote className="w-4 h-4" />
+                      ) : p.paymentStatus === "APPROVED" ? (
+                        <CheckCircle2 className="w-4 h-4" />
+                      ) : (
+                        <XCircle className="w-4 h-4" />
+                      )}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-white">{p.userName}</span>
+                        <span className="font-mono text-[10px] text-zinc-400 bg-white/5 px-2 py-0.5 rounded">
+                          {p.referenceId}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                        {p.cashStatus === "CASH_RECEIVED"
+                          ? `Cash payment confirmed by ${p.cashApprovedByName || "Founder"}`
+                          : p.verificationSource === "ADMIN_EXCEPTION_APPROVAL"
+                          ? `Exception approved by ${p.verifiedByName || "Founder"}`
+                          : `Auto-verified via settlement feed (${p.paymentMethod || "UPI"})`}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <span className="font-mono font-bold text-emerald-400 block">₹{p.fixedAmount}</span>
+                    <span className="text-[10px] font-mono text-zinc-500">
+                      {p.paidAt
+                        ? new Date(p.paidAt).toLocaleString()
+                        : p.verifiedAt
+                        ? new Date(p.verifiedAt).toLocaleString()
+                        : p.createdAt
+                        ? new Date(p.createdAt).toLocaleString()
+                        : "N/A"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+          </div>
         </div>
       )}
 
@@ -2073,9 +2559,14 @@ export default function PaymentsPage() {
 
       {/* ─── MODAL: CONFIRM CASH RECEIVED (REQUIREMENT 20) ───────────────────── */}
       {selectedCashApproveItem && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#101010] border border-emerald-500/40 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSelectedCashApproveItem(null);
+          }}
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+        >
+          <div className="bg-[#101010] border border-emerald-500/40 rounded-2xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b border-white/10 shrink-0">
               <div className="flex items-center gap-2.5 text-emerald-400">
                 <Banknote className="w-6 h-6" />
                 <h3 className="font-orbitron font-bold text-base text-white">
@@ -2083,49 +2574,53 @@ export default function PaymentsPage() {
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setSelectedCashApproveItem(null)}
-                className="p-1.5 rounded-lg bg-[#1c1c1c] text-zinc-400 hover:text-white"
+                aria-label="Close dialog"
+                className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white flex items-center justify-center transition-colors"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-4 rounded-xl bg-[#141414] border border-white/5 space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-zinc-500">Intern Name:</span>
-                <span className="font-semibold text-white">{selectedCashApproveItem.userName}</span>
+            <div className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
+              <div className="p-4 rounded-xl bg-[#141414] border border-white/5 space-y-2.5">
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">Intern Name:</span>
+                  <span className="font-semibold text-white">{selectedCashApproveItem.userName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">Intern ID:</span>
+                  <span className="font-mono text-zinc-300">
+                    {selectedCashApproveItem.internId ||
+                      selectedCashApproveItem.user?.employmentProfile?.employeeId ||
+                      "-"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">Reference:</span>
+                  <span className="font-mono font-bold text-emerald-400">
+                    {selectedCashApproveItem.referenceId}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">Cash Amount:</span>
+                  <span className="font-bold text-sm text-emerald-400">₹450 Fixed</span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-500">Intern ID:</span>
-                <span className="font-mono text-zinc-300">
-                  {selectedCashApproveItem.internId ||
-                    selectedCashApproveItem.user?.employmentProfile?.employeeId ||
-                    "-"}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-500">Reference:</span>
-                <span className="font-mono font-bold text-emerald-400">
-                  {selectedCashApproveItem.referenceId}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-500">Cash Amount:</span>
-                <span className="font-bold text-sm text-emerald-400">₹450 Fixed</span>
+
+              <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 leading-relaxed">
+                Confirming will mark this payment as <strong>APPROVED (CASH_RECEIVED)</strong> immediately,
+                update the intern roster, and grant full service access.
               </div>
             </div>
 
-            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300">
-              Confirming will mark this payment as <strong>APPROVED (CASH_RECEIVED)</strong> immediately,
-              update the intern roster, and grant full service access.
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-2">
+            <div className="p-4 border-t border-white/10 bg-[#0d0d0d] flex items-center justify-end gap-3 shrink-0">
               <button
                 type="button"
                 onClick={() => setSelectedCashApproveItem(null)}
                 disabled={cashActionLoading}
-                className="px-4 py-2 rounded-xl bg-[#1c1c1c] text-zinc-300 text-xs font-semibold hover:bg-[#252525]"
+                className="px-4 py-2.5 rounded-xl bg-[#1c1c1c] text-zinc-300 text-xs font-semibold hover:bg-[#252525] transition-colors"
               >
                 Cancel
               </button>
@@ -2133,7 +2628,7 @@ export default function PaymentsPage() {
                 type="button"
                 onClick={handleConfirmCashSubmit}
                 disabled={cashActionLoading}
-                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-[0_0_15px_rgba(34,197,94,0.3)] disabled:opacity-50"
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-[0_0_15px_rgba(34,197,94,0.3)] disabled:opacity-50 transition-all"
               >
                 {cashActionLoading ? "Confirming..." : "Confirm Cash Received"}
               </button>
@@ -2144,9 +2639,14 @@ export default function PaymentsPage() {
 
       {/* ─── MODAL: REJECT CASH REQUEST (REQUIREMENT 22) ─────────────────────── */}
       {selectedCashRejectItem && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#101010] border border-crimson/40 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSelectedCashRejectItem(null);
+          }}
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+        >
+          <div className="bg-[#101010] border border-crimson/40 rounded-2xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b border-white/10 shrink-0">
               <div className="flex items-center gap-2.5 text-crimson">
                 <AlertTriangle className="w-6 h-6" />
                 <h3 className="font-orbitron font-bold text-base text-white">
@@ -2154,55 +2654,59 @@ export default function PaymentsPage() {
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setSelectedCashRejectItem(null)}
-                className="p-1.5 rounded-lg bg-[#1c1c1c] text-zinc-400 hover:text-white"
+                aria-label="Close dialog"
+                className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white flex items-center justify-center transition-colors"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-4 rounded-xl bg-[#141414] border border-white/5 space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-zinc-500">Intern:</span>
-                <span className="font-semibold text-white">{selectedCashRejectItem.userName}</span>
+            <div className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
+              <div className="p-4 rounded-xl bg-[#141414] border border-white/5 space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">Intern:</span>
+                  <span className="font-semibold text-white">{selectedCashRejectItem.userName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">Reference:</span>
+                  <span className="font-mono text-zinc-300">{selectedCashRejectItem.referenceId}</span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-500">Reference:</span>
-                <span className="font-mono text-zinc-300">{selectedCashRejectItem.referenceId}</span>
+
+              <div className="space-y-3">
+                <label className="block text-xs font-semibold text-zinc-300">
+                  Select Rejection Reason *
+                </label>
+                <select
+                  value={cashRejectReason}
+                  onChange={(e) => setCashRejectReason(e.target.value)}
+                  className="w-full p-2.5 bg-[#161616] border border-white/10 rounded-xl text-xs text-white"
+                >
+                  <option value="Cash not received">Cash not received</option>
+                  <option value="Incorrect request">Incorrect request</option>
+                  <option value="Duplicate request">Duplicate request</option>
+                  <option value="User cancelled">User cancelled</option>
+                  <option value="Other">Other</option>
+                </select>
+
+                <input
+                  type="text"
+                  placeholder="Custom reason note (optional)..."
+                  value={cashRejectCustomNote}
+                  onChange={(e) => setCashRejectCustomNote(e.target.value)}
+                  className="w-full p-2.5 bg-[#161616] border border-white/10 rounded-xl text-xs text-white"
+                />
               </div>
             </div>
 
-            <div className="space-y-3">
-              <label className="block text-xs font-semibold text-zinc-300">
-                Select Rejection Reason *
-              </label>
-              <select
-                value={cashRejectReason}
-                onChange={(e) => setCashRejectReason(e.target.value)}
-                className="w-full p-2.5 bg-[#161616] border border-white/10 rounded-xl text-xs text-white"
-              >
-                <option value="Cash not received">Cash not received</option>
-                <option value="Incorrect request">Incorrect request</option>
-                <option value="Duplicate request">Duplicate request</option>
-                <option value="User cancelled">User cancelled</option>
-                <option value="Other">Other</option>
-              </select>
-
-              <input
-                type="text"
-                placeholder="Custom reason note (optional)..."
-                value={cashRejectCustomNote}
-                onChange={(e) => setCashRejectCustomNote(e.target.value)}
-                className="w-full p-2.5 bg-[#161616] border border-white/10 rounded-xl text-xs text-white"
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-2">
+            <div className="p-4 border-t border-white/10 bg-[#0d0d0d] flex items-center justify-end gap-3 shrink-0">
               <button
                 type="button"
                 onClick={() => setSelectedCashRejectItem(null)}
                 disabled={cashActionLoading}
-                className="px-4 py-2 rounded-xl bg-[#1c1c1c] text-zinc-300 text-xs font-semibold hover:bg-[#252525]"
+                className="px-4 py-2.5 rounded-xl bg-[#1c1c1c] text-zinc-300 text-xs font-semibold hover:bg-[#252525] transition-colors"
               >
                 Cancel
               </button>
@@ -2210,7 +2714,7 @@ export default function PaymentsPage() {
                 type="button"
                 onClick={handleRejectCashSubmit}
                 disabled={cashActionLoading}
-                className="px-5 py-2 rounded-xl bg-crimson hover:bg-crimson/90 text-white text-xs font-bold disabled:opacity-50"
+                className="px-5 py-2.5 rounded-xl bg-crimson hover:bg-crimson/90 text-white text-xs font-bold disabled:opacity-50 transition-all"
               >
                 {cashActionLoading ? "Processing..." : "Confirm Rejection"}
               </button>
@@ -2221,22 +2725,29 @@ export default function PaymentsPage() {
 
       {/* ─── MODAL: CASH REQUEST CARD PREVIEW (REQUIREMENT 17) ───────────────── */}
       {selectedCashCardItem && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#101010] border border-white/15 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSelectedCashCardItem(null);
+          }}
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+        >
+          <div className="bg-[#101010] border border-white/15 rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b border-white/10 shrink-0">
               <h3 className="font-orbitron font-bold text-sm text-white flex items-center gap-2">
                 <FileText className="w-4 h-4 text-bright-red" />
                 CodeXa Cash Payment Request Card
               </h3>
               <button
+                type="button"
                 onClick={() => setSelectedCashCardItem(null)}
-                className="p-1.5 rounded-lg bg-[#1c1c1c] text-zinc-400 hover:text-white"
+                aria-label="Close dialog"
+                className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white flex items-center justify-center transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="flex justify-center p-2 rounded-xl bg-[#080808] border border-white/5 overflow-hidden">
+            <div className="flex justify-center p-4 bg-[#080808] overflow-y-auto flex-1">
               <img
                 src={`/api/payments/${selectedCashCardItem.id}/cash/card`}
                 alt="Cash Payment Request Card"
@@ -2244,20 +2755,20 @@ export default function PaymentsPage() {
               />
             </div>
 
-            <div className="flex items-center justify-between text-xs text-zinc-500 pt-1">
+            <div className="p-4 border-t border-white/10 bg-[#0d0d0d] flex items-center justify-between text-xs text-zinc-500 shrink-0">
               <span>Watermarked: PENDING CASH APPROVAL</span>
               <div className="flex items-center gap-2">
                 <a
                   href={`/api/payments/${selectedCashCardItem.id}/cash/card`}
                   download={`codexa_cash_card_${selectedCashCardItem.referenceId}.svg`}
-                  className="px-3 py-1.5 rounded-xl bg-[#181818] hover:bg-[#222222] text-zinc-300 font-semibold"
+                  className="px-3.5 py-2 rounded-xl bg-[#181818] hover:bg-[#222222] text-zinc-300 font-semibold transition-colors"
                 >
                   Download SVG
                 </a>
                 <button
                   type="button"
                   onClick={() => setSelectedCashCardItem(null)}
-                  className="px-4 py-1.5 rounded-xl bg-bright-red text-white font-semibold"
+                  className="px-4 py-2 rounded-xl bg-bright-red hover:bg-bright-red/90 text-white font-semibold transition-colors"
                 >
                   Close
                 </button>
@@ -2269,26 +2780,40 @@ export default function PaymentsPage() {
 
       {/* ─── MODAL: ADMIN REVIEW & DECIDE (EXISTING OCR AUDIT) ───────────────── */}
       {selectedReviewPayment && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#101010] border border-white/15 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
-            <div className="p-5 border-b border-white/10 flex items-center justify-between">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSelectedReviewPayment(null);
+          }}
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+        >
+          <div className="bg-[#101010] border border-white/15 rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden shadow-2xl">
+            {/* Sticky Header */}
+            <div className="p-5 border-b border-white/10 flex items-center justify-between shrink-0 bg-[#0d0d0d]">
               <div>
                 <span className="font-mono text-xs font-bold text-bright-red bg-crimson/10 px-2.5 py-1 rounded-md border border-crimson/20">
                   {selectedReviewPayment.referenceId}
                 </span>
-                <h3 className="text-base font-orbitron font-bold text-white mt-1.5">
-                  Verify Payment Proof
+                <h3 className="text-base font-orbitron font-bold text-white mt-1.5 flex items-center gap-2">
+                  <span>Verify Payment Proof</span>
+                  {selectedReviewPayment.paymentStatus === "APPROVED" && (
+                    <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
+                      Already Approved
+                    </span>
+                  )}
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setSelectedReviewPayment(null)}
-                className="p-2 rounded-xl bg-[#1c1c1c] text-zinc-400 hover:text-white transition-colors"
+                aria-label="Close dialog"
+                className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white flex items-center justify-center transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 flex-1">
+            {/* Scrollable Body */}
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 overflow-y-auto flex-1">
               <div className="space-y-4 text-xs">
                 {(duplicateWarnings.duplicateUtr || duplicateWarnings.duplicateScreenshot) && (
                   <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 space-y-1">
@@ -2393,21 +2918,30 @@ export default function PaymentsPage() {
                   Payment Proof Screenshot
                 </span>
 
-                <div className="p-2 rounded-2xl bg-[#080808] border border-white/10 flex items-center justify-center min-h-[300px] max-h-[460px] overflow-hidden">
+                <div className="p-2 rounded-2xl bg-[#080808] border border-white/10 flex items-center justify-center min-h-[300px] max-h-[460px] overflow-hidden relative group">
                   {selectedReviewPayment.proofImageUrl ? (
-                    <img
-                      src={`/api/payments/${selectedReviewPayment.id}/proof-image`}
-                      alt="Payment Proof"
-                      className="max-h-[440px] w-auto object-contain rounded-xl hover:scale-105 transition-transform cursor-pointer"
-                      onClick={() => window.open(`/api/payments/${selectedReviewPayment.id}/proof-image`, "_blank")}
-                    />
+                    <>
+                      <img
+                        src={`/api/payments/${selectedReviewPayment.id}/proof-image`}
+                        alt="Payment Proof"
+                        className="max-h-[440px] w-auto object-contain rounded-xl hover:scale-105 transition-transform cursor-pointer"
+                        onClick={() => setZoomedProofUrl(`/api/payments/${selectedReviewPayment.id}/proof-image`)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setZoomedProofUrl(`/api/payments/${selectedReviewPayment.id}/proof-image`)}
+                        className="absolute bottom-3 right-3 px-3 py-1.5 rounded-xl bg-black/80 hover:bg-black text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg border border-white/20 opacity-90 group-hover:opacity-100 transition-opacity"
+                      >
+                        <Eye className="w-3.5 h-3.5" /> Open Lightbox
+                      </button>
+                    </>
                   ) : (
                     <div className="text-zinc-600 text-xs">No screenshot attached</div>
                   )}
                 </div>
 
                 <div className="flex items-center justify-between text-[11px] text-zinc-500 px-1">
-                  <span>Click image to view high-resolution</span>
+                  <span>Click image to view in full-screen Lightbox</span>
                   <a
                     href={`/api/payments/${selectedReviewPayment.id}/proof-image`}
                     target="_blank"
@@ -2420,76 +2954,108 @@ export default function PaymentsPage() {
               </div>
             </div>
 
-            <div className="p-5 border-t border-white/10 bg-[#121212] flex items-center justify-between gap-3">
+            {/* Sticky Footer */}
+            <div className="p-5 border-t border-white/10 bg-[#121212] flex items-center justify-between gap-3 shrink-0 flex-wrap">
               <button
+                type="button"
                 onClick={() => setSelectedReviewPayment(null)}
                 className="px-4 py-2.5 rounded-xl bg-[#1c1c1c] text-zinc-300 text-xs font-semibold hover:bg-[#252525] transition-colors"
               >
-                Cancel
+                Close
               </button>
 
-              {/* Automatic OCR Decision Flow Banner */}
-              {selectedReviewPayment &&
-              (selectedReviewPayment.fixedAmount === 450 ||
-                selectedReviewPayment.paymentPurpose.includes("INTERN") ||
-                selectedReviewPayment.userRole === "INTERN") ? (
-                <div className="flex items-center gap-2">
-                  <span className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-mono">
-                    🤖 100% Automated Decision Flow (Manual Approve Disabled)
-                  </span>
-                  {(effectiveRole === "FOUNDER" || effectiveRole === "CO_FOUNDER") && (
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleAdminOverride("RETRY_VERIFY")}
-                        disabled={reviewLoading}
-                        className="px-3 py-2 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 text-xs font-mono"
-                      >
-                        Retry Auto-Verification
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleAdminOverride("INVALIDATE")}
-                        disabled={reviewLoading}
-                        className="px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs font-mono"
-                      >
-                        Invalidate
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <>
+              {/* Founder / Co-Founder Controls vs Executive Read-Only */}
+              {effectiveRole === "FOUNDER" || effectiveRole === "CO_FOUNDER" ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => handleAdminOverride("RETRY_VERIFY")}
+                    disabled={reviewLoading}
+                    className="px-3.5 py-2 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 text-xs font-semibold transition-colors disabled:opacity-50"
+                  >
+                    {reviewLoading ? "Working..." : "Retry Auto-Verification"}
+                  </button>
+
                   {reviewAction !== "REJECT" ? (
                     <button
+                      type="button"
                       onClick={() => setReviewAction("REJECT")}
                       disabled={reviewLoading}
-                      className="px-4 py-2.5 rounded-xl bg-crimson/20 hover:bg-crimson/30 border border-crimson/40 text-crimson text-xs font-bold transition-colors"
+                      className="px-4 py-2 rounded-xl bg-crimson/20 hover:bg-crimson/30 border border-crimson/40 text-crimson text-xs font-bold transition-colors"
                     >
                       Reject Proof
                     </button>
                   ) : (
                     <button
-                      onClick={() => handleVerifyDecision("REJECT")}
+                      type="button"
+                      onClick={handleRejectException}
                       disabled={reviewLoading}
-                      className="px-5 py-2.5 rounded-xl bg-crimson hover:bg-crimson/90 text-white text-xs font-bold transition-all shadow-lg"
+                      className="px-5 py-2 rounded-xl bg-crimson hover:bg-crimson/90 text-white text-xs font-bold transition-all shadow-lg"
                     >
                       {reviewLoading ? "Processing..." : "Confirm Rejection"}
                     </button>
                   )}
 
-                  {reviewAction !== "REJECT" && (
+                  {selectedReviewPayment.paymentStatus !== "APPROVED" && (
                     <button
-                      onClick={() => handleVerifyDecision("APPROVE")}
+                      type="button"
+                      onClick={handleApproveException}
                       disabled={reviewLoading}
-                      className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-[0_0_15px_rgba(34,197,94,0.3)] flex items-center gap-1.5"
+                      className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-[0_0_15px_rgba(34,197,94,0.3)] flex items-center gap-1.5 disabled:opacity-50"
                     >
                       <Check className="w-4 h-4" />
-                      {reviewLoading ? "Processing..." : "Approve Payment"}
+                      {reviewLoading ? "Approving..." : "Approve Exception"}
                     </button>
                   )}
-                </>
+                </div>
+              ) : (
+                <div className="text-xs text-zinc-400 bg-zinc-900 border border-white/5 px-3 py-1.5 rounded-xl">
+                  🔒 Executive Read-Only View &bull; Decisions reserved for Founder &amp; Co-Founder
+                </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: HIGH-RESOLUTION SCREENSHOT LIGHTBOX (REQUIREMENT 19) ───── */}
+      {zoomedProofUrl && (
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setZoomedProofUrl(null);
+          }}
+          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-150"
+        >
+          <div className="relative max-w-4xl w-full max-h-[92vh] flex flex-col items-center justify-center">
+            {/* Top Bar with Clear Close Controls */}
+            <div className="w-full flex items-center justify-between pb-3 px-2 text-xs text-zinc-400">
+              <span>Payment Proof Screenshot (ESC to close)</span>
+              <div className="flex items-center gap-2">
+                <a
+                  href={zoomedProofUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold flex items-center gap-1.5 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" /> Open Full
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setZoomedProofUrl(null)}
+                  aria-label="Close screenshot preview"
+                  className="px-3.5 py-1.5 rounded-xl bg-bright-red hover:bg-bright-red/90 text-white font-bold flex items-center gap-1.5 shadow-lg transition-colors"
+                >
+                  <X className="w-4 h-4" /> Close
+                </button>
+              </div>
+            </div>
+
+            <div className="relative max-h-[82vh] overflow-hidden rounded-2xl border border-white/20 bg-[#080808] flex items-center justify-center p-2 shadow-2xl">
+              <img
+                src={zoomedProofUrl}
+                alt="Zoomed Payment Proof"
+                className="max-h-[80vh] w-auto max-w-full object-contain select-none"
+              />
             </div>
           </div>
         </div>

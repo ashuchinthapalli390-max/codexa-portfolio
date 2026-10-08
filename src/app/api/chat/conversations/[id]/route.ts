@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: any }
 ) {
   const user = await getAuthUserFromRequest(req);
   if (!user) {
@@ -22,7 +22,8 @@ export async function GET(
     return NextResponse.json({ ok: false, error: "Chat not configured" }, { status: 503 });
   }
 
-  const { id: conversationId } = await params;
+  const resolvedParams = params instanceof Promise ? await params : params;
+  const conversationId = resolvedParams.id;
 
   // Verify membership
   const { data: membership } = await chatSupabaseAdmin
@@ -65,7 +66,7 @@ export async function GET(
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: any }
 ) {
   const user = await getAuthUserFromRequest(req);
   if (!user) {
@@ -76,18 +77,23 @@ export async function PATCH(
     return NextResponse.json({ ok: false, error: "Chat not configured" }, { status: 503 });
   }
 
-  const { id: conversationId } = await params;
+  const resolvedParams = params instanceof Promise ? await params : params;
+  const conversationId = resolvedParams.id;
 
-  // Check that caller is a member (and owner or admin if group)
-  const { data: membership } = await chatSupabaseAdmin
-    .from("conversation_members")
-    .select("*")
-    .eq("conversation_id", conversationId)
-    .eq("core_user_id", user.id)
-    .is("left_at", null)
+  // Retrieve conversation
+  const { data: conv } = await chatSupabaseAdmin
+    .from("conversations")
+    .select("*, conversation_members(*)")
+    .eq("id", conversationId)
     .maybeSingle();
 
-  if (!membership) {
+  if (!conv) {
+    return NextResponse.json({ ok: false, error: "Conversation not found" }, { status: 404 });
+  }
+
+  // Check that caller is a member
+  const member = (conv.conversation_members || []).find((m: any) => m.core_user_id === user.id && !m.left_at);
+  if (!member) {
     return NextResponse.json({ ok: false, error: "Not a member of this conversation" }, { status: 403 });
   }
 
@@ -129,33 +135,41 @@ export async function PATCH(
     }
   }
 
-  // Update conversation in Chat Supabase
-  const updatePayload: any = { updated_at: new Date().toISOString() };
-  if (title !== undefined) updatePayload.title = title;
-  if (iconUrl !== undefined) {
-    updatePayload.icon_url = iconUrl;
-    updatePayload.avatar_url = iconUrl;
+  // Group avatar validation: only group conversations have group icons
+  if (iconUrl && conv.type !== "GROUP") {
+    return NextResponse.json({
+      ok: false,
+      error: "Only group conversations can have a group icon.",
+    }, { status: 400 });
   }
 
-  const { data: updatedConv, error } = await chatSupabaseAdmin
+  const existingMeta = conv.metadata || {};
+  const updatedMeta = {
+    ...existingMeta,
+    ...(iconUrl ? { iconUrl, avatarUrl: iconUrl } : {}),
+  };
+
+  const updatePayload: any = {
+    updated_at: new Date().toISOString(),
+    metadata: updatedMeta,
+  };
+  if (title !== undefined) updatePayload.title = title;
+
+  const { data: updatedConv } = await chatSupabaseAdmin
     .from("conversations")
     .update(updatePayload)
     .eq("id", conversationId)
     .select()
     .single();
 
-  if (error) {
-    // If icon_url column doesn't exist, try updating without it or check metadata
-    console.warn("[PATCH conversation] column error, trying fallback update:", error.message);
-    const fallbackPayload: any = { updated_at: new Date().toISOString() };
-    if (title) fallbackPayload.title = title;
-    await chatSupabaseAdmin.from("conversations").update(fallbackPayload).eq("id", conversationId);
-  }
-
   return NextResponse.json({
     ok: true,
     message: "Conversation updated successfully.",
-    conversation: updatedConv || { id: conversationId, title, iconUrl },
+    conversation: {
+      ...(updatedConv || conv),
+      icon_url: iconUrl || existingMeta.iconUrl,
+      avatar_url: iconUrl || existingMeta.avatarUrl,
+    },
     iconUrl,
   });
 }

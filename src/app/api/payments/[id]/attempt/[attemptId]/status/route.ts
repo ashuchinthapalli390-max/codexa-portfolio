@@ -42,16 +42,34 @@ export async function GET(
       ? getFriendlyFailureMessage(attempt.verificationReason as MachineFailureReason)
       : null;
 
+    let step = "AWAITING_SCREENSHOT";
+    if (attempt.status === "ANALYZING_PROOF") step = "ANALYZING_PROOF";
+    else if (attempt.status === "VERIFYING") step = "VERIFYING";
+    else if (attempt.status === "SUCCESS") step = "SUCCESS";
+    else if (attempt.status === "REVIEW_REQUIRED") step = "REVIEW_REQUIRED";
+    else if (attempt.status === "FAILED") step = "FAILED";
+    else if (attempt.status === "EXPIRED") step = "EXPIRED";
+
     return NextResponse.json({
       status: attempt.status,
+      step,
       verificationReason: attempt.verificationReason,
       userMessage,
       utrNumber: attempt.utrNumber || attempt.detectedUtr || null,
       amount: 450,
       paymentApp: attempt.detectedApp || attempt.selectedMethod,
       verifiedAt: attempt.verifiedAt?.toISOString() || null,
+      submittedAt: attempt.submittedAt?.toISOString() || null,
       expiresAt: attempt.expiresAt.toISOString(),
       startedAt: attempt.startedAt.toISOString(),
+      proofImageUrl: attempt.proofImageUrl || null,
+      detectedDetails: {
+        detectedApp: attempt.detectedApp,
+        detectedStatus: attempt.detectedStatus,
+        detectedAmount: attempt.detectedAmount ? Number(attempt.detectedAmount) : null,
+        detectedDate: attempt.detectedDate,
+        detectedTime: attempt.detectedTime,
+      },
     });
   } catch (error: any) {
     console.error("GET /api/payments/[id]/attempt/[attemptId]/status error:", error);

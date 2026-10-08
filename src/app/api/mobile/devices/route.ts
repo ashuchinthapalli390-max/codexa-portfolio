@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED" } }, { status: 401 });
 
     const body = await req.json();
-    const { deviceId, deviceName, platform = "ANDROID", appVersion = "1.0.0" } = body;
+    const { deviceId, deviceName, platform = "ANDROID", appVersion = "1.0.0", fcmToken } = body;
 
     if (!deviceId) {
       return NextResponse.json({ ok: false, error: { code: "MISSING_DEVICE_ID" } }, { status: 400 });
@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
         deviceName: deviceName || "Android Mobile",
         appVersion,
         platform,
+        fcmToken: fcmToken || undefined,
         lastActive: new Date(),
         isRevoked: false,
       },
@@ -44,6 +45,7 @@ export async function POST(req: NextRequest) {
         id: `${user.id}_${deviceId}`,
         userId: user.id,
         deviceId,
+        fcmToken: fcmToken || null,
         deviceName: deviceName || "Android Mobile",
         platform,
         appVersion,

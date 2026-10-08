@@ -217,7 +217,10 @@ export async function verifyPaymentAttemptWithEvidence(params: {
   const settings = await getPaymentSettings();
 
   // 2. Validate 5-Minute Window Expiry for Submission
-  if (now > attempt.expiresAt) {
+  // CRITICAL FIX (Requirement 8): Validate submission time (attempt.submittedAt), NOT OCR completion time.
+  // The transaction and upload are valid if the user uploaded within the window, regardless of OCR duration.
+  const submissionTime = attempt.submittedAt ? new Date(attempt.submittedAt) : now;
+  if (submissionTime > attempt.expiresAt) {
     await db.paymentAttempt.update({
       where: { id: attemptId },
       data: {
@@ -238,7 +241,7 @@ export async function verifyPaymentAttemptWithEvidence(params: {
       action: "PAYMENT_ATTEMPT_EXPIRED",
       actorId: userId,
       targetId: attempt.paymentId,
-      details: { attemptId, reason: "UPLOAD_EXPIRED" },
+      details: { attemptId, reason: "UPLOAD_EXPIRED", submissionTime, expiresAt: attempt.expiresAt },
       ipAddress,
       userAgent,
     });

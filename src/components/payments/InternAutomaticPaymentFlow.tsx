@@ -132,6 +132,7 @@ export function InternAutomaticPaymentFlow({
 
   // Verification & Status Outcome
   const [verifying, setVerifying] = useState(false);
+  const [verificationStage, setVerificationStage] = useState<number>(1);
   const [verificationResult, setVerificationResult] = useState<any>(null);
   const [copiedUpi, setCopiedUpi] = useState(false);
   const [copiedRef, setCopiedRef] = useState(false);
@@ -169,6 +170,7 @@ export function InternAutomaticPaymentFlow({
           ["VERIFYING", "ANALYZING_PROOF"].includes(data.activeAttempt.status)
         ) {
           setVerifying(true);
+          setVerificationStage(data.activeAttempt.status === "VERIFYING" ? 4 : 2);
         } else if (data.activeAttempt.status === "SUCCESS") {
           setVerificationResult({
             status: "SUCCESS",
@@ -176,6 +178,15 @@ export function InternAutomaticPaymentFlow({
             utrNumber: data.activeAttempt.utrNumber,
             paymentApp: data.activeAttempt.detectedApp || data.activeAttempt.selectedMethod,
             amount: 450,
+          });
+        } else if (data.activeAttempt.status === "REVIEW_REQUIRED") {
+          setVerificationResult({
+            status: "REVIEW_REQUIRED",
+            reason: data.activeAttempt.verificationReason,
+            utrNumber: data.activeAttempt.utrNumber || data.activeAttempt.detectedUtr,
+            paymentApp: data.activeAttempt.detectedApp || data.activeAttempt.selectedMethod,
+            amount: 450,
+            submittedAt: data.activeAttempt.submittedAt,
           });
         } else if (data.activeAttempt.status === "FAILED") {
           setVerificationResult({
@@ -207,6 +218,119 @@ export function InternAutomaticPaymentFlow({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Controlled polling hook when verification is in progress (ANALYZING_PROOF / VERIFYING)
+  useEffect(() => {
+    if (!verifying || !payment || !activeAttempt?.id) return;
+
+    let pollInterval = 1500;
+    let consecutiveUnchanged = 0;
+    let lastStatus = activeAttempt.status;
+    let isCancelled = false;
+    let timeoutId: NodeJS.Timeout;
+
+    const pollStatus = async () => {
+      if (typeof document !== "undefined" && document.hidden) {
+        timeoutId = setTimeout(pollStatus, 3000);
+        return;
+      }
+
+      try {
+        const res = await fetch(
+          `/api/payments/${payment.id}/attempt/${activeAttempt.id}/status`,
+          {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache" },
+          }
+        );
+        if (!res.ok) {
+          if (res.status === 404 || res.status === 403) {
+            setVerifying(false);
+            return;
+          }
+          throw new Error("Status check failed");
+        }
+
+        const data = await res.json();
+        if (isCancelled) return;
+
+        if (data.status === "ANALYZING_PROOF") {
+          setVerificationStage(2);
+        } else if (data.status === "VERIFYING") {
+          setVerificationStage(4);
+        }
+
+        if (data.status === "SUCCESS") {
+          setVerificationStage(6);
+          setVerificationResult({
+            status: "SUCCESS",
+            verifiedAt: data.verifiedAt || new Date().toISOString(),
+            utrNumber: data.utrNumber,
+            amount: data.amount || 450,
+            paymentApp: data.paymentApp || selectedMethod,
+          });
+          setInternPaid(true);
+          setVerifying(false);
+          if (onStatusChange) onStatusChange("APPROVED");
+          return;
+        }
+
+        if (data.status === "REVIEW_REQUIRED") {
+          setVerificationResult({
+            status: "REVIEW_REQUIRED",
+            reason: data.verificationReason,
+            error: data.userMessage,
+            utrNumber: data.utrNumber,
+            paymentApp: data.paymentApp || selectedMethod,
+            amount: 450,
+            submittedAt: data.submittedAt,
+          });
+          setVerifying(false);
+          return;
+        }
+
+        if (data.status === "FAILED") {
+          setVerificationResult({
+            status: "FAILED",
+            reason: data.verificationReason,
+            error: data.userMessage,
+          });
+          setVerifying(false);
+          return;
+        }
+
+        if (data.status === "EXPIRED") {
+          setTimerExpired(true);
+          setVerifying(false);
+          return;
+        }
+
+        if (data.status === lastStatus) {
+          consecutiveUnchanged++;
+          if (consecutiveUnchanged > 3 && pollInterval < 4000) {
+            pollInterval = Math.min(4000, pollInterval + 1000);
+          }
+        } else {
+          consecutiveUnchanged = 0;
+          pollInterval = 1500;
+          lastStatus = data.status;
+        }
+      } catch (err) {
+        console.warn("Payment verification status poll error:", err);
+      }
+
+      if (!isCancelled) {
+        timeoutId = setTimeout(pollStatus, pollInterval);
+      }
+    };
+
+    timeoutId = setTimeout(pollStatus, pollInterval);
+
+    return () => {
+      isCancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [verifying, payment?.id, activeAttempt?.id, selectedMethod, onStatusChange]);
 
   // Setup client-side countdown synced with authoritative server expiresAt
   const setupTimer = (expiresAtStr: string) => {
@@ -398,6 +522,7 @@ export function InternAutomaticPaymentFlow({
       setSubmittingProof(true);
       setProofError(null);
       setAnalyzingStep("UPLOADING");
+      setVerificationStage(1);
 
       const formData = new FormData();
       formData.append("screenshot", screenshotFile);
@@ -405,22 +530,34 @@ export function InternAutomaticPaymentFlow({
         formData.append("attemptId", activeAttempt.id);
       }
 
-      // Step progress animation
-      const stepTimer1 = setTimeout(() => {
+      // Progressively advance stage indicators
+      const timerStage2 = setTimeout(() => {
         setAnalyzingStep("OCR_ANALYSIS");
-      }, 700);
+        setVerificationStage(2);
+      }, 600);
 
-      const stepTimer2 = setTimeout(() => {
+      const timerStage3 = setTimeout(() => {
+        setVerificationStage(3);
+      }, 1500);
+
+      const timerStage4 = setTimeout(() => {
         setAnalyzingStep("SETTLEMENT_RECONCILING");
+        setVerificationStage(4);
       }, 2400);
+
+      const timerStage5 = setTimeout(() => {
+        setVerificationStage(5);
+      }, 3500);
 
       const res = await fetch(`/api/payments/${payment.id}/proof`, {
         method: "POST",
         body: formData,
       });
 
-      clearTimeout(stepTimer1);
-      clearTimeout(stepTimer2);
+      clearTimeout(timerStage2);
+      clearTimeout(timerStage3);
+      clearTimeout(timerStage4);
+      clearTimeout(timerStage5);
 
       const data = await res.json();
 
@@ -442,6 +579,7 @@ export function InternAutomaticPaymentFlow({
       }
 
       if (data.status === "SUCCESS") {
+        setVerificationStage(6);
         setVerificationResult({
           status: "SUCCESS",
           verifiedAt: data.verifiedAt || new Date().toISOString(),
@@ -451,12 +589,23 @@ export function InternAutomaticPaymentFlow({
         });
         setInternPaid(true);
         if (onStatusChange) onStatusChange("APPROVED");
+      } else if (data.status === "REVIEW_REQUIRED") {
+        setVerificationResult({
+          status: "REVIEW_REQUIRED",
+          reason: data.reason,
+          error: data.userMessage || "Your payment proof was received. Verification is still in progress. Please do not pay again.",
+          utrNumber: data.utrNumber || data.ocrDetails?.detectedUtr,
+          paymentApp: data.paymentApp || data.ocrDetails?.detectedApp || selectedMethod,
+          amount: 450,
+        });
       } else if (data.status === "FAILED") {
         setVerificationResult({
           status: "FAILED",
           reason: data.reason,
           error: data.userMessage || data.error,
         });
+      } else if (["VERIFYING", "ANALYZING_PROOF"].includes(data.status)) {
+        setVerifying(true);
       }
     } catch (err: any) {
       console.error("Proof submission error:", err);
@@ -1468,35 +1617,134 @@ export function InternAutomaticPaymentFlow({
                 </motion.div>
               )}
 
-              {/* ─── 5. LIVE OCR ANALYSIS & VERIFICATION PROCESSING (SECTION 67) ─── */}
-              {submittingProof && (
-                <div className="p-8 rounded-3xl bg-[#0f0f0f] border border-amber-500/40 text-center space-y-4">
-                  <div className="w-14 h-14 border-4 border-amber-500/20 border-t-amber-400 rounded-full animate-spin mx-auto" />
-                  <div>
+              {/* ─── 5. LIVE OCR ANALYSIS & MULTI-STEP VERIFICATION PROGRESS (SECTION 6 & 7) ─── */}
+              {(submittingProof || verifying) && (
+                <div className="p-6 sm:p-8 rounded-3xl bg-[#0f0f0f] border border-amber-500/40 space-y-6 shadow-2xl">
+                  <div className="text-center space-y-2">
+                    <div className="w-12 h-12 border-3 border-amber-500/20 border-t-amber-400 rounded-full animate-spin mx-auto" />
                     <h3 className="font-orbitron font-bold text-white text-lg">
-                      {analyzingStep === "UPLOADING"
-                        ? "Uploading Screenshot..."
-                        : analyzingStep === "OCR_ANALYSIS"
-                        ? "Analyzing Payment Screenshot with AI OCR..."
-                        : "Reconciling with Bank Settlement Feed..."}
+                      {verificationStage >= 5
+                        ? "Reconciling with Bank Settlement Feed..."
+                        : verificationStage >= 4
+                        ? "Verifying Amount & Receiver..."
+                        : verificationStage >= 3
+                        ? "Extracting Transaction Information..."
+                        : verificationStage >= 2
+                        ? "Analyzing Payment Screenshot with OCR..."
+                        : "Uploading Screenshot..."}
                     </h3>
-                    <p className="text-xs text-zinc-400 mt-1">
-                      Extracting amount, UTR, timestamp, and reconciling with official accounts.
+                    <p className="text-xs text-zinc-400 max-w-md mx-auto">
+                      Automated server pipeline is validating your transaction proof against official settlement records.
                     </p>
                   </div>
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 text-xs font-mono">
-                    <span>
-                      {analyzingStep === "OCR_ANALYSIS"
-                        ? "Deep Neural Character Recognition"
-                        : "Automated Decision Engine Active"}
+
+                  {/* 6-Stage Visual Stepper */}
+                  <div className="space-y-2.5 max-w-md mx-auto p-4 rounded-2xl bg-black/40 border border-white/5 font-mono text-xs">
+                    {[
+                      { step: 1, label: "Screenshot uploaded securely" },
+                      { step: 2, label: "Analyzing payment image with neural OCR" },
+                      { step: 3, label: "Extracting transaction reference (UTR) & date" },
+                      { step: 4, label: "Validating ₹450 amount & receiving account" },
+                      { step: 5, label: "Reconciling against trusted bank settlement feed" },
+                      { step: 6, label: "Final verification decision" },
+                    ].map((item) => {
+                      const isDone = verificationStage > item.step;
+                      const isCurrent = verificationStage === item.step;
+                      return (
+                        <div
+                          key={item.step}
+                          className={`flex items-center gap-3 p-2 rounded-xl transition-colors ${
+                            isCurrent
+                              ? "bg-amber-500/10 text-amber-300 border border-amber-500/20"
+                              : isDone
+                              ? "text-emerald-400"
+                              : "text-zinc-600"
+                          }`}
+                        >
+                          <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0">
+                            {isDone ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                            ) : isCurrent ? (
+                              <RefreshCw className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+                            ) : (
+                              <div className="w-2 h-2 rounded-full bg-zinc-700" />
+                            )}
+                          </div>
+                          <span className={`text-[11px] ${isCurrent ? "font-bold text-white" : ""}`}>
+                            {item.label}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="text-center">
+                    <span className="text-[10px] font-mono text-zinc-500 uppercase">
+                      Please keep this window open &bull; Refreshing will not restart completed analysis
                     </span>
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                  </div>
+                </div>
+              )}
+
+              {/* ─── 5.5 REVIEW REQUIRED / PENDING RECONCILIATION CARD (SECTION 10) ─── */}
+              {verificationResult?.status === "REVIEW_REQUIRED" && !submittingProof && !verifying && (
+                <div className="p-6 sm:p-8 rounded-3xl bg-amber-950/30 border border-amber-500/40 text-center space-y-5 shadow-2xl">
+                  <div className="w-14 h-14 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 mx-auto">
+                    <Clock className="w-8 h-8 animate-pulse" />
+                  </div>
+
+                  <div>
+                    <span className="px-3 py-1 rounded-full text-xs font-orbitron font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 uppercase tracking-wider">
+                      Verification In Progress
+                    </span>
+                    <h3 className="font-orbitron font-bold text-white text-xl mt-3">
+                      PROOF RECEIVED — REVIEW REQUIRED
+                    </h3>
+                    <p className="text-sm font-semibold text-amber-300 mt-2 max-w-lg mx-auto">
+                      Your payment proof was received. Verification is still in progress. Please do not pay again.
+                    </p>
+                    <p className="text-xs text-zinc-400 mt-1 max-w-md mx-auto">
+                      Our administrative team is reconciling your transaction reference with official bank settlement records. Your spot and payment attempt are securely recorded.
+                    </p>
+                  </div>
+
+                  {/* Verification Evidence Summary */}
+                  <div className="max-w-md mx-auto p-4 rounded-2xl bg-black/40 border border-white/10 text-left text-xs font-mono space-y-2">
+                    <div className="flex justify-between py-1 border-b border-white/5">
+                      <span className="text-zinc-500">Amount:</span>
+                      <span className="text-white font-bold">₹450.00</span>
+                    </div>
+                    {verificationResult.utrNumber && (
+                      <div className="flex justify-between py-1 border-b border-white/5">
+                        <span className="text-zinc-500">Detected UTR:</span>
+                        <span className="text-amber-300 font-bold">{verificationResult.utrNumber}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between py-1 border-b border-white/5">
+                      <span className="text-zinc-500">Payment App:</span>
+                      <span className="text-zinc-300">{verificationResult.paymentApp || selectedMethod}</span>
+                    </div>
+                    <div className="flex justify-between py-1">
+                      <span className="text-zinc-500">Status:</span>
+                      <span className="text-amber-400 font-bold">AWAITING ADMIN APPROVAL</span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={loadPaymentData}
+                      className="px-5 py-2.5 rounded-xl bg-[#222] hover:bg-[#333] border border-white/10 text-white text-xs font-orbitron font-bold uppercase transition-all flex items-center gap-2"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>REFRESH STATUS</span>
+                    </button>
                   </div>
                 </div>
               )}
 
               {/* ─── 6. FAILURE SCREEN (SECTION 38-40) ─────────────────────────────── */}
-              {verificationResult?.status === "FAILED" && !submittingProof && (
+              {verificationResult?.status === "FAILED" && !submittingProof && !verifying && (
                 <div className="p-6 sm:p-8 rounded-3xl bg-rose-950/30 border border-rose-500/40 text-center space-y-4">
                   <div className="w-14 h-14 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 mx-auto">
                     <XCircle className="w-8 h-8" />
@@ -1524,7 +1772,7 @@ export function InternAutomaticPaymentFlow({
               )}
 
               {/* ─── 7. PURE SCREENSHOT UPLOAD FORM (ZERO MANUAL ENTRY) ──────────── */}
-              {!submittingProof && !isCompleted && (
+              {!submittingProof && !verifying && !isCompleted && verificationResult?.status !== "REVIEW_REQUIRED" && (
                 <form
                   id="proof-upload-section"
                   onSubmit={handleSubmitProof}

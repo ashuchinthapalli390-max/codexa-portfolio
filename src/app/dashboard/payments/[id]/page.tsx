@@ -109,6 +109,46 @@ export default function PaymentDetailPage() {
     }
   }, [status, paymentId]);
 
+  // Keyboard Escape listener to safely close any active modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (zoomedImageUrl) {
+          setZoomedImageUrl(null);
+        } else if (showApproveModal) {
+          setShowApproveModal(false);
+        } else if (showRejectModal) {
+          setShowRejectModal(false);
+        } else if (showCashApproveModal) {
+          setShowCashApproveModal(false);
+        } else if (showCashRejectModal) {
+          setShowCashRejectModal(false);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [zoomedImageUrl, showApproveModal, showRejectModal, showCashApproveModal, showCashRejectModal]);
+
+  // Prevent background scrolling while any modal or lightbox is active
+  useEffect(() => {
+    const isModalOpen = Boolean(
+      zoomedImageUrl ||
+      showApproveModal ||
+      showRejectModal ||
+      showCashApproveModal ||
+      showCashRejectModal
+    );
+    if (isModalOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "unset";
+    }
+    return () => {
+      document.body.style.overflow = "unset";
+    };
+  }, [zoomedImageUrl, showApproveModal, showRejectModal, showCashApproveModal, showCashRejectModal]);
+
   // Dispatch Reminder
   const handleSendReminder = async () => {
     if (!payment?.id) return;
@@ -1194,40 +1234,55 @@ export default function PaymentDetailPage() {
 
       {/* ─── MODAL: APPROVE PAYMENT EXCEPTION ──────────────────────────────── */}
       {showApproveModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="max-w-md w-full bg-[#121212] border border-emerald-500/30 rounded-3xl p-6 space-y-5 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-emerald-400">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowApproveModal(false);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+        >
+          <div className="max-w-md w-full max-h-[90vh] flex flex-col bg-[#121212] border border-emerald-500/40 rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Sticky Header */}
+            <div className="flex items-center justify-between p-5 border-b border-white/10 shrink-0">
+              <div className="flex items-center gap-2.5 text-emerald-400">
                 <CheckCircle2 className="w-5 h-5" />
                 <h3 className="font-orbitron font-bold text-white text-base">Approve Payment Exception</h3>
               </div>
-              <button onClick={() => setShowApproveModal(false)} className="text-zinc-400 hover:text-white">
+              <button
+                type="button"
+                onClick={() => setShowApproveModal(false)}
+                aria-label="Close dialog"
+                className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white flex items-center justify-center transition-colors"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-xs text-zinc-300">
-              Are you sure you want to approve this ₹450 payment exception for{" "}
-              <strong className="text-white">{payment.userName}</strong> ({payment.referenceId})?
-              This will atomically mark the payment as <strong>SUCCESS</strong>, clear intern access, and dispatch the confirmation email.
-            </p>
+            {/* Scrollable Body */}
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              <p className="text-xs text-zinc-300 leading-relaxed">
+                Are you sure you want to approve this ₹450 payment exception for{" "}
+                <strong className="text-white">{payment.userName}</strong> ({payment.referenceId})?
+                This will atomically mark the payment as <strong>SUCCESS</strong>, clear intern access, and dispatch the confirmation email.
+              </p>
 
-            <div>
-              <label className="text-[11px] text-zinc-400 block mb-1">Administrative Notes (Optional)</label>
-              <input
-                type="text"
-                placeholder="e.g. Verified transaction timestamp manually; timing exception approved."
-                value={approvalNotes}
-                onChange={(e) => setApprovalNotes(e.target.value)}
-                className="w-full p-2.5 rounded-xl bg-[#181818] border border-white/10 text-xs text-white focus:outline-none focus:border-emerald-500"
-              />
+              <div>
+                <label className="text-[11px] text-zinc-400 block mb-1">Administrative Notes (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Verified transaction timestamp manually; timing exception approved."
+                  value={approvalNotes}
+                  onChange={(e) => setApprovalNotes(e.target.value)}
+                  className="w-full p-2.5 rounded-xl bg-[#181818] border border-white/10 text-xs text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
+            {/* Sticky Footer */}
+            <div className="p-4 border-t border-white/10 bg-[#0d0d0d] flex items-center justify-end gap-2.5 shrink-0">
               <button
                 type="button"
                 onClick={() => setShowApproveModal(false)}
-                className="px-4 py-2 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold hover:bg-zinc-700"
+                className="px-4 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold hover:bg-zinc-700 transition-colors"
               >
                 Cancel
               </button>
@@ -1235,7 +1290,7 @@ export default function PaymentDetailPage() {
                 type="button"
                 onClick={handleApproveException}
                 disabled={processingAction}
-                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-lg flex items-center gap-1.5"
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-[0_0_15px_rgba(34,197,94,0.3)] flex items-center gap-1.5 disabled:opacity-50"
               >
                 {processingAction ? "Approving..." : "Confirm Approval"}
               </button>
@@ -1246,39 +1301,54 @@ export default function PaymentDetailPage() {
 
       {/* ─── MODAL: REJECT PAYMENT EXCEPTION ──────────────────────────────── */}
       {showRejectModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="max-w-md w-full bg-[#121212] border border-crimson/30 rounded-3xl p-6 space-y-5 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-crimson">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowRejectModal(false);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+        >
+          <div className="max-w-md w-full max-h-[90vh] flex flex-col bg-[#121212] border border-crimson/40 rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Sticky Header */}
+            <div className="flex items-center justify-between p-5 border-b border-white/10 shrink-0">
+              <div className="flex items-center gap-2.5 text-crimson">
                 <XCircle className="w-5 h-5" />
                 <h3 className="font-orbitron font-bold text-white text-base">Reject Payment Proof</h3>
               </div>
-              <button onClick={() => setShowRejectModal(false)} className="text-zinc-400 hover:text-white">
+              <button
+                type="button"
+                onClick={() => setShowRejectModal(false)}
+                aria-label="Close dialog"
+                className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white flex items-center justify-center transition-colors"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-xs text-zinc-300">
-              Please provide a clear reason for rejecting this payment for{" "}
-              <strong className="text-white">{payment.userName}</strong>. The intern will receive this feedback to retry.
-            </p>
+            {/* Scrollable Body */}
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              <p className="text-xs text-zinc-300 leading-relaxed">
+                Please provide a clear reason for rejecting this payment for{" "}
+                <strong className="text-white">{payment.userName}</strong>. The intern will receive this feedback to retry.
+              </p>
 
-            <div>
-              <label className="text-[11px] text-zinc-400 block mb-1">Rejection Reason *</label>
-              <textarea
-                rows={3}
-                placeholder="e.g. Screenshot unreadable / transaction amount could not be verified."
-                value={rejectionReason}
-                onChange={(e) => setRejectionReason(e.target.value)}
-                className="w-full p-2.5 rounded-xl bg-[#181818] border border-white/10 text-xs text-white focus:outline-none focus:border-crimson"
-              />
+              <div>
+                <label className="text-[11px] text-zinc-400 block mb-1">Rejection Reason *</label>
+                <textarea
+                  rows={3}
+                  placeholder="e.g. Screenshot unreadable / transaction amount could not be verified."
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  className="w-full p-2.5 rounded-xl bg-[#181818] border border-white/10 text-xs text-white focus:outline-none focus:border-crimson"
+                />
+              </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
+            {/* Sticky Footer */}
+            <div className="p-4 border-t border-white/10 bg-[#0d0d0d] flex items-center justify-end gap-2.5 shrink-0">
               <button
                 type="button"
                 onClick={() => setShowRejectModal(false)}
-                className="px-4 py-2 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold hover:bg-zinc-700"
+                className="px-4 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold hover:bg-zinc-700 transition-colors"
               >
                 Cancel
               </button>
@@ -1286,7 +1356,7 @@ export default function PaymentDetailPage() {
                 type="button"
                 onClick={handleRejectException}
                 disabled={processingAction || !rejectionReason.trim()}
-                className="px-5 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-bold transition-all shadow-lg flex items-center gap-1.5 disabled:opacity-50"
+                className="px-5 py-2.5 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-bold transition-all shadow-[0_0_15px_rgba(217,4,41,0.3)] flex items-center gap-1.5 disabled:opacity-50"
               >
                 {processingAction ? "Rejecting..." : "Confirm Rejection"}
               </button>
@@ -1297,28 +1367,46 @@ export default function PaymentDetailPage() {
 
       {/* ─── MODAL: CONFIRM CASH RECEIVED ─────────────────────────────────── */}
       {showCashApproveModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="max-w-md w-full bg-[#121212] border border-emerald-500/30 rounded-3xl p-6 space-y-5 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-emerald-400">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowCashApproveModal(false);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+        >
+          <div className="max-w-md w-full max-h-[90vh] flex flex-col bg-[#121212] border border-emerald-500/40 rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Sticky Header */}
+            <div className="flex items-center justify-between p-5 border-b border-white/10 shrink-0">
+              <div className="flex items-center gap-2.5 text-emerald-400">
                 <Banknote className="w-5 h-5" />
                 <h3 className="font-orbitron font-bold text-white text-base">Confirm ₹450 Cash Received?</h3>
               </div>
-              <button onClick={() => setShowCashApproveModal(false)} className="text-zinc-400 hover:text-white">
+              <button
+                type="button"
+                onClick={() => setShowCashApproveModal(false)}
+                aria-label="Close dialog"
+                className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white flex items-center justify-center transition-colors"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-xs text-zinc-300">
-              Confirm that you have physically received exact ₹450 cash from{" "}
-              <strong className="text-white">{payment.userName}</strong> ({payment.internId || payment.referenceId})?
-            </p>
+            {/* Scrollable Body */}
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              <p className="text-xs text-zinc-300 leading-relaxed">
+                Confirm that you have physically received exact ₹450 cash from{" "}
+                <strong className="text-white">{payment.userName}</strong> ({payment.internId || payment.referenceId})?
+              </p>
+              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300">
+                This will immediately mark the payment as <strong>CASH_RECEIVED</strong>, activate the intern&apos;s workspace, and log this audit action.
+              </div>
+            </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
+            {/* Sticky Footer */}
+            <div className="p-4 border-t border-white/10 bg-[#0d0d0d] flex items-center justify-end gap-2.5 shrink-0">
               <button
                 type="button"
                 onClick={() => setShowCashApproveModal(false)}
-                className="px-4 py-2 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold hover:bg-zinc-700"
+                className="px-4 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold hover:bg-zinc-700 transition-colors"
               >
                 Cancel
               </button>
@@ -1326,7 +1414,7 @@ export default function PaymentDetailPage() {
                 type="button"
                 onClick={handleConfirmCash}
                 disabled={processingAction}
-                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-lg"
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-[0_0_15px_rgba(34,197,94,0.3)] disabled:opacity-50"
               >
                 {processingAction ? "Confirming..." : "Confirm Cash Received"}
               </button>
@@ -1337,37 +1425,52 @@ export default function PaymentDetailPage() {
 
       {/* ─── MODAL: REJECT CASH REQUEST ──────────────────────────────────── */}
       {showCashRejectModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="max-w-md w-full bg-[#121212] border border-crimson/30 rounded-3xl p-6 space-y-5 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-crimson">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowCashRejectModal(false);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+        >
+          <div className="max-w-md w-full max-h-[90vh] flex flex-col bg-[#121212] border border-crimson/40 rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Sticky Header */}
+            <div className="flex items-center justify-between p-5 border-b border-white/10 shrink-0">
+              <div className="flex items-center gap-2.5 text-crimson">
                 <XCircle className="w-5 h-5" />
                 <h3 className="font-orbitron font-bold text-white text-base">Reject Cash Request</h3>
               </div>
-              <button onClick={() => setShowCashRejectModal(false)} className="text-zinc-400 hover:text-white">
+              <button
+                type="button"
+                onClick={() => setShowCashRejectModal(false)}
+                aria-label="Close dialog"
+                className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white flex items-center justify-center transition-colors"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-xs text-zinc-300">
-              Please enter the reason for rejecting this cash payment request:
-            </p>
+            {/* Scrollable Body */}
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              <p className="text-xs text-zinc-300 leading-relaxed">
+                Please enter the reason for rejecting this cash payment request:
+              </p>
 
-            <div>
-              <textarea
-                rows={3}
-                placeholder="e.g. Cash not received / Intern opted for UPI instead."
-                value={cashRejectReason}
-                onChange={(e) => setCashRejectReason(e.target.value)}
-                className="w-full p-2.5 rounded-xl bg-[#181818] border border-white/10 text-xs text-white focus:outline-none focus:border-crimson"
-              />
+              <div>
+                <textarea
+                  rows={3}
+                  placeholder="e.g. Cash not received / Intern opted for UPI instead."
+                  value={cashRejectReason}
+                  onChange={(e) => setCashRejectReason(e.target.value)}
+                  className="w-full p-2.5 rounded-xl bg-[#181818] border border-white/10 text-xs text-white focus:outline-none focus:border-crimson"
+                />
+              </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
+            {/* Sticky Footer */}
+            <div className="p-4 border-t border-white/10 bg-[#0d0d0d] flex items-center justify-end gap-2.5 shrink-0">
               <button
                 type="button"
                 onClick={() => setShowCashRejectModal(false)}
-                className="px-4 py-2 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold hover:bg-zinc-700"
+                className="px-4 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold hover:bg-zinc-700 transition-colors"
               >
                 Cancel
               </button>
@@ -1375,7 +1478,7 @@ export default function PaymentDetailPage() {
                 type="button"
                 onClick={handleRejectCash}
                 disabled={processingAction || !cashRejectReason.trim()}
-                className="px-5 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-bold transition-all shadow-lg disabled:opacity-50"
+                className="px-5 py-2.5 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-bold transition-all shadow-[0_0_15px_rgba(217,4,41,0.3)] disabled:opacity-50"
               >
                 {processingAction ? "Rejecting..." : "Confirm Rejection"}
               </button>
@@ -1384,24 +1487,45 @@ export default function PaymentDetailPage() {
         </div>
       )}
 
-      {/* ─── MODAL: ZOOMED SCREENSHOT VIEWER ──────────────────────────────── */}
+      {/* ─── MODAL: ZOOMED SCREENSHOT LIGHTBOX ────────────────────────────── */}
       {zoomedImageUrl && (
         <div
-          onClick={() => setZoomedImageUrl(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md cursor-zoom-out"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setZoomedImageUrl(null);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/95 backdrop-blur-md animate-in fade-in duration-150"
         >
-          <div className="relative max-w-2xl max-h-[90vh] overflow-hidden rounded-2xl border border-white/20 shadow-2xl">
-            <button
-              onClick={() => setZoomedImageUrl(null)}
-              className="absolute top-3 right-3 p-2 rounded-full bg-black/70 text-white hover:bg-black transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <img
-              src={zoomedImageUrl}
-              alt="Zoomed Payment Proof"
-              className="w-full h-auto max-h-[85vh] object-contain"
-            />
+          <div className="relative max-w-4xl w-full max-h-[92vh] flex flex-col items-center justify-center">
+            {/* Top Bar with Clear Close Controls */}
+            <div className="w-full flex items-center justify-between pb-3 px-2 text-xs text-zinc-400">
+              <span>Payment Proof Screenshot (ESC to close)</span>
+              <div className="flex items-center gap-2">
+                <a
+                  href={zoomedImageUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold flex items-center gap-1.5 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" /> Open Full
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setZoomedImageUrl(null)}
+                  aria-label="Close screenshot preview"
+                  className="px-3.5 py-1.5 rounded-xl bg-bright-red hover:bg-bright-red/90 text-white font-bold flex items-center gap-1.5 shadow-lg transition-colors"
+                >
+                  <X className="w-4 h-4" /> Close
+                </button>
+              </div>
+            </div>
+
+            <div className="relative max-h-[82vh] overflow-hidden rounded-2xl border border-white/20 bg-[#080808] flex items-center justify-center p-2 shadow-2xl">
+              <img
+                src={zoomedImageUrl}
+                alt="Zoomed Payment Proof"
+                className="max-h-[80vh] w-auto max-w-full object-contain select-none"
+              />
+            </div>
           </div>
         </div>
       )}

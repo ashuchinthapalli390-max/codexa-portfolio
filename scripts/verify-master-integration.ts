@@ -79,7 +79,7 @@ async function runMasterIntegrationVerification() {
 
     // 7. Verified Payments Parity
     const verifiedPayments = await db.paymentRequest.count({
-      where: { paymentStatus: "SUCCESS" },
+      where: { paymentStatus: { in: ["APPROVED", "SUCCESS"] } },
     });
     const pendingPayments = await db.paymentRequest.count({
       where: { paymentStatus: "PENDING_VERIFICATION" },

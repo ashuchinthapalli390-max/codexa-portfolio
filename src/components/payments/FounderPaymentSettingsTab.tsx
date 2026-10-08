@@ -54,6 +54,30 @@ export function FounderPaymentSettingsTab() {
   const [showAmountModal, setShowAmountModal] = useState(false);
   const [tentativeAmount, setTentativeAmount] = useState<number>(450);
 
+  // Keyboard Escape listener to dismiss modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && showAmountModal) {
+        setTentativeAmount(fixedAmount);
+        setShowAmountModal(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showAmountModal, fixedAmount]);
+
+  // Lock body scroll when modal is active
+  useEffect(() => {
+    if (showAmountModal) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "unset";
+    }
+    return () => {
+      document.body.style.overflow = "unset";
+    };
+  }, [showAmountModal]);
+
   // Test Bank Feed Transaction Ingestion State
   const [testUtr, setTestUtr] = useState("");
   const [testAmount, setTestAmount] = useState(450);
@@ -593,18 +617,39 @@ export function FounderPaymentSettingsTab() {
 
       {/* ─── CONFIRMATION MODAL FOR AMOUNT CHANGE ────────────────────────────── */}
       {showAmountModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="w-full max-w-md p-6 rounded-3xl bg-[#121212] border border-amber-500/40 space-y-4 shadow-2xl">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
-                <AlertTriangle className="w-5 h-5" />
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setTentativeAmount(fixedAmount);
+              setShowAmountModal(false);
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+        >
+          <div className="w-full max-w-md p-6 rounded-3xl bg-[#121212] border border-amber-500/40 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-2 border-b border-white/5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-orbitron font-bold text-white text-base">
+                    Confirm Amount Modification
+                  </h3>
+                  <span className="text-[11px] font-mono text-zinc-400">Executive Policy Confirmation</span>
+                </div>
               </div>
-              <div>
-                <h3 className="font-orbitron font-bold text-white text-base">
-                  Confirm Amount Modification
-                </h3>
-                <span className="text-[11px] font-mono text-zinc-400">Executive Policy Confirmation</span>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setTentativeAmount(fixedAmount);
+                  setShowAmountModal(false);
+                }}
+                className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white flex items-center justify-center transition-colors"
+                aria-label="Close dialog"
+              >
+                ✕
+              </button>
             </div>
 
             <p className="text-xs text-zinc-300 leading-relaxed">
@@ -624,14 +669,14 @@ export function FounderPaymentSettingsTab() {
                   setTentativeAmount(fixedAmount);
                   setShowAmountModal(false);
                 }}
-                className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold"
+                className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => handleSaveSettings(tentativeAmount)}
-                className="px-4 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase"
+                className="px-4 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase transition-colors"
               >
                 Confirm & Apply
               </button>

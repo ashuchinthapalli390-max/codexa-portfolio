@@ -188,3 +188,81 @@ export async function verifyFirebaseIdToken(idToken: string): Promise<DecodedFir
 
   throw new Error("Token verification failed: Invalid or expired Firebase authentication token.");
 }
+
+/**
+ * Sends FCM push notification to all active devices of a user.
+ */
+export async function sendFcmPushToUser(
+  userId: string,
+  payload: { title: string; body: string; data?: Record<string, string> }
+): Promise<{ success: boolean; sentCount: number }> {
+  try {
+    const { db } = await import("@/lib/db");
+    const sessions = await db.mobileSession.findMany({
+      where: { userId, isRevoked: false, fcmToken: { not: null } },
+      select: { id: true, fcmToken: true },
+    });
+
+    if (!sessions || sessions.length === 0) {
+      return { success: false, sentCount: 0 };
+    }
+
+    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+    let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+    if (!clientEmail || !privateKey) return { success: false, sentCount: 0 };
+
+    privateKey = privateKey.replace(/\n/g, "\n");
+    const { getApps, initializeApp, cert } = await import("firebase-admin/app");
+    const { getMessaging } = await import("firebase-admin/messaging");
+
+    const existing = getApps();
+    const app = existing.length > 0 && existing[0] ? existing[0] : initializeApp({
+      credential: cert({
+        projectId: process.env.FIREBASE_PROJECT_ID || "codxa-agency",
+        clientEmail,
+        privateKey,
+      }),
+    });
+
+    const messaging = getMessaging(app);
+    let sentCount = 0;
+
+    for (const session of sessions) {
+      if (!session.fcmToken) continue;
+      try {
+        await messaging.send({
+          token: session.fcmToken,
+          notification: {
+            title: payload.title,
+            body: payload.body,
+          },
+          data: payload.data || {},
+          android: {
+            priority: "high",
+            notification: {
+              channelId: "codexa_messages_channel",
+              sound: "default",
+            },
+          },
+        });
+        sentCount++;
+      } catch (sendErr: any) {
+        console.warn("[FCM send failed for token]:", sendErr?.code || sendErr?.message);
+        if (
+          sendErr?.code === "messaging/registration-token-not-registered" ||
+          sendErr?.code === "messaging/invalid-registration-token"
+        ) {
+          await db.mobileSession.update({
+            where: { id: session.id },
+            data: { isRevoked: true },
+          }).catch(() => {});
+        }
+      }
+    }
+
+    return { success: sentCount > 0, sentCount };
+  } catch (err: any) {
+    console.error("[sendFcmPushToUser error]", err);
+    return { success: false, sentCount: 0 };
+  }
+}

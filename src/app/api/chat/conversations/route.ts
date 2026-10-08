@@ -116,7 +116,14 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, error }, { status: 500 });
       }
 
-      return NextResponse.json({ ok: true, conversation });
+      return NextResponse.json({
+        ok: true,
+        conversation: {
+          ...conversation,
+          type: "DIRECT",
+          recipientUser: recipient,
+        },
+      });
     } else {
       // Group conversation
       const { data: newConv, error: convErr } = await chatSupabaseAdmin

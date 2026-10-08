@@ -426,6 +426,33 @@ function extractReceiver(
   };
 }
 
+// In-memory cache for recent OCR extractions by SHA-256 hash (15-min TTL)
+const analysisMemoryCache = new Map<string, { result: OcrExtractionResult; timestamp: number }>();
+
+let sharedWorkerInstance: any = null;
+let workerInitPromise: Promise<any> | null = null;
+
+async function getOrInitWorker() {
+  if (sharedWorkerInstance) return sharedWorkerInstance;
+  if (!workerInitPromise) {
+    workerInitPromise = (async () => {
+      try {
+        const worker = await Tesseract.createWorker("eng", 1, {
+          errorHandler: (err) => console.warn("[Tesseract Worker]", err),
+        });
+        sharedWorkerInstance = worker;
+        return worker;
+      } catch (err) {
+        console.error("[Tesseract Worker Init Error]", err);
+        sharedWorkerInstance = null;
+        workerInitPromise = null;
+        throw err;
+      }
+    })();
+  }
+  return workerInitPromise;
+}
+
 /**
  * ─── MAIN ANALYSIS PIPELINE ─────────────────────────────────────────────────
  * Takes raw screenshot buffer, computes cryptographic & perceptual hashes,
@@ -439,18 +466,31 @@ export async function analyzePaymentScreenshot(
   const proofHash = crypto.createHash("sha256").update(proofBuffer).digest("hex");
   const perceptualHash = computePerceptualHash(proofBuffer);
 
-  // 2. Execute OCR with Tesseract.js
+  // Fast check: return cached analysis if this exact screenshot was processed recently
+  const cached = analysisMemoryCache.get(proofHash);
+  if (cached && Date.now() - cached.timestamp < 15 * 60 * 1000) {
+    return cached.result;
+  }
+
+  // 2. Execute OCR with Tesseract.js (reusing warm worker)
   let ocrText = "";
   try {
-    const worker = await Tesseract.createWorker("eng", 1, {
-      errorHandler: (err) => console.warn("[Tesseract OCR Error]", err),
-    });
+    const worker = await getOrInitWorker();
+    if (worker) {
+      // 20-second timeout protection for serverless environments
+      const recognizePromise = worker.recognize(proofBuffer);
+      const timeoutPromise = new Promise<{ data: { text: string } }>((_, reject) =>
+        setTimeout(() => reject(new Error("OCR timeout after 20s")), 20000)
+      );
 
-    const ret = await worker.recognize(proofBuffer);
-    ocrText = ret?.data?.text || "";
-    await worker.terminate();
+      const ret: any = await Promise.race([recognizePromise, timeoutPromise]);
+      ocrText = ret?.data?.text || "";
+    }
   } catch (ocrErr) {
-    console.error("[OCR Extraction Failed]", ocrErr);
+    console.error("[OCR Extraction Failed or Timed Out]", ocrErr);
+    // If worker crashed, reset so next call re-initializes
+    sharedWorkerInstance = null;
+    workerInitPromise = null;
     ocrText = "";
   }
 
@@ -473,7 +513,7 @@ export async function analyzePaymentScreenshot(
       dateTimeInfo.confidence * 0.15 +
       receiverInfo.confidence * 0.1);
 
-  return {
+  const result: OcrExtractionResult = {
     detectedApp,
     detectedStatus: statusInfo.status,
     detectedAmount: amountInfo.amount,
@@ -498,4 +538,7 @@ export async function analyzePaymentScreenshot(
     proofHash,
     perceptualHash,
   };
+
+  analysisMemoryCache.set(proofHash, { result, timestamp: Date.now() });
+  return result;
 }

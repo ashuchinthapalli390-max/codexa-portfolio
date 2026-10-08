@@ -58,6 +58,7 @@ import {
   Award,
   Receipt,
 } from "lucide-react";
+import { CodeXaPushPermissionPrompt } from "@/components/notifications/CodeXaPushPermissionPrompt";
 
 interface TeamCoreShellProps {
   children: React.ReactNode;
@@ -508,6 +509,7 @@ export function TeamCoreShell({
           )}
 
           {children}
+          <CodeXaPushPermissionPrompt />
         </motion.main>
       </div>
     </div>

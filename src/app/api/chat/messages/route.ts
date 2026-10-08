@@ -6,6 +6,12 @@ import {
   sendChatMessage,
   isChatConfigured
 } from "@/lib/supabase/chat-admin";
+import path from "path";
+import fs from "fs";
+import crypto from "crypto";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   const user = await getAuthUserFromRequest(req);
@@ -55,14 +61,35 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 
+  // Enhance messages with sender profiles for group clarity
+  const senderIds: string[] = Array.from(new Set((messages || []).map((m: any) => String(m.sender_core_user_id))));
+  const senders = await prisma.user.findMany({
+    where: { id: { in: senderIds } },
+    select: { id: true, fullName: true, username: true, role: true, profileMediaUrl: true },
+  });
+  const senderMap = new Map(senders.map((s) => [s.id, s]));
+
   return NextResponse.json({
     ok: true,
     success: true,
-    messages: (messages || []).map((m: any) => ({
-      ...m,
-      message: m.text,
-      senderId: m.sender_core_user_id,
-    })),
+    messages: (messages || []).map((m: any) => {
+      const mediaUrl =
+        m.message_attachments?.[0]?.file_url ||
+        m.message_attachments?.[0]?.url ||
+        (m.message_type === "IMAGE" && m.text?.startsWith("http") ? m.text : null) ||
+        (m.text?.startsWith("data:image") ? m.text : null);
+
+      const senderProfile = senderMap.get(m.sender_core_user_id);
+
+      return {
+        ...m,
+        message: m.text,
+        senderId: m.sender_core_user_id,
+        senderName: senderProfile?.fullName || senderProfile?.username || "Colleague",
+        senderAvatar: senderProfile?.profileMediaUrl || null,
+        mediaUrl: mediaUrl || undefined,
+      };
+    }),
   });
 }
 
@@ -79,10 +106,11 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const conversationId = body.conversationId;
-    const text = body.text || body.message;
+    let text = body.text || body.message || "";
     const clientMessageId = body.clientMessageId || body.clientId;
-    const messageType = body.messageType || "TEXT";
+    let messageType = body.messageType || "TEXT";
     const replyToMessageId = body.replyToMessageId;
+    const mediaUrlInput = body.mediaUrl;
 
     if (!conversationId) {
       return NextResponse.json({ ok: false, error: "conversationId required" }, { status: 400 });
@@ -90,6 +118,35 @@ export async function POST(req: NextRequest) {
 
     if (!clientMessageId) {
       return NextResponse.json({ ok: false, error: "clientMessageId required" }, { status: 400 });
+    }
+
+    // Handle base64 image or mediaUrl upload
+    let savedMediaUrl = "";
+    if (mediaUrlInput && typeof mediaUrlInput === "string") {
+      messageType = "IMAGE";
+      if (mediaUrlInput.startsWith("data:image")) {
+        try {
+          const match = mediaUrlInput.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
+          if (match) {
+            const ext = match[1] === "jpeg" ? "jpg" : match[1];
+            const cleanBase64 = match[2];
+            const buffer = Buffer.from(cleanBase64, "base64");
+            const filename = `chat_${conversationId}_${Date.now()}_${crypto.randomBytes(4).toString("hex")}.${ext}`;
+            const uploadsDir = path.join(process.cwd(), "public", "uploads", "chat");
+            if (!fs.existsSync(uploadsDir)) {
+              fs.mkdirSync(uploadsDir, { recursive: true });
+            }
+            fs.writeFileSync(path.join(uploadsDir, filename), buffer);
+            savedMediaUrl = `https://codxa-agency.online/uploads/chat/${filename}`;
+            text = text && text !== "[Image Attached]" ? text : savedMediaUrl;
+          }
+        } catch (mediaErr) {
+          console.warn("[Media base64 save warning]", mediaErr);
+        }
+      } else if (mediaUrlInput.startsWith("http")) {
+        savedMediaUrl = mediaUrlInput;
+        text = text && text !== "[Image Attached]" ? text : savedMediaUrl;
+      }
     }
 
     if (!text && messageType === "TEXT") {
@@ -100,7 +157,7 @@ export async function POST(req: NextRequest) {
       conversationId,
       senderCoreUserId: user.id,
       clientMessageId,
-      text,
+      text: text || savedMediaUrl || "[Attachment]",
       messageType,
       replyToMessageId,
     });
@@ -109,7 +166,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: result.error }, { status: 400 });
     }
 
-    // Trigger Core notification if this is a newly inserted message
+    // If media was saved, record in message_attachments
+    if (savedMediaUrl && result.data?.id) {
+      try {
+        await chatSupabaseAdmin.from("message_attachments").insert({
+          message_id: result.data.id,
+          file_url: savedMediaUrl,
+          file_type: "image",
+        });
+      } catch (_) {}
+    }
+
+    // Trigger Core notification and FCM Push if newly inserted
     if (!result.isDuplicate && result.data) {
       const { data: members } = await chatSupabaseAdmin
         .from("conversation_members")
@@ -132,6 +200,20 @@ export async function POST(req: NextRequest) {
                 },
               });
             } catch (_) {}
+
+            // Send real FCM push alert
+            try {
+              const { sendFcmPushToUser } = await import("@/lib/firebase-admin");
+              await sendFcmPushToUser(m.core_user_id, {
+                title: user.username || "CodeXa Message",
+                body: messageType === "IMAGE" ? "📷 Sent a photo" : (text || "New message").slice(0, 100),
+                data: {
+                  conversationId,
+                  senderId: user.id,
+                  type: "CHAT",
+                },
+              });
+            } catch (_) {}
           }
         }
       }
@@ -144,6 +226,7 @@ export async function POST(req: NextRequest) {
         ...result.data,
         message: result.data.text,
         senderId: result.data.sender_core_user_id,
+        mediaUrl: savedMediaUrl || (result.data.message_type === "IMAGE" ? result.data.text : null),
       },
       isDuplicate: result.isDuplicate,
     });
