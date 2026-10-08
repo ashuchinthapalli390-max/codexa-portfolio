@@ -208,6 +208,17 @@ export async function dispatchProofSubmittedNotifications(
       Please confirm the ₹450 credit in the authorized receiving bank or UPI account before approving this payment. The uploaded screenshot alone is not confirmation of settlement.
     </div>
 
+    ${
+      proofBufferObj && proofBufferObj.buffer.length <= 2 * 1024 * 1024
+        ? `
+    <div style="margin: 24px 0; text-align: center; background: #000000; padding: 14px; border-radius: 14px; border: 1px solid #282828;">
+      <div style="font-size: 11px; color: #AAAAAA; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px; font-weight: 700;">Uploaded Payment Screenshot</div>
+      <img src="data:${proofBufferObj.mimeType};base64,${proofBufferObj.buffer.toString('base64')}" alt="Payment Proof" style="max-width: 100%; max-height: 440px; border-radius: 8px; border: 1px solid #333333; display: block; margin: 0 auto;" />
+    </div>
+        `
+        : ""
+    }
+
     <div style="text-align: center; margin: 28px 0;">
       <a href="${reviewUrl}" class="btn">REVIEW PAYMENT &amp; DECIDE</a>
     </div>
@@ -223,11 +234,17 @@ export async function dispatchProofSubmittedNotifications(
 </html>
         `;
 
+        const ext = proofBufferObj?.mimeType?.includes("png")
+          ? "png"
+          : proofBufferObj?.mimeType?.includes("webp")
+          ? "webp"
+          : "jpg";
+
         const attachments =
           proofBufferObj && proofBufferObj.buffer.length <= 8 * 1024 * 1024
             ? [
                 {
-                  filename: `Payment_Proof_${payment.referenceId}.png`,
+                  filename: `CodeXa_Payment_${payment.referenceId}.${ext}`,
                   content: proofBufferObj.buffer,
                 },
               ]

@@ -36,6 +36,7 @@ import {
   MessageCircle,
   FileCheck,
   SlidersHorizontal,
+  Send,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -182,6 +183,11 @@ export default function PaymentsPage() {
   const [confirmReceivedChecked, setConfirmReceivedChecked] = useState(false);
   const [duplicateWarnings, setDuplicateWarnings] = useState<any>({});
   const [zoomedProofUrl, setZoomedProofUrl] = useState<string | null>(null);
+  const [proofImageError, setProofImageError] = useState(false);
+  const [proofImageKey, setProofImageKey] = useState(0);
+  const [resendingNotification, setResendingNotification] = useState(false);
+  const [resendNotificationSuccess, setResendNotificationSuccess] = useState<string | null>(null);
+  const [zoomScale, setZoomScale] = useState(1);
 
   // Keyboard Escape listener to dismiss any active payment modal or lightbox
   useEffect(() => {
@@ -516,6 +522,10 @@ export default function PaymentsPage() {
     setReviewAdminNotes("");
     setConfirmReceivedChecked(false);
     setDuplicateWarnings({});
+    setProofImageError(false);
+    setProofImageKey((k) => k + 1);
+    setResendNotificationSuccess(null);
+    setZoomScale(1);
 
     try {
       const res = await fetch(`/api/payments/${item.id}`);
@@ -550,6 +560,28 @@ export default function PaymentsPage() {
         .catch(() => {});
     }
   }, [searchParams, payments, selectedReviewPayment, isPrivileged]);
+
+  // Resend Payment Approval Notification (Founder / Co-Founder only - Part 6 #31)
+  const handleResendNotification = async () => {
+    if (!selectedReviewPayment) return;
+    try {
+      setResendingNotification(true);
+      setResendNotificationSuccess(null);
+      const res = await fetch(`/api/payments/${selectedReviewPayment.id}/resend-notification`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "Failed to resend approval notification.");
+      } else {
+        setResendNotificationSuccess("Approval notification with screenshot attached was resent successfully to Founder and Co-Founder!");
+      }
+    } catch (err: any) {
+      alert(err.message || "Network error while resending notification.");
+    } finally {
+      setResendingNotification(false);
+    }
+  };
 
   // Submit Verification Decision
   const handleVerifyDecision = async (action: "APPROVE" | "REJECT") => {
@@ -3118,22 +3150,60 @@ export default function PaymentsPage() {
                 </span>
 
                 <div className="p-2 rounded-2xl bg-[#080808] border border-white/10 flex items-center justify-center min-h-[300px] max-h-[460px] overflow-hidden relative group">
-                  {selectedReviewPayment.proofImageUrl ? (
+                  {selectedReviewPayment.proofImageUrl && !proofImageError ? (
                     <>
                       <img
-                        src={`/api/payments/${selectedReviewPayment.id}/proof-image`}
+                        key={proofImageKey}
+                        src={`/api/payments/${selectedReviewPayment.id}/proof-image?t=${proofImageKey}`}
                         alt="Payment Proof"
                         className="max-h-[440px] w-auto object-contain rounded-xl hover:scale-105 transition-transform cursor-pointer"
-                        onClick={() => setZoomedProofUrl(`/api/payments/${selectedReviewPayment.id}/proof-image`)}
+                        onError={() => setProofImageError(true)}
+                        onClick={() => {
+                          setZoomScale(1);
+                          setZoomedProofUrl(`/api/payments/${selectedReviewPayment.id}/proof-image`);
+                        }}
                       />
                       <button
                         type="button"
-                        onClick={() => setZoomedProofUrl(`/api/payments/${selectedReviewPayment.id}/proof-image`)}
+                        onClick={() => {
+                          setZoomScale(1);
+                          setZoomedProofUrl(`/api/payments/${selectedReviewPayment.id}/proof-image`);
+                        }}
                         className="absolute bottom-3 right-3 px-3 py-1.5 rounded-xl bg-black/80 hover:bg-black text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg border border-white/20 opacity-90 group-hover:opacity-100 transition-opacity"
                       >
                         <Eye className="w-3.5 h-3.5" /> Open Lightbox / Zoom
                       </button>
                     </>
+                  ) : proofImageError ? (
+                    <div className="p-6 text-center space-y-3">
+                      <AlertTriangle className="w-8 h-8 text-amber-400 mx-auto" />
+                      <p className="text-xs text-zinc-300 font-semibold">
+                        Payment Screenshot Could Not Be Loaded
+                      </p>
+                      <p className="text-[11px] text-zinc-500 max-w-xs mx-auto">
+                        Image may be processing or requires secure authorization.
+                      </p>
+                      <div className="flex items-center justify-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProofImageError(false);
+                            setProofImageKey((k) => k + 1);
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium"
+                        >
+                          Retry Loading
+                        </button>
+                        <a
+                          href={`/api/payments/${selectedReviewPayment.id}/proof-image`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-3 py-1.5 rounded-lg bg-bright-red hover:bg-bright-red/90 text-white text-xs font-medium inline-flex items-center gap-1"
+                        >
+                          Open Secure Proof <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    </div>
                   ) : (
                     <div className="text-zinc-600 text-xs">No screenshot attached</div>
                   )}
@@ -3152,6 +3222,13 @@ export default function PaymentsPage() {
                     </a>
                   )}
                 </div>
+
+                {resendNotificationSuccess && (
+                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>{resendNotificationSuccess}</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -3168,6 +3245,17 @@ export default function PaymentsPage() {
               {/* Founder / Co-Founder Controls vs Executive Read-Only */}
               {effectiveRole === "FOUNDER" || effectiveRole === "CO_FOUNDER" ? (
                 <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleResendNotification}
+                    disabled={resendingNotification}
+                    className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 text-xs font-semibold transition-colors flex items-center gap-1.5"
+                    title="Resend notification email with screenshot attachment to Founder and Co-Founder"
+                  >
+                    <Send className="w-3.5 h-3.5 text-zinc-400" />
+                    <span>{resendingNotification ? "Resending..." : "Resend Email"}</span>
+                  </button>
+
                   {reviewAction !== "REJECT" ? (
                     <button
                       type="button"
@@ -3214,41 +3302,77 @@ export default function PaymentsPage() {
       {zoomedProofUrl && (
         <div
           onClick={(e) => {
-            if (e.target === e.currentTarget) setZoomedProofUrl(null);
+            if (e.target === e.currentTarget) {
+              setZoomedProofUrl(null);
+              setZoomScale(1);
+            }
           }}
-          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-4 animate-in fade-in duration-150"
         >
-          <div className="relative max-w-4xl w-full max-h-[92vh] flex flex-col items-center justify-center">
-            {/* Top Bar with Clear Close Controls */}
-            <div className="w-full flex items-center justify-between pb-3 px-2 text-xs text-zinc-400">
-              <span>Payment Proof Screenshot (ESC to close)</span>
-              <div className="flex items-center gap-2">
-                <a
-                  href={zoomedProofUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold flex items-center gap-1.5 transition-colors"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" /> Open Full
-                </a>
+          {/* Top Bar with Clear Controls */}
+          <div className="w-full max-w-4xl flex items-center justify-between pb-3 px-2 text-xs text-zinc-400">
+            <span className="font-semibold text-white">Payment Proof Inspection (ESC to close)</span>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center bg-white/10 rounded-xl p-1 gap-1 border border-white/10">
                 <button
                   type="button"
-                  onClick={() => setZoomedProofUrl(null)}
-                  aria-label="Close screenshot preview"
-                  className="px-3.5 py-1.5 rounded-xl bg-bright-red hover:bg-bright-red/90 text-white font-bold flex items-center gap-1.5 shadow-lg transition-colors"
+                  onClick={() => setZoomScale((s) => Math.max(0.5, s - 0.25))}
+                  className="px-2 py-1 hover:bg-white/10 rounded text-xs font-bold text-white"
+                  title="Zoom Out"
                 >
-                  <X className="w-4 h-4" /> Close
+                  -
+                </button>
+                <span className="text-[11px] font-mono px-1.5 text-zinc-300">
+                  {Math.round(zoomScale * 100)}%
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setZoomScale((s) => Math.min(3, s + 0.25))}
+                  className="px-2 py-1 hover:bg-white/10 rounded text-xs font-bold text-white"
+                  title="Zoom In"
+                >
+                  +
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setZoomScale(1)}
+                  className="px-2 py-1 hover:bg-white/10 rounded text-[10px] text-zinc-400 hover:text-white"
+                >
+                  Reset
                 </button>
               </div>
-            </div>
 
-            <div className="relative max-h-[82vh] overflow-hidden rounded-2xl border border-white/20 bg-[#080808] flex items-center justify-center p-2 shadow-2xl">
-              <img
-                src={zoomedProofUrl}
-                alt="Zoomed Payment Proof"
-                className="max-h-[80vh] w-auto max-w-full object-contain select-none"
-              />
+              <a
+                href={zoomedProofUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold flex items-center gap-1.5 transition-colors"
+              >
+                <ExternalLink className="w-3.5 h-3.5" /> Open in New Tab
+              </a>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setZoomedProofUrl(null);
+                  setZoomScale(1);
+                }}
+                aria-label="Close screenshot preview"
+                className="px-3.5 py-1.5 rounded-xl bg-bright-red hover:bg-bright-red/90 text-white font-bold flex items-center gap-1.5 shadow-lg transition-colors"
+              >
+                <X className="w-4 h-4" /> Close
+              </button>
             </div>
+          </div>
+
+          <div className="relative max-w-4xl w-full max-h-[82vh] overflow-auto rounded-2xl border border-white/20 bg-[#080808] flex items-center justify-center p-4 shadow-2xl">
+            <img
+              src={zoomedProofUrl}
+              alt="Zoomed Payment Proof"
+              style={{ transform: `scale(${zoomScale})`, transition: "transform 0.15s ease-out" }}
+              className="max-h-[76vh] w-auto max-w-full object-contain select-none cursor-zoom-in"
+              onClick={() => setZoomScale((s) => (s >= 2 ? 1 : s + 0.5))}
+            />
           </div>
         </div>
       )}

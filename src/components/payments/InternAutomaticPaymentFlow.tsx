@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import {
   Smartphone,
   QrCode,
@@ -97,6 +98,7 @@ export function InternAutomaticPaymentFlow({
 }: {
   onStatusChange?: (status: string) => void;
 }) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -572,10 +574,17 @@ export function InternAutomaticPaymentFlow({
           amount: data.amount || 450,
           paymentMethod: data.paymentMethod || selectedMethod,
           submittedAt: data.submittedAt || new Date().toISOString(),
-          screenshotUrl: previewUrl,
+          screenshotUrl: previewUrl || `/api/payments/${payment.id}/proof-image`,
         });
         setPayment((prev) => (prev ? { ...prev, paymentStatus: "PENDING_APPROVAL" } : null));
         if (onStatusChange) onStatusChange("PENDING_APPROVAL");
+
+        // Immediately navigate to the intern Payments Overview page (Part 2 #2 & #3)
+        try {
+          router.replace("/dashboard/payments");
+        } catch {
+          window.location.href = "/dashboard/payments";
+        }
       } else if (data.status === "SUCCESS") {
         setVerificationResult({
           status: "SUCCESS",
@@ -697,6 +706,14 @@ export function InternAutomaticPaymentFlow({
     payment.paymentStatus === "APPROVED" ||
     payment.paymentStatus === "SUCCESS" ||
     verificationResult?.status === "SUCCESS";
+
+  const isPendingApproval =
+    payment.paymentStatus === "PENDING_APPROVAL" ||
+    verificationResult?.status === "PENDING_APPROVAL";
+
+  const isRejected =
+    (payment.paymentStatus === "REJECTED" || verificationResult?.status === "REJECTED") &&
+    !isPendingApproval;
 
   const upiId = activeAttempt?.upiIdSnapshot || settings?.upiId || "shaikashu33@fam";
   const receiverName =
@@ -988,6 +1005,90 @@ export function InternAutomaticPaymentFlow({
             </ul>
           </div>
         </motion.div>
+      ) : isPendingApproval ? (
+        /* ─── PENDING APPROVAL CONFIRMATION CARD (PART 2 #4 & #7) ─────────────── */
+        <div className="p-6 sm:p-8 rounded-3xl bg-amber-950/20 border border-amber-500/40 text-center space-y-6 shadow-2xl animate-in fade-in duration-200">
+          <div className="w-16 h-16 rounded-3xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 mx-auto">
+            <Clock className="w-9 h-9 animate-pulse" />
+          </div>
+
+          <div>
+            <span className="px-3 py-1 rounded-full text-xs font-orbitron font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 uppercase tracking-wider">
+              Pending Approval
+            </span>
+            <h3 className="text-2xl sm:text-3xl font-orbitron font-bold text-white mt-3">
+              PAYMENT SCREENSHOT SUBMITTED
+            </h3>
+            <p className="text-sm font-semibold text-amber-300 mt-2 max-w-lg mx-auto">
+              Your payment screenshot has been submitted successfully. The Founder or Co-Founder will review your payment.
+            </p>
+            <div className="mt-3 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 max-w-md mx-auto">
+              <span className="text-xs font-orbitron font-bold text-amber-300 block uppercase tracking-wider">
+                Waiting for Approval
+              </span>
+              <p className="text-xs text-amber-200/80 mt-1">
+                Your payment is under review. Please do not pay again. Benefits (ID Card upload &amp; AI Tools Pack) will unlock automatically upon confirmation.
+              </p>
+            </div>
+          </div>
+
+          {/* Payment Proof Details Breakdown */}
+          <div className="max-w-md mx-auto p-5 rounded-2xl bg-black/50 border border-white/10 text-left text-xs font-mono space-y-2.5">
+            <div className="flex justify-between py-1 border-b border-white/5">
+              <span className="text-zinc-500">Amount Paid:</span>
+              <span className="text-emerald-400 font-bold text-sm">₹450.00</span>
+            </div>
+            <div className="flex justify-between py-1 border-b border-white/5">
+              <span className="text-zinc-500">Payment Method:</span>
+              <span className="text-zinc-200 font-semibold">
+                {verificationResult?.paymentMethod || payment.paymentMethod || selectedMethod}
+              </span>
+            </div>
+            <div className="flex justify-between py-1 border-b border-white/5">
+              <span className="text-zinc-500">Payment Reference:</span>
+              <span className="text-white font-bold">
+                {verificationResult?.referenceId || payment.referenceId}
+              </span>
+            </div>
+            <div className="flex justify-between py-1 border-b border-white/5">
+              <span className="text-zinc-500">Submitted At:</span>
+              <span className="text-zinc-300">
+                {new Date(
+                  verificationResult?.submittedAt || payment.submittedAt || Date.now()
+                ).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
+              </span>
+            </div>
+            <div className="flex justify-between py-1 border-b border-white/5">
+              <span className="text-zinc-500">Current Status:</span>
+              <span className="text-amber-400 font-bold uppercase">PENDING APPROVAL</span>
+            </div>
+
+            {/* Screenshot Preview Thumbnail */}
+            {(previewUrl || verificationResult?.screenshotUrl || payment.proofImageUrl) && (
+              <div className="pt-2">
+                <span className="text-[11px] text-zinc-500 block mb-1.5">Submitted Screenshot:</span>
+                <div className="rounded-xl border border-white/10 bg-[#0d0d0d] p-2 flex justify-center">
+                  <img
+                    src={previewUrl || verificationResult?.screenshotUrl || `/api/payments/${payment.id}/proof-image`}
+                    alt="Submitted Payment Proof"
+                    className="max-h-56 rounded-lg object-contain shadow-lg"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            <button
+              type="button"
+              onClick={loadPaymentData}
+              className="px-6 py-2.5 rounded-xl bg-[#222] hover:bg-[#333] border border-white/10 text-white text-xs font-orbitron font-bold uppercase transition-all flex items-center gap-2 shadow-lg"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>REFRESH STATUS</span>
+            </button>
+          </div>
+        </div>
       ) : (
         <>
           {/* ─── 3. PAYMENT METHOD SELECTOR & UPI INTENTS (SECTION 3 & 4) ──────── */}
@@ -1602,87 +1703,6 @@ export function InternAutomaticPaymentFlow({
                     </span>
                   </div>
                 </motion.div>
-              )}
-
-              {/* ─── 5. PENDING APPROVAL CONFIRMATION CARD (PHASE 4 #14) ──────────── */}
-              {(verificationResult?.status === "PENDING_APPROVAL" || payment.paymentStatus === "PENDING_APPROVAL") && !isCompleted && (
-                <div className="p-6 sm:p-8 rounded-3xl bg-amber-950/20 border border-amber-500/40 text-center space-y-6 shadow-2xl animate-in fade-in duration-200">
-                  <div className="w-16 h-16 rounded-3xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 mx-auto">
-                    <Clock className="w-9 h-9 animate-pulse" />
-                  </div>
-
-                  <div>
-                    <span className="px-3 py-1 rounded-full text-xs font-orbitron font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 uppercase tracking-wider">
-                      Pending Approval
-                    </span>
-                    <h3 className="text-2xl sm:text-3xl font-orbitron font-bold text-white mt-3">
-                      PAYMENT PROOF SUBMITTED
-                    </h3>
-                    <p className="text-sm font-semibold text-amber-300 mt-2 max-w-lg mx-auto">
-                      Your payment screenshot has been received successfully. The CodeXa Founder or Co-Founder will review your payment and update its status.
-                    </p>
-                    <p className="text-xs text-zinc-400 mt-1 max-w-md mx-auto">
-                      Please do not pay again. Founder / Co-Founder verification is in progress. Once confirmed, your ID Card and AI Tools benefits will be unlocked automatically.
-                    </p>
-                  </div>
-
-                  {/* Payment Proof Details Breakdown */}
-                  <div className="max-w-md mx-auto p-5 rounded-2xl bg-black/50 border border-white/10 text-left text-xs font-mono space-y-2.5">
-                    <div className="flex justify-between py-1 border-b border-white/5">
-                      <span className="text-zinc-500">Amount Paid:</span>
-                      <span className="text-emerald-400 font-bold text-sm">₹450.00</span>
-                    </div>
-                    <div className="flex justify-between py-1 border-b border-white/5">
-                      <span className="text-zinc-500">Payment Method:</span>
-                      <span className="text-zinc-200 font-semibold">
-                        {verificationResult?.paymentMethod || payment.paymentMethod || selectedMethod}
-                      </span>
-                    </div>
-                    <div className="flex justify-between py-1 border-b border-white/5">
-                      <span className="text-zinc-500">Payment Reference:</span>
-                      <span className="text-white font-bold">
-                        {verificationResult?.referenceId || payment.referenceId}
-                      </span>
-                    </div>
-                    <div className="flex justify-between py-1 border-b border-white/5">
-                      <span className="text-zinc-500">Submitted At:</span>
-                      <span className="text-zinc-300">
-                        {new Date(
-                          verificationResult?.submittedAt || payment.submittedAt || Date.now()
-                        ).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
-                      </span>
-                    </div>
-                    <div className="flex justify-between py-1 border-b border-white/5">
-                      <span className="text-zinc-500">Current Status:</span>
-                      <span className="text-amber-400 font-bold uppercase">PENDING APPROVAL</span>
-                    </div>
-
-                    {/* Screenshot Preview Thumbnail */}
-                    {(previewUrl || verificationResult?.screenshotUrl || payment.proofImageUrl) && (
-                      <div className="pt-2">
-                        <span className="text-[11px] text-zinc-500 block mb-1.5">Submitted Screenshot:</span>
-                        <div className="rounded-xl border border-white/10 bg-[#0d0d0d] p-1 flex justify-center">
-                          <img
-                            src={previewUrl || verificationResult?.screenshotUrl || `/api/payments/${payment.id}/proof-image`}
-                            alt="Submitted Payment Proof"
-                            className="max-h-48 rounded-lg object-contain"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={loadPaymentData}
-                      className="px-6 py-2.5 rounded-xl bg-[#222] hover:bg-[#333] border border-white/10 text-white text-xs font-orbitron font-bold uppercase transition-all flex items-center gap-2 shadow-lg"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      <span>REFRESH STATUS</span>
-                    </button>
-                  </div>
-                </div>
               )}
 
               {/* ─── 6. REJECTION CARD (PHASE 7 #36) ──────────────────────────────── */}

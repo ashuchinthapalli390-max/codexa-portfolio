@@ -85,23 +85,32 @@ export async function savePaymentProof(
   const ext = normalizedMime === "image/png" ? ".png" : normalizedMime === "image/webp" ? ".webp" : ".jpg";
   const safeFilename = `${paymentId}_${Date.now()}_${crypto.randomBytes(4).toString("hex")}${ext}`;
 
-  // Try Supabase Storage if configured and available
+  // Try Supabase Storage first if configured
   if (isSupabaseConfigured()) {
     try {
       const bucket = process.env.SUPABASE_PAYMENTS_BUCKET || "payment-proofs";
       const remotePath = `proofs/${safeFilename}`;
       const uploadRes = await supabaseUploadFile(bucket, remotePath, buffer, normalizedMime);
-      if (!uploadRes.error && uploadRes.data?.publicUrl) {
+      if (!uploadRes.error) {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
+        const storageRefUrl = `${supabaseUrl}/storage/v1/object/${bucket}/${remotePath}`;
+
+        // Also write to local cache if possible
+        try {
+          const targetDir = getTargetStorageDir();
+          fs.writeFileSync(path.join(targetDir, safeFilename), buffer);
+        } catch {}
+
         return {
           success: true,
-          filePath: uploadRes.data.publicUrl,
+          filePath: storageRefUrl,
           fileHash,
           mimeType: normalizedMime,
           fileSize: buffer.length,
         };
       }
-    } catch {
-      // Fallback to local / tmp disk
+    } catch (sbErr) {
+      console.warn("[savePaymentProof] Supabase storage upload warning:", sbErr);
     }
   }
 
@@ -113,7 +122,7 @@ export async function savePaymentProof(
 
     return {
       success: true,
-      filePath: safeFilename, // Stored filename
+      filePath: safeFilename,
       fileHash,
       mimeType: normalizedMime,
       fileSize: buffer.length,
@@ -132,42 +141,112 @@ export async function savePaymentProof(
 
 /**
  * Retrieves the raw buffer of a stored payment proof for authenticated streaming.
+ * Securely handles private Supabase bucket access, legacy URLs, and local fallbacks.
  */
-export async function getPaymentProofBuffer(storedFilePath: string): Promise<{ buffer: Buffer; mimeType: string } | null> {
+export async function getPaymentProofBuffer(
+  storedFilePath: string
+): Promise<{ buffer: Buffer; mimeType: string } | null> {
+  if (!storedFilePath || typeof storedFilePath !== "string") return null;
+
   try {
-    // If stored as a remote URL (e.g. Supabase Storage)
+    const supabaseKey =
+      process.env.SUPABASE_SECRET_KEY ||
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      process.env.SUPABASE_ANON_KEY;
+    const supabaseUrl =
+      process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
+
+    // 1. If stored as a remote URL (Supabase or HTTPS)
     if (storedFilePath.startsWith("http://") || storedFilePath.startsWith("https://")) {
-      const res = await fetch(storedFilePath);
-      if (!res.ok) return null;
-      const arrayBuf = await res.arrayBuffer();
-      const contentType = res.headers.get("content-type") || "image/jpeg";
-      return { buffer: Buffer.from(arrayBuf), mimeType: contentType };
+      const isSupabaseUrl =
+        storedFilePath.includes(".supabase.co") ||
+        (supabaseUrl && storedFilePath.includes(supabaseUrl.replace(/^https?:\/\//, "")));
+
+      if (isSupabaseUrl && supabaseKey) {
+        // Strip "/public/" from Supabase object path because payment-proofs is a private bucket!
+        const authenticatedUrl = storedFilePath.replace(
+          "/storage/v1/object/public/",
+          "/storage/v1/object/"
+        );
+
+        const res = await fetch(authenticatedUrl, {
+          headers: {
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+          },
+          cache: "no-store",
+        });
+
+        if (res.ok) {
+          const arrayBuf = await res.arrayBuffer();
+          const contentType = res.headers.get("content-type") || "image/jpeg";
+          return { buffer: Buffer.from(arrayBuf), mimeType: contentType };
+        }
+      }
+
+      // Standard HTTP fetch fallback
+      try {
+        const res = await fetch(storedFilePath, { cache: "no-store" });
+        if (res.ok) {
+          const arrayBuf = await res.arrayBuffer();
+          const contentType = res.headers.get("content-type") || "image/jpeg";
+          return { buffer: Buffer.from(arrayBuf), mimeType: contentType };
+        }
+      } catch {}
     }
 
-    // Prevent path traversal
+    // 2. If stored as a filename or key, check Supabase Storage directly with service key
     const safeBase = path.basename(storedFilePath);
+    if (supabaseUrl && supabaseKey) {
+      const bucket = process.env.SUPABASE_PAYMENTS_BUCKET || "payment-proofs";
+      const candidatePaths = [
+        `proofs/${safeBase}`,
+        safeBase,
+        storedFilePath.startsWith("proofs/") ? storedFilePath : null,
+      ].filter(Boolean) as string[];
 
-    // Check primary local storage
+      for (const rPath of candidatePaths) {
+        const downloadUrl = `${supabaseUrl}/storage/v1/object/${bucket}/${rPath}`;
+        try {
+          const res = await fetch(downloadUrl, {
+            headers: {
+              apikey: supabaseKey,
+              Authorization: `Bearer ${supabaseKey}`,
+            },
+            cache: "no-store",
+          });
+          if (res.ok) {
+            const arrayBuf = await res.arrayBuffer();
+            const contentType = res.headers.get("content-type") || "image/jpeg";
+            return { buffer: Buffer.from(arrayBuf), mimeType: contentType };
+          }
+        } catch {}
+      }
+    }
+
+    // 3. Check primary local storage
     const primaryPath = path.join(LOCAL_PROOFS_DIR, safeBase);
     if (fs.existsSync(primaryPath)) {
       const buffer = fs.readFileSync(primaryPath);
       const ext = path.extname(safeBase).toLowerCase();
-      const mimeType = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
+      const mimeType =
+        ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
       return { buffer, mimeType };
     }
 
-    // Check tmp storage (serverless)
+    // 4. Check tmp storage (serverless)
     const tmpPath = path.join(TMP_PROOFS_DIR, safeBase);
     if (fs.existsSync(tmpPath)) {
       const buffer = fs.readFileSync(tmpPath);
       const ext = path.extname(safeBase).toLowerCase();
-      const mimeType = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
+      const mimeType =
+        ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
       return { buffer, mimeType };
     }
 
     return null;
-  } catch {
+  } catch (err) {
+    console.error("[getPaymentProofBuffer Error]", err);
     return null;
   }
 }
-
