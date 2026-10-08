@@ -10,6 +10,7 @@ import {
   isPermanentFounder,
 } from "@/lib/permissions";
 import { generateCodeXaId } from "@/lib/cxa-ids";
+import { normalizeDomain } from "@/lib/internships/domains";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -96,9 +97,12 @@ export async function GET(req: NextRequest) {
     }
 
     if (domainFilter) {
+      const canonical = normalizeDomain(domainFilter);
       whereClause.OR = [
         { department: { equals: domainFilter, mode: "insensitive" } },
         { internshipDomain: { equals: domainFilter, mode: "insensitive" } },
+        { department: { equals: canonical, mode: "insensitive" } },
+        { internshipDomain: { equals: canonical, mode: "insensitive" } },
       ];
     }
 

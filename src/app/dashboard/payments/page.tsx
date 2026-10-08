@@ -49,6 +49,12 @@ import {
 import { PushNotificationBanner } from "@/components/notifications/PushNotificationBanner";
 import { InternAutomaticPaymentFlow } from "@/components/payments/InternAutomaticPaymentFlow";
 import { FounderPaymentSettingsTab } from "@/components/payments/FounderPaymentSettingsTab";
+import {
+  INTERNSHIP_DOMAINS,
+  CANONICAL_WORKFORCE_ROLES,
+  getDomainDurationLabel,
+  getDomainDurationMonths,
+} from "@/lib/internships/domains";
 
 interface PaymentItem {
   id: string;
@@ -152,6 +158,7 @@ export default function PaymentsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [methodFilter, setMethodFilter] = useState("ALL");
+  const [durationFilter, setDurationFilter] = useState("ALL");
   const [domainFilter, setDomainFilter] = useState("ALL");
   const [purposeFilter, setPurposeFilter] = useState("ALL");
   const [remindingId, setRemindingId] = useState<string | null>(null);
@@ -218,6 +225,7 @@ export default function PaymentsPage() {
           status: statusFilter,
           method: methodFilter,
           domain: domainFilter,
+          duration: durationFilter,
           purpose: purposeFilter,
           q: searchQuery,
           limit: "200",
@@ -306,7 +314,7 @@ export default function PaymentsPage() {
       fetchData(true);
     }, 200);
     return () => clearTimeout(timer);
-  }, [status, statusFilter, methodFilter, domainFilter, purposeFilter, searchQuery]);
+  }, [status, statusFilter, methodFilter, domainFilter, durationFilter, purposeFilter, searchQuery]);
 
   // Live short polling (every 7 seconds)
   useEffect(() => {
@@ -315,7 +323,7 @@ export default function PaymentsPage() {
       fetchData(false);
     }, 7000);
     return () => clearInterval(interval);
-  }, [status, isPrivileged, isLiveActive, statusFilter, methodFilter, domainFilter, purposeFilter, searchQuery]);
+  }, [status, isPrivileged, isLiveActive, statusFilter, methodFilter, domainFilter, durationFilter, purposeFilter, searchQuery]);
 
   // Filtered views computed from payments
   const cashApprovalsList = useMemo(() => {
@@ -790,7 +798,7 @@ export default function PaymentsPage() {
 
   // Active metrics with fallback calculations from current DB sync
   const currentMetrics: LiveMetrics = metrics || {
-    totalInterns: 39,
+    totalInterns: payments.length,
     paidCount: paidList.length,
     notPaidCount: notPaidList.length,
     pendingPaymentCount: payments.filter((p) => p.paymentStatus === "PENDING_PAYMENT").length,
@@ -801,9 +809,9 @@ export default function PaymentsPage() {
     successfulCount: paidList.length,
     failedCount: payments.filter((p) => p.paymentStatus === "FAILED").length,
     expiredCount: payments.filter((p) => p.paymentStatus === "EXPIRED").length,
-    totalExpectedAmount: 39 * 450,
-    totalCollectedAmount: paidList.length * 450,
-    pendingAmount: notPaidList.length * 450,
+    totalExpectedAmount: payments.reduce((sum, p) => sum + (p.fixedAmount || 0), 0),
+    totalCollectedAmount: paidList.reduce((sum, p) => sum + (p.fixedAmount || 0), 0),
+    pendingAmount: notPaidList.reduce((sum, p) => sum + (p.fixedAmount || 0), 0),
   };
 
   return (
@@ -840,7 +848,7 @@ export default function PaymentsPage() {
                 </button>
               </div>
               <p className="text-xs sm:text-sm text-zinc-400 mt-0.5">
-                Real-time monitoring across all 39 CodeXa interns with dedicated UPI automation &amp; Cash approval flow
+                Real-time monitoring across all {currentMetrics.totalInterns} CodeXa interns with dedicated UPI automation &amp; Cash approval flow
               </p>
             </div>
           </div>
@@ -1556,19 +1564,54 @@ export default function PaymentsPage() {
                 <option value="EXPIRED">Expired</option>
               </select>
 
+              {/* Duration Filter */}
+              <select
+                value={durationFilter}
+                onChange={(e) => setDurationFilter(e.target.value)}
+                className="w-full sm:w-auto bg-[#161616] border border-white/10 text-xs text-zinc-300 rounded-xl px-3 py-2 focus:outline-none"
+              >
+                <option value="ALL">All Durations</option>
+                <option value="2">2 Months</option>
+                <option value="3">3 Months</option>
+                <option value="6">6 Months</option>
+                <option value="9">9 Months</option>
+              </select>
+
               {/* Domain Filter */}
               <select
                 value={domainFilter}
                 onChange={(e) => setDomainFilter(e.target.value)}
                 className="w-full sm:w-auto bg-[#161616] border border-white/10 text-xs text-zinc-300 rounded-xl px-3 py-2 focus:outline-none"
               >
-                <option value="ALL">All Domains</option>
-                <option value="Full-Stack Development with AI">Full-Stack Dev</option>
-                <option value="Cybersecurity">Cybersecurity</option>
-                <option value="AI & Machine Learning">AI &amp; ML</option>
-                <option value="Cloud Computing & DevOps">Cloud &amp; DevOps</option>
-                <option value="Data Science & Business Analytics">Data Science</option>
-                <option value="UI/UX Design">UI/UX Design</option>
+                <option value="ALL">All Domains ({INTERNSHIP_DOMAINS.length})</option>
+                <optgroup label="2 Months Tracks">
+                  {INTERNSHIP_DOMAINS.filter((d) => d.durationMonths === 2).map((d) => (
+                    <option key={d.key} value={d.label}>
+                      {d.label}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="3 Months Tracks (FSD up to 4m)">
+                  {INTERNSHIP_DOMAINS.filter((d) => d.durationMonths === 3).map((d) => (
+                    <option key={d.key} value={d.label}>
+                      {d.label}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="6 Months Tracks">
+                  {INTERNSHIP_DOMAINS.filter((d) => d.durationMonths === 6).map((d) => (
+                    <option key={d.key} value={d.label}>
+                      {d.label}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="9 Months Tracks">
+                  {INTERNSHIP_DOMAINS.filter((d) => d.durationMonths === 9).map((d) => (
+                    <option key={d.key} value={d.label}>
+                      {d.label}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             </div>
           </div>
@@ -1767,25 +1810,52 @@ export default function PaymentsPage() {
                     onChange={(e) => setCreateRole(e.target.value)}
                     className="w-full p-2.5 bg-[#161616] border border-white/10 rounded-xl text-xs text-white focus:outline-none"
                   >
-                    <option value="INTERN">Engineering Interns (INTERN)</option>
-                    <option value="EMPLOYEE">Core Employees (EMPLOYEE)</option>
+                    {CANONICAL_WORKFORCE_ROLES.map((role) => (
+                      <option key={role.value} value={role.value}>
+                        {role.label} ({role.value})
+                      </option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">Domain / Department</label>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                    Domain / Department {createDomain !== "ALL" ? `(${getDomainDurationLabel(createDomain)})` : ""}
+                  </label>
                   <select
                     value={createDomain}
                     onChange={(e) => setCreateDomain(e.target.value)}
                     className="w-full p-2.5 bg-[#161616] border border-white/10 rounded-xl text-xs text-white focus:outline-none"
                   >
-                    <option value="ALL">All Domains</option>
-                    <option value="Full-Stack Development with AI">Full-Stack Development</option>
-                    <option value="Cybersecurity">Cybersecurity</option>
-                    <option value="AI & Machine Learning">AI &amp; Machine Learning</option>
-                    <option value="Cloud Computing & DevOps">Cloud &amp; DevOps</option>
-                    <option value="Data Science & Business Analytics">Data Science</option>
-                    <option value="UI/UX Design">UI/UX Design</option>
+                    <option value="ALL">All Domains ({INTERNSHIP_DOMAINS.length})</option>
+                    <optgroup label="2 Months Tracks">
+                      {INTERNSHIP_DOMAINS.filter((d) => d.durationMonths === 2).map((d) => (
+                        <option key={d.key} value={d.label}>
+                          {d.label} ({d.durationLabel})
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="3 Months Tracks">
+                      {INTERNSHIP_DOMAINS.filter((d) => d.durationMonths === 3).map((d) => (
+                        <option key={d.key} value={d.label}>
+                          {d.label} ({d.durationLabel})
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="6 Months Tracks">
+                      {INTERNSHIP_DOMAINS.filter((d) => d.durationMonths === 6).map((d) => (
+                        <option key={d.key} value={d.label}>
+                          {d.label} ({d.durationLabel})
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="9 Months Tracks">
+                      {INTERNSHIP_DOMAINS.filter((d) => d.durationMonths === 9).map((d) => (
+                        <option key={d.key} value={d.label}>
+                          {d.label} ({d.durationLabel})
+                        </option>
+                      ))}
+                    </optgroup>
                   </select>
                 </div>
               </div>

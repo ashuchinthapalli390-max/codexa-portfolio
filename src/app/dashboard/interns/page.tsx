@@ -18,9 +18,9 @@ import {
   CreditCard,
   Building,
   CheckCircle2,
-  FileCheck
 } from "lucide-react";
 import { hasPermission, Permission, getEffectiveRole } from "@/lib/permissions";
+import { INTERNSHIP_DOMAINS } from "@/lib/internships/domains";
 
 export default function InternsPage() {
   const { user } = useAuth();
@@ -163,19 +163,35 @@ export default function InternsPage() {
               onChange={(e) => setSelectedDomain(e.target.value)}
               className="px-3 py-2 rounded-xl bg-neutral-950 border border-neutral-800 text-xs font-mono text-white focus:outline-none focus:border-crimson"
             >
-              <option value="">All Domains</option>
-              <option value="Full-Stack Development with AI">Full-Stack Development with AI</option>
-              <option value="Cybersecurity">Cybersecurity</option>
-              <option value="Ethical Hacking">Ethical Hacking</option>
-              <option value="Python Full Stack">Python Full Stack</option>
-              <option value="Cybersecurity, Ethical Hacking & VAPT">Cybersecurity, Ethical Hacking & VAPT</option>
-              <option value="AI / Machine Learning">AI / Machine Learning</option>
-              <option value="AI & ML, Generative AI & AI Agents">AI & ML, Generative AI & AI Agents</option>
-              <option value="UI/UX Design">UI/UX Design</option>
-              <option value="Mobile App Development">Mobile App Development</option>
-              <option value="Generative AI & AI Agents">Generative AI & AI Agents</option>
-              <option value="Web Development">Web Development</option>
-              <option value="Java Full Stack">Java Full Stack</option>
+              <option value="">All Domains ({INTERNSHIP_DOMAINS.length})</option>
+              <optgroup label="2 Months Tracks">
+                {INTERNSHIP_DOMAINS.filter((d) => d.durationMonths === 2).map((d) => (
+                  <option key={d.key} value={d.label}>
+                    {d.label}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="3 Months Tracks (FSD up to 4m)">
+                {INTERNSHIP_DOMAINS.filter((d) => d.durationMonths === 3).map((d) => (
+                  <option key={d.key} value={d.label}>
+                    {d.label}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="6 Months Tracks">
+                {INTERNSHIP_DOMAINS.filter((d) => d.durationMonths === 6).map((d) => (
+                  <option key={d.key} value={d.label}>
+                    {d.label}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="9 Months Tracks">
+                {INTERNSHIP_DOMAINS.filter((d) => d.durationMonths === 9).map((d) => (
+                  <option key={d.key} value={d.label}>
+                    {d.label}
+                  </option>
+                ))}
+              </optgroup>
             </select>
 
             {/* Duration Filter */}

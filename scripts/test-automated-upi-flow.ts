@@ -38,7 +38,10 @@ async function runTests() {
     } else {
       console.error(`❌ [FAIL] ${testName}${detail ? ` — ${detail}` : ""}`);
       failed++;
-    }
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_TEST_PAYMENT_MUTATION !== "true") {
+    console.error("❌ SAFETY GUARD: Test suite aborted. Running synthetic payment tests on production database is strictly disabled.");
+    console.error("   To bypass only in staging/sandbox, set ALLOW_TEST_PAYMENT_MUTATION=true.");
+    process.exit(1);
   }
 
   try {

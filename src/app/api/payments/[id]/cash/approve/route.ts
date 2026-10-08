@@ -138,6 +138,18 @@ export async function POST(
       }).catch((err) => console.error("Error sending cash approval email:", err));
     }
 
+    // In-App Notification to Intern
+    db.notification.create({
+      data: {
+        userId: payment.userId,
+        type: "SECURITY",
+        title: "Cash Payment Confirmed! 🎉",
+        message: `Your cash payment of ₹${payment.fixedAmount} for CodeXa Internship Service Bill has been confirmed by ${approverName}.`,
+        link: "/dashboard/payments",
+        isRead: false,
+      },
+    }).catch(() => {});
+
     sendPushNotification(payment.userId, {
       title: "Cash Payment Confirmed! 🎉",
       body: `Your cash payment of ₹${payment.fixedAmount} for CodeXa Internship Service Bill has been confirmed.`,

@@ -436,3 +436,120 @@ export async function sendPaymentRejectedEmail(params: PaymentEmailParams): Prom
   });
 }
 
+export interface CashPaymentRequestEmailParams {
+  recipientEmail: string;
+  recipientName: string;
+  internName: string;
+  internId: string;
+  internEmail: string;
+  internshipDomain: string;
+  duration: string;
+  amount: number;
+  paymentReference: string;
+  serverDateTime: string;
+  reviewUrl: string;
+}
+
+/**
+ * Sends immediate notification email to Founder and Co-Founder when an intern requests cash payment.
+ */
+export async function sendCashPaymentRequestEmail(params: CashPaymentRequestEmailParams): Promise<SendEmailResult> {
+  const contentHtml = `
+    <div class="card-box">
+      <div style="text-align: center; margin-bottom: 16px;">
+        <span style="display: inline-block; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); color: #f59e0b; padding: 6px 14px; border-radius: 999px; font-size: 12px; font-weight: 700; text-transform: uppercase;">
+          ⚠️ PENDING CASH APPROVAL
+        </span>
+      </div>
+      <p style="font-size: 14px; color: #CCCCCC; line-height: 1.6; margin: 0 0 16px 0;">
+        Hello ${params.recipientName},<br><br>
+        A new cash payment request has been created for the <strong>CodeXa Internship Service Bill</strong>.
+      </p>
+
+      <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+        <div style="font-size: 11px; text-transform: uppercase; color: #888888; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 10px;">
+          Intern Details
+        </div>
+        <table style="width: 100%; font-size: 13px; color: #FFFFFF; line-height: 1.6;">
+          <tr>
+            <td style="color: #888888; width: 35%; padding: 3px 0;">Name:</td>
+            <td style="font-weight: 600;">${params.internName}</td>
+          </tr>
+          <tr>
+            <td style="color: #888888; padding: 3px 0;">Intern ID:</td>
+            <td style="font-family: monospace; color: #EF233C;">${params.internId}</td>
+          </tr>
+          <tr>
+            <td style="color: #888888; padding: 3px 0;">Email:</td>
+            <td>${params.internEmail}</td>
+          </tr>
+          <tr>
+            <td style="color: #888888; padding: 3px 0;">Domain:</td>
+            <td>${params.internshipDomain}</td>
+          </tr>
+          <tr>
+            <td style="color: #888888; padding: 3px 0;">Duration:</td>
+            <td>${params.duration}</td>
+          </tr>
+        </table>
+      </div>
+
+      <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+        <div style="font-size: 11px; text-transform: uppercase; color: #888888; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 10px;">
+          Payment Details
+        </div>
+        <table style="width: 100%; font-size: 13px; color: #FFFFFF; line-height: 1.6;">
+          <tr>
+            <td style="color: #888888; width: 35%; padding: 3px 0;">Amount:</td>
+            <td style="font-size: 15px; font-weight: 700; color: #FFFFFF;">₹${params.amount.toLocaleString()}</td>
+          </tr>
+          <tr>
+            <td style="color: #888888; padding: 3px 0;">Method:</td>
+            <td>Cash</td>
+          </tr>
+          <tr>
+            <td style="color: #888888; padding: 3px 0;">Payment Reference:</td>
+            <td style="font-family: monospace; font-weight: bold; color: #f59e0b;">${params.paymentReference}</td>
+          </tr>
+          <tr>
+            <td style="color: #888888; padding: 3px 0;">Requested At:</td>
+            <td>${params.serverDateTime}</td>
+          </tr>
+          <tr>
+            <td style="color: #888888; padding: 3px 0;">Status:</td>
+            <td style="color: #f59e0b; font-weight: 600;">Pending Cash Approval</td>
+          </tr>
+        </table>
+      </div>
+
+      <div style="padding: 12px; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 6px; font-size: 12px; color: #FFFFFF; line-height: 1.5; margin-bottom: 20px;">
+        <strong>Important:</strong> The payment must only be marked successful after the physical cash is received.
+      </div>
+
+      <div style="text-align: center; margin: 24px 0 10px 0;">
+        <a href="${params.reviewUrl}" style="display: inline-block; background: #EF233C; color: #FFFFFF; font-weight: 700; font-size: 13px; padding: 12px 28px; border-radius: 10px; text-decoration: none; letter-spacing: 0.03em;">
+          Review Payment &rarr;
+        </a>
+      </div>
+      <p style="text-align: center; font-size: 11px; color: #666666; margin: 10px 0 0 0;">
+        Regards,<br>CodeXa Agency Payment System
+      </p>
+    </div>
+  `;
+
+  const html = renderEmailLayout({
+    badge: "CASH APPROVAL REQUIRED",
+    title: "New Cash Payment Request",
+    subtitle: `Intern <strong>${params.internName}</strong> (${params.internId}) has requested to pay ₹${params.amount} in cash.`,
+    contentHtml,
+    warningText: "Requires physical cash verification before admin confirmation.",
+  });
+
+  return sendEmail({
+    from: notificationsFromEmail,
+    to: params.recipientEmail,
+    subject: `New CodeXa Cash Payment Request — ${params.internName}`,
+    html,
+  });
+}
+

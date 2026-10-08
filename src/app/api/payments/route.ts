@@ -3,8 +3,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { hasPermission, Permission, getEffectiveRole } from "@/lib/permissions";
 import { generatePaymentReferenceId } from "@/lib/cxa-ids";
-import { dataStore } from "@/lib/data-store";
 import { sendPaymentRequestedEmail } from "@/lib/email/notifications";
+import { normalizeDomain, getDomainsByDuration } from "@/lib/internships/domains";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -95,6 +95,16 @@ export async function GET(req: NextRequest) {
       where.domain = { contains: domain, mode: "insensitive" };
     }
 
+    // Duration filter (2, 3, 6, 9 months tracks)
+    const duration = searchParams.get("duration");
+    if (duration && duration !== "ALL") {
+      const months = parseInt(duration, 10);
+      if ([2, 3, 6, 9].includes(months)) {
+        const matchingDomains = getDomainsByDuration(months as 2 | 3 | 6 | 9).map((d) => d.label);
+        where.domain = { in: matchingDomains };
+      }
+    }
+
     if (purpose && purpose !== "ALL") {
       where.paymentPurpose = purpose;
     }
@@ -174,7 +184,7 @@ export async function GET(req: NextRequest) {
         },
       }),
       // Count total interns in database
-      canViewAll ? db.user.count({ where: { role: "INTERN" } }) : Promise.resolve(0),
+      canViewAll ? db.user.count({ where: { OR: [{ role: "INTERN" }, { orgRole: "INTERN" }] } }) : Promise.resolve(0),
       // Summary data for live metrics
       canViewAll
         ? db.paymentRequest.findMany({
@@ -241,10 +251,11 @@ export async function GET(req: NextRequest) {
 
       const totalInterns = allInternsCount > 0 ? allInternsCount : allPaymentsSummary.length;
       const notPaidCount = Math.max(0, totalInterns - paidCount);
-      const fixedAmt = 450;
-      const totalExpectedAmount = totalInterns * fixedAmt;
-      const totalCollectedAmount = paidCount * fixedAmt;
-      const pendingAmount = totalExpectedAmount - totalCollectedAmount;
+      const totalExpectedAmount = allPaymentsSummary.reduce((sum, p) => sum + Number(p.fixedAmount || 450), 0);
+      const totalCollectedAmount = allPaymentsSummary
+        .filter((p) => p.paymentStatus === "APPROVED" || p.paymentStatus === "SUCCESS" || p.cashStatus === "CASH_RECEIVED")
+        .reduce((sum, p) => sum + Number(p.fixedAmount || 450), 0);
+      const pendingAmount = Math.max(0, totalExpectedAmount - totalCollectedAmount);
 
       metrics = {
         totalInterns,
@@ -342,6 +353,13 @@ export async function POST(req: NextRequest) {
 
     // ─── BULK CREATION ────────────────────────────────────────────────────────
     if (isBulk) {
+      if (paymentPurpose === "INTERNSHIP_FEE" && targetRole === "EMPLOYEE") {
+        return NextResponse.json(
+          { error: "Policy Restriction: Mandatory ₹450 Internship Fee applies only to Interns, not Employees." },
+          { status: 400 }
+        );
+      }
+
       let targetUsers: any[] = [];
 
       if (Array.isArray(userIds) && userIds.length > 0) {
@@ -350,20 +368,52 @@ export async function POST(req: NextRequest) {
           include: { employmentProfile: true },
         });
       } else if (targetRole) {
-        const roleWhere: any = {
-          OR: [{ role: targetRole }, { orgRole: targetRole }],
-          isActive: true,
-        };
+        let roleWhere: any = {};
+        if (targetRole === "LEARNING_INTERN") {
+          roleWhere = {
+            OR: [
+              { employmentProfile: { workforceType: "LEARNING_INTERN" } },
+              { role: "INTERN" },
+            ],
+            isActive: true,
+          };
+        } else if (targetRole === "INTERN") {
+          roleWhere = {
+            OR: [
+              { role: "INTERN" },
+              { orgRole: "INTERN" },
+              { employmentProfile: { employmentType: "INTERN" } },
+            ],
+            isActive: true,
+          };
+        } else if (targetRole === "EMPLOYEE") {
+          roleWhere = {
+            OR: [
+              { role: "EMPLOYEE" },
+              { orgRole: "EMPLOYEE" },
+              { employmentProfile: { workforceType: "EMPLOYEE" } },
+            ],
+            isActive: true,
+          };
+        } else {
+          roleWhere = {
+            OR: [{ role: targetRole }, { orgRole: targetRole }],
+            isActive: true,
+          };
+        }
+
         targetUsers = await db.user.findMany({
           where: roleWhere,
           include: { employmentProfile: true },
         });
 
         if (domain && domain !== "ALL") {
+          const canonical = normalizeDomain(domain);
           targetUsers = targetUsers.filter(
             (u) =>
-              (u.employmentProfile?.department || "").toLowerCase() === domain.toLowerCase() ||
-              (u.department || "").toLowerCase() === domain.toLowerCase()
+              (u.employmentProfile?.internshipDomain || "").toLowerCase() === canonical.toLowerCase() ||
+              (u.employmentProfile?.department || "").toLowerCase() === canonical.toLowerCase() ||
+              (u.department || "").toLowerCase() === canonical.toLowerCase()
           );
         }
       }
@@ -372,19 +422,33 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "No matching active users found for bulk payment request." }, { status: 400 });
       }
 
-      // Check duplicates (users who already have this pending payment purpose)
+      // Check existing payments for duplicate prevention
       const existingPayments = await db.paymentRequest.findMany({
         where: {
           userId: { in: targetUsers.map((u) => u.id) },
           paymentPurpose,
-          paymentStatus: { in: ["PENDING_PAYMENT", "PENDING_VERIFICATION", "APPROVED"] },
         },
-        select: { userId: true },
+        select: {
+          userId: true,
+          paymentStatus: true,
+          cashStatus: true,
+          referenceId: true,
+        },
       });
-      const existingUserIds = new Set(existingPayments.map((p) => p.userId));
 
-      const eligibleUsers = targetUsers.filter((u) => !existingUserIds.has(u.id));
-      const skippedCount = targetUsers.length - eligibleUsers.length;
+      const alreadyPaidUserIds = new Set(
+        existingPayments
+          .filter((p) => p.paymentStatus === "APPROVED" || p.paymentStatus === "SUCCESS" || p.cashStatus === "CASH_RECEIVED")
+          .map((p) => p.userId)
+      );
+
+      const alreadyPendingUserIds = new Set(
+        existingPayments
+          .filter((p) => !alreadyPaidUserIds.has(p.userId) && (p.paymentStatus === "PENDING_PAYMENT" || p.paymentStatus === "PENDING_VERIFICATION" || p.cashStatus === "PENDING_CASH_APPROVAL"))
+          .map((p) => p.userId)
+      );
+
+      const eligibleUsers = targetUsers.filter((u) => !alreadyPaidUserIds.has(u.id) && !alreadyPendingUserIds.has(u.id));
 
       // Dry run preview
       if (dryRun) {
@@ -392,7 +456,9 @@ export async function POST(req: NextRequest) {
           dryRun: true,
           totalSubmitted: targetUsers.length,
           eligibleCount: eligibleUsers.length,
-          skippedCount,
+          alreadyPaidCount: alreadyPaidUserIds.size,
+          alreadyPendingCount: alreadyPendingUserIds.size,
+          skippedCount: targetUsers.length - eligibleUsers.length,
           amountPerUser: amount,
           totalExpectedAmount: eligibleUsers.length * amount,
           previewUsers: eligibleUsers.slice(0, 10).map((u) => ({
@@ -400,7 +466,18 @@ export async function POST(req: NextRequest) {
             name: u.fullName || u.username,
             email: u.email,
             role: u.role,
-            domain: u.employmentProfile?.department || u.department,
+            workforceType: u.employmentProfile?.workforceType || (u.role === "INTERN" ? "INTERN" : "EMPLOYEE"),
+            domain: normalizeDomain(u.employmentProfile?.internshipDomain || u.employmentProfile?.department || u.department),
+          })),
+          alreadyBilledUsers: targetUsers.filter((u) => alreadyPendingUserIds.has(u.id)).map((u) => ({
+            id: u.id,
+            name: u.fullName || u.username,
+            email: u.email,
+          })),
+          paidUsers: targetUsers.filter((u) => alreadyPaidUserIds.has(u.id)).map((u) => ({
+            id: u.id,
+            name: u.fullName || u.username,
+            email: u.email,
           })),
         });
       }
@@ -411,6 +488,14 @@ export async function POST(req: NextRequest) {
 
       for (const targetUser of eligibleUsers) {
         const refId = await generatePaymentReferenceId();
+        const canonicalInternDomain = normalizeDomain(
+          targetUser.employmentProfile?.internshipDomain ||
+          targetUser.employmentProfile?.department ||
+          targetUser.department ||
+          domain
+        );
+        const userWorkforce = targetUser.employmentProfile?.workforceType || (targetUser.role === "INTERN" ? "INTERN" : "EMPLOYEE");
+
         const created = await db.paymentRequest.create({
           data: {
             referenceId: refId,
@@ -418,9 +503,10 @@ export async function POST(req: NextRequest) {
             userName: targetUser.fullName || targetUser.username,
             userEmail: targetUser.email,
             userRole: targetUser.role,
+            workforceType: userWorkforce,
             employeeId: targetUser.employmentProfile?.employeeId || null,
             internId: targetUser.role === "INTERN" ? targetUser.employmentProfile?.employeeId : null,
-            domain: targetUser.employmentProfile?.department || targetUser.department || domain || null,
+            domain: canonicalInternDomain,
             paymentPurpose,
             title,
             description: description || null,
@@ -447,16 +533,24 @@ export async function POST(req: NextRequest) {
         }).catch(() => {});
       }
 
-      await dataStore.logAudit(
-        user.id,
-        "PAYMENT_REQUEST_CREATED",
-        `Created bulk payment requests for ${createdPayments.length} users (Total: ₹${createdPayments.length * amount})`
-      );
+      await db.auditLog.create({
+        data: {
+          actorId: user.id,
+          actorName: user.displayName || user.username || "Admin",
+          action: "PAYMENT_REQUEST_CREATED",
+          targetId: "BULK",
+          details: JSON.stringify({
+            message: `Created bulk payment requests for ${createdPayments.length} users (Total: ₹${createdPayments.length * amount})`,
+            createdCount: createdPayments.length,
+            skippedCount: targetUsers.length - eligibleUsers.length,
+          }),
+        },
+      });
 
       return NextResponse.json({
         success: true,
         createdCount: createdPayments.length,
-        skippedCount,
+        skippedCount: targetUsers.length - eligibleUsers.length,
         totalAmount: createdPayments.length * amount,
         payments: createdPayments,
       });
@@ -486,9 +580,10 @@ export async function POST(req: NextRequest) {
         userName: targetUser.fullName || targetUser.username,
         userEmail: targetUser.email,
         userRole: targetUser.role,
+        workforceType: targetUser.employmentProfile?.workforceType || (targetUser.role === "INTERN" ? "INTERN" : "EMPLOYEE"),
         employeeId: targetUser.employmentProfile?.employeeId || null,
         internId: targetUser.role === "INTERN" ? targetUser.employmentProfile?.employeeId : null,
-        domain: targetUser.employmentProfile?.department || targetUser.department || domain || null,
+        domain: normalizeDomain(targetUser.employmentProfile?.internshipDomain || targetUser.employmentProfile?.department || targetUser.department || domain),
         paymentPurpose,
         title,
         description: description || null,
@@ -516,11 +611,20 @@ export async function POST(req: NextRequest) {
       dueDate: parsedDueDate ? parsedDueDate.toLocaleDateString() : undefined,
     }).catch(() => {});
 
-    await dataStore.logAudit(
-      user.id,
-      "PAYMENT_REQUEST_CREATED",
-      `Created payment request ${refId} for ${targetUser.email} (₹${amount})`
-    );
+    await db.auditLog.create({
+      data: {
+        actorId: user.id,
+        actorName: user.displayName || user.username || "Admin",
+        action: "PAYMENT_REQUEST_CREATED",
+        targetId: payment.id,
+        details: JSON.stringify({
+          message: `Created payment request ${refId} for ${targetUser.email} (₹${amount})`,
+          referenceId: refId,
+          recipientEmail: targetUser.email,
+          amount,
+        }),
+      },
+    });
 
     return NextResponse.json({ success: true, payment }, { status: 201 });
   } catch (error: any) {

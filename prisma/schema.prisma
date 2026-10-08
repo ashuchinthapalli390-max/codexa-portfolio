@@ -654,6 +654,7 @@ model EmploymentProfile {
   userId             String    @unique
   employeeId         String    @unique // e.g. "CXA-EMP-2026-001" or "CXA-INT-2026-001"
   employmentType     String    @default("FULL_TIME") // "FULL_TIME" | "PART_TIME" | "INTERN" | "CONTRACT"
+  workforceType      String?   // "LEARNING_INTERN" | "INTERN" | "EMPLOYEE"
   department         String    @default("Engineering")
   designation        String    @default("Core Engineer")
   reportingTo        String?   // Manager name or ID
@@ -1350,6 +1351,7 @@ model PaymentRequest {
   userName           String?
   userEmail          String?
   userRole           String?            // "INTERN" | "EMPLOYEE"
+  workforceType      String?            // "LEARNING_INTERN" | "INTERN" | "EMPLOYEE"
   employeeId         String?            // e.g. "CXA-EMP-2026-001"
   internId           String?            // e.g. "CXA-INT-2026-001"
   domain             String?            // e.g. "Development" | "Design" | "Cybersecurity"
