@@ -166,6 +166,7 @@ export function TeamCoreShell({
           { label: "Profiles", href: "/team", icon: User },
           { label: "Projects", href: "/owner?tab=all-projects", icon: FolderGit2 },
           { label: "Approvals", href: "/dashboard/approvals", icon: CheckCircle2 },
+          { label: "Benefits Approvals", href: "/dashboard/benefits-approvals", icon: Sparkles },
           { label: "Attendance", href: "/dashboard/attendance", icon: Clock },
           { label: "Payments", href: "/dashboard/payments", icon: Receipt },
           { label: "Payment Verification", href: "/dashboard/payments?tab=queue", icon: CheckCircle2 },
