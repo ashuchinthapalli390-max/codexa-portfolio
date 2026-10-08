@@ -3,7 +3,7 @@
  * Toggles or updates a reaction on a chat message.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getAuthUserFromRequest } from "@/lib/auth";
 import { dataStore } from "@/lib/data-store";
 
 export const runtime = "nodejs";
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUser();
+    const user = await getAuthUserFromRequest(req);
     if (!user) {
       return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401 });
     }

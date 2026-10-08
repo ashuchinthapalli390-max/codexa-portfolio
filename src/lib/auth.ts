@@ -453,3 +453,22 @@ export async function logProfileAction(
     details,
   });
 }
+
+/**
+ * Resolves authenticated user from NextRequest supporting both Authorization: Bearer <token> (Mobile)
+ * and secure HTTP cookies (Web).
+ */
+export async function getAuthUserFromRequest(req: any): Promise<AuthenticatedUser | null> {
+  const authHeader = req.headers?.get?.("authorization");
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const rawToken = authHeader.substring(7).trim();
+    if (rawToken) {
+      const res = await validateSessionResult(rawToken);
+      if (res.status === "authenticated") return res.user;
+    }
+  }
+  const cookieRes = await getCurrentSessionResult();
+  if (cookieRes.status === "authenticated") return cookieRes.user;
+  return null;
+}
+

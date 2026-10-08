@@ -1,10 +1,6 @@
-/**
- * POST /api/chat/read
- * Marks a conversation as read for the current user.
- */
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentSessionResult } from "@/lib/auth";
-import { dataStore } from "@/lib/data-store";
+import { getAuthUserFromRequest } from "@/lib/auth";
+import { markConversationMessagesRead, isChatConfigured } from "@/lib/supabase/chat-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,35 +13,29 @@ const NO_CACHE_HEADERS = {
 
 export async function POST(req: NextRequest) {
   try {
-    const auth = await getCurrentSessionResult();
+    const user = await getAuthUserFromRequest(req);
 
-    if (auth.status === "error") {
-      return NextResponse.json(
-        { success: false, error: "CHAT_TEMPORARILY_UNAVAILABLE", retryable: true, requestId: auth.requestId },
-        { status: 503, headers: NO_CACHE_HEADERS }
-      );
+    if (!user) {
+      return NextResponse.json({ ok: false, success: false, error: "Unauthorized." }, { status: 401, headers: NO_CACHE_HEADERS });
     }
-
-    if (auth.status === "unauthenticated") {
-      return NextResponse.json({ success: false, error: "Unauthorized. Please log in." }, { status: 401, headers: NO_CACHE_HEADERS });
-    }
-
-    const user = auth.user;
-    const body = await req.json();
-    const { conversationId } = body;
+    const body = await req.json().catch(() => ({}));
+    const { conversationId, lastReadMessageId } = body;
 
     if (!conversationId) {
-      return NextResponse.json({ success: false, error: "conversationId is required." }, { status: 400, headers: NO_CACHE_HEADERS });
+      return NextResponse.json({ ok: false, success: false, error: "conversationId is required." }, { status: 400, headers: NO_CACHE_HEADERS });
     }
 
-    await dataStore.markConversationRead(conversationId, user.id);
+    if (isChatConfigured()) {
+      await markConversationMessagesRead(conversationId, user.id, lastReadMessageId);
+    }
 
     return NextResponse.json({
+      ok: true,
       success: true,
       conversationId,
     }, { headers: NO_CACHE_HEADERS });
   } catch (err: any) {
     console.error("[POST /api/chat/read]", err);
-    return NextResponse.json({ success: false, error: "Failed to mark as read." }, { status: 500, headers: NO_CACHE_HEADERS });
+    return NextResponse.json({ ok: false, success: false, error: "Failed to mark as read." }, { status: 500, headers: NO_CACHE_HEADERS });
   }
 }

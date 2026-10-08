@@ -5,35 +5,54 @@ if (typeof window !== "undefined") {
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 
-const CHAT_URL = process.env.CHAT_SUPABASE_URL || process.env.NEXT_PUBLIC_CHAT_SUPABASE_URL || "";
-const CHAT_SECRET_KEY = process.env.CHAT_SUPABASE_SECRET_KEY || "";
-const CHAT_JWT_SECRET = process.env.CHAT_JWT_SECRET || CHAT_SECRET_KEY || "codexa_chat_jwt_fallback_secret_key";
-const CHAT_BUCKET = process.env.CHAT_SUPABASE_STORAGE_BUCKET || "chat-private";
+function getChatUrl(): string {
+  return process.env.CHAT_SUPABASE_URL || process.env.NEXT_PUBLIC_CHAT_SUPABASE_URL || "";
+}
+
+function getChatSecretKey(): string {
+  return process.env.CHAT_SUPABASE_SECRET_KEY || "";
+}
+
+function getChatJwtSecret(): string {
+  return process.env.CHAT_JWT_SECRET || getChatSecretKey() || "codexa_chat_jwt_fallback_secret_key";
+}
 
 export const isChatConfigured = (): boolean => {
-  if (!CHAT_URL || !CHAT_SECRET_KEY) return false;
-  if (CHAT_URL.includes("[") || CHAT_URL.includes("YOUR_CHAT_PROJECT_REF") || CHAT_SECRET_KEY.includes("your_chat_supabase")) return false;
+  const url = getChatUrl();
+  const key = getChatSecretKey();
+  if (!url || !key) return false;
+  if (url.includes("[") || url.includes("YOUR_CHAT_PROJECT_REF") || key.includes("your_chat_supabase")) return false;
   try {
-    const parsed = new URL(CHAT_URL);
+    const parsed = new URL(url);
     return parsed.protocol === "http:" || parsed.protocol === "https:";
   } catch {
     return false;
   }
 };
 
-function createAdminClient() {
+let _adminClient: any = null;
+export function getChatAdminClient() {
+  if (_adminClient) return _adminClient;
   if (!isChatConfigured()) return null;
   try {
-    return createClient(CHAT_URL, CHAT_SECRET_KEY, {
+    _adminClient = createClient(getChatUrl(), getChatSecretKey(), {
       auth: { persistSession: false, autoRefreshToken: false },
     });
+    return _adminClient;
   } catch (err) {
     console.warn("[chatSupabaseAdmin init warning]:", err);
     return null;
   }
 }
 
-export const chatSupabaseAdmin = createAdminClient();
+export const chatSupabaseAdmin = new Proxy({} as any, {
+  get(target, prop) {
+    const client = getChatAdminClient();
+    if (!client) return undefined;
+    const value = client[prop];
+    return typeof value === "function" ? value.bind(client) : value;
+  },
+});
 
 /**
  * Signs a short-lived HS256 JWT specifically for Supabase Chat & Realtime channel authentication
@@ -54,7 +73,7 @@ export function signChatToken(coreUserId: string, expiresInSeconds = 3600): stri
   const b64Header = Buffer.from(JSON.stringify(header)).toString("base64url");
   const b64Payload = Buffer.from(JSON.stringify(payload)).toString("base64url");
   const signature = crypto
-    .createHmac("sha256", CHAT_JWT_SECRET)
+    .createHmac("sha256", getChatJwtSecret())
     .update(`${b64Header}.${b64Payload}`)
     .digest("base64url");
 
@@ -72,14 +91,15 @@ export function getDirectPairKey(userA: string, userB: string): string {
  * Creates or retrieves a deduplicated direct conversation between two users
  */
 export async function getOrCreateDirectConversation(coreUserId: string, targetUserId: string) {
-  if (!chatSupabaseAdmin) {
+  const client = getChatAdminClient();
+  if (!client) {
     return { data: null, error: "Chat Supabase is not configured" };
   }
 
   const pairKey = getDirectPairKey(coreUserId, targetUserId);
 
   // Check if conversation already exists
-  const { data: existingConv } = await chatSupabaseAdmin
+  const { data: existingConv } = await client
     .from("conversations")
     .select("*, conversation_members(*)")
     .eq("direct_pair_key", pairKey)
@@ -90,7 +110,7 @@ export async function getOrCreateDirectConversation(coreUserId: string, targetUs
   }
 
   // Create new conversation
-  const { data: newConv, error: convError } = await chatSupabaseAdmin
+  const { data: newConv, error: convError } = await client
     .from("conversations")
     .insert({
       type: "DIRECT",
@@ -110,7 +130,7 @@ export async function getOrCreateDirectConversation(coreUserId: string, targetUs
     { conversation_id: newConv.id, core_user_id: targetUserId, member_role: "MEMBER" },
   ];
 
-  await chatSupabaseAdmin.from("conversation_members").insert(members);
+  await client.from("conversation_members").insert(members);
 
   return { data: newConv, error: null };
 }
@@ -119,11 +139,12 @@ export async function getOrCreateDirectConversation(coreUserId: string, targetUs
  * Fetches user's active conversations with latest messages and unread counts
  */
 export async function getUserConversations(coreUserId: string) {
-  if (!chatSupabaseAdmin) {
+  const client = getChatAdminClient();
+  if (!client) {
     return { data: [], error: "Chat Supabase is not configured" };
   }
 
-  const { data: memberRows, error: memberErr } = await chatSupabaseAdmin
+  const { data: memberRows, error: memberErr } = await client
     .from("conversation_members")
     .select("conversation_id, muted, joined_at")
     .eq("core_user_id", coreUserId)
@@ -135,7 +156,7 @@ export async function getUserConversations(coreUserId: string) {
 
   const conversationIds = memberRows.map((m: any) => m.conversation_id);
 
-  const { data: conversations, error: convErr } = await chatSupabaseAdmin
+  const { data: conversations, error: convErr } = await client
     .from("conversations")
     .select("*, conversation_members(*)")
     .in("id", conversationIds)
@@ -148,7 +169,7 @@ export async function getUserConversations(coreUserId: string) {
   // Enhance each conversation with latest message
   const enhanced = await Promise.all(
     conversations.map(async (conv: any) => {
-      const { data: latestMsg } = await chatSupabaseAdmin!
+      const { data: latestMsg } = await client
         .from("messages")
         .select("*")
         .eq("conversation_id", conv.id)
@@ -180,12 +201,13 @@ export async function sendChatMessage(params: {
   messageType?: string;
   replyToMessageId?: string;
 }) {
-  if (!chatSupabaseAdmin) {
+  const client = getChatAdminClient();
+  if (!client) {
     return { data: null, error: "Chat Supabase is not configured" };
   }
 
   // 1. Verify membership
-  const { data: membership } = await chatSupabaseAdmin
+  const { data: membership } = await client
     .from("conversation_members")
     .select("id")
     .eq("conversation_id", params.conversationId)
@@ -198,7 +220,7 @@ export async function sendChatMessage(params: {
   }
 
   // 2. Check for duplicate/retry message via (sender_core_user_id, client_message_id)
-  const { data: existing } = await chatSupabaseAdmin
+  const { data: existing } = await client
     .from("messages")
     .select("*")
     .eq("sender_core_user_id", params.senderCoreUserId)
@@ -210,7 +232,7 @@ export async function sendChatMessage(params: {
   }
 
   // 3. Insert new message
-  const { data: message, error: insertError } = await chatSupabaseAdmin
+  const { data: message, error: insertError } = await client
     .from("messages")
     .insert({
       conversation_id: params.conversationId,
@@ -228,10 +250,44 @@ export async function sendChatMessage(params: {
   }
 
   // 4. Update conversation updated_at
-  await chatSupabaseAdmin
+  await client
     .from("conversations")
     .update({ updated_at: new Date().toISOString() })
     .eq("id", params.conversationId);
 
   return { data: message, error: null, isDuplicate: false };
+}
+
+/**
+ * Marks unread messages in a conversation as read by a member
+ */
+export async function markConversationMessagesRead(
+  conversationId: string,
+  readerCoreUserId: string,
+  lastReadMessageId?: string
+) {
+  const client = getChatAdminClient();
+  if (!client) return { ok: false, error: "Chat not configured" };
+
+  // Fetch unread messages from other senders
+  const { data: msgs } = await client
+    .from("messages")
+    .select("id")
+    .eq("conversation_id", conversationId)
+    .neq("sender_core_user_id", readerCoreUserId)
+    .order("created_at", { ascending: false })
+    .limit(30);
+
+  if (msgs && msgs.length > 0) {
+    const now = new Date().toISOString();
+    const rows = msgs.map((m: any) => ({
+      message_id: m.id,
+      core_user_id: readerCoreUserId,
+      read_at: now,
+    }));
+
+    await client.from("message_reads").upsert(rows, { onConflict: "message_id,core_user_id" });
+  }
+
+  return { ok: true };
 }

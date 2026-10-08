@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { validateSessionResult, getCurrentSessionResult, generateRequestId } from "@/lib/auth";
+import { getOrCreateDirectConversation } from "@/lib/supabase/chat-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,65 +56,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: { code: "USER_NOT_FOUND", message: "Target user is unavailable or inactive." } }, { status: 404, headers: NO_CACHE_HEADERS });
     }
 
-    // Check if a DIRECT conversation already exists between these two users
-    const existingConv = await db.conversation.findFirst({
-      where: {
-        type: "DIRECT",
-        AND: [
-          { members: { some: { userId: user.id } } },
-          { members: { some: { userId: targetUserId } } },
-        ],
-      },
-      include: {
-        members: {
-          include: {
-            user: { select: { id: true, fullName: true, username: true, role: true, profileMediaUrl: true } },
-          },
-        },
-      },
-    });
+    // Use authoritative Chat Supabase conversation
+    const { data: conv, error: convErr } = await getOrCreateDirectConversation(user.id, targetUserId);
 
-    if (existingConv) {
-      return NextResponse.json({
-        ok: true,
-        conversationId: existingConv.id,
-        isNew: false,
-        conversation: {
-          id: existingConv.id,
-          type: "DIRECT",
-          peer: {
-            id: targetUser.id,
-            name: targetUser.fullName || targetUser.username,
-            username: targetUser.username,
-            role: targetUser.role,
-            avatarUrl: targetUser.profileMediaUrl,
-          },
-        },
-      }, { headers: NO_CACHE_HEADERS });
+    if (convErr || !conv) {
+      return NextResponse.json({ ok: false, error: { code: "CHAT_ERROR", message: convErr || "Could not open chat." } }, { status: 500, headers: NO_CACHE_HEADERS });
     }
-
-    // Atomically create direct conversation
-    const newConv = await db.conversation.create({
-      data: {
-        type: "DIRECT",
-        title: `${user.username || "User"} & ${targetUser.username}`,
-        createdBy: user.id,
-        members: {
-          create: [
-            { userId: user.id },
-            { userId: targetUserId },
-          ],
-        },
-      },
-    });
 
     return NextResponse.json({
       ok: true,
-      conversationId: newConv.id,
-      isNew: true,
+      conversationId: conv.id,
       conversation: {
-        id: newConv.id,
+        id: conv.id,
         type: "DIRECT",
+        name: targetUser.fullName || targetUser.username,
+        title: targetUser.fullName || targetUser.username,
+        avatarUrl: targetUser.profileMediaUrl,
         peer: {
           id: targetUser.id,
           name: targetUser.fullName || targetUser.username,

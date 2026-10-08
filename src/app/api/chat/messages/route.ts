@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentSessionResult } from "@/lib/auth";
+import { getAuthUserFromRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   chatSupabaseAdmin,
@@ -8,12 +8,10 @@ import {
 } from "@/lib/supabase/chat-admin";
 
 export async function GET(req: NextRequest) {
-  const sessionResult = await getCurrentSessionResult();
-  if (sessionResult.status !== "authenticated") {
+  const user = await getAuthUserFromRequest(req);
+  if (!user) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
-
-  const user = sessionResult.user;
 
   if (!isChatConfigured() || !chatSupabaseAdmin) {
     return NextResponse.json({ ok: true, messages: [] });
@@ -69,12 +67,10 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const sessionResult = await getCurrentSessionResult();
-  if (sessionResult.status !== "authenticated") {
+  const user = await getAuthUserFromRequest(req);
+  if (!user) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
-
-  const user = sessionResult.user;
 
   if (!isChatConfigured() || !chatSupabaseAdmin) {
     return NextResponse.json({ ok: false, error: "Chat service unavailable" }, { status: 503 });

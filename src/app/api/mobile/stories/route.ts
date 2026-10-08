@@ -1,6 +1,9 @@
+import fs from "fs";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { validateSessionResult, getCurrentSessionResult, generateRequestId } from "@/lib/auth";
+import path from "path";
+import crypto from "crypto";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -75,37 +78,44 @@ export async function GET(req: NextRequest) {
     }>();
 
     for (const post of rawStories) {
-      const headerMatch = post.content.match(/^\[CODEXA_STORY:([A-Z_]+)(?::([^\]]+))?\]\n?([\s\S]*)$/);
-      const storyType = headerMatch ? headerMatch[1] : "TEXT";
-      const caption = headerMatch ? headerMatch[3].trim() : post.content;
-      const mediaItem = post.media?.[0]?.mediaUrl || null;
-      const expiresAt = new Date(post.createdAt.getTime() + 24 * 60 * 60 * 1000).toISOString();
+      const author = post.author;
+      if (!author) continue;
 
-      if (!authorMap.has(post.authorId)) {
-        authorMap.set(post.authorId, {
-          authorId: post.authorId,
-          authorName: post.author.fullName || post.author.username,
-          username: post.author.username,
-          avatarUrl: post.author.profileMediaUrl,
-          role: post.author.role,
-          isOwnStory: post.authorId === user.id,
-          hasUnseen: true,
+      let storyType = "TEXT";
+      let audience = "EVERYONE";
+      let caption = post.content;
+
+      const tagMatch = post.content.match(/^\[CODEXA_STORY:([^:]+):([^\]]+)\]\n?([\s\S]*)$/);
+      if (tagMatch) {
+        storyType = tagMatch[1];
+        audience = tagMatch[2];
+        caption = tagMatch[3].trim();
+      }
+
+      if (!authorMap.has(author.id)) {
+        authorMap.set(author.id, {
+          authorId: author.id,
+          authorName: author.fullName || author.username,
+          username: author.username,
+          avatarUrl: author.profileMediaUrl,
+          role: author.role,
+          isOwnStory: author.id === user.id,
+          hasUnseen: author.id !== user.id,
           items: [],
         });
       }
 
-      authorMap.get(post.authorId)!.items.push({
+      authorMap.get(author.id)!.items.push({
         id: post.id,
         type: storyType,
         caption,
-        mediaUrl: mediaItem,
+        mediaUrl: post.media?.[0]?.mediaUrl || null,
         createdAt: post.createdAt.toISOString(),
-        expiresAt,
+        expiresAt: new Date(post.createdAt.getTime() + 24 * 60 * 60 * 1000).toISOString(),
       });
     }
 
-    // Place current user's story first if present
-    const storyGroups = Array.from(authorMap.values()).sort((a, b) => {
+    const stories = Array.from(authorMap.values()).sort((a, b) => {
       if (a.isOwnStory) return -1;
       if (b.isOwnStory) return 1;
       return 0;
@@ -113,7 +123,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      stories: storyGroups,
+      stories,
+      count: stories.length,
     }, { headers: NO_CACHE_HEADERS });
 
   } catch (err: any) {
@@ -131,8 +142,53 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized." } }, { status: 401, headers: NO_CACHE_HEADERS });
     }
 
-    const body = await req.json().catch(() => ({}));
-    const { type = "TEXT", content = "", mediaUrl = null, audience = "EVERYONE" } = body;
+    let type = "TEXT";
+    let content = "";
+    let mediaUrl: string | null = null;
+    let audience = "EVERYONE";
+
+    const contentType = req.headers.get("content-type") || "";
+
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await req.formData();
+      type = (formData.get("type") as string) || "TEXT";
+      content = (formData.get("content") as string) || "";
+      audience = (formData.get("audience") as string) || "EVERYONE";
+
+      const file = formData.get("file") as File | null;
+      if (file && file.size > 0) {
+        const bytes = await file.arrayBuffer();
+        const buffer = Buffer.from(bytes);
+        const ext = path.extname(file.name) || (type === "VIDEO" ? ".mp4" : ".jpg");
+        const filename = `story_${user.id}_${Date.now()}_${crypto.randomBytes(4).toString("hex")}${ext}`;
+        const uploadsDir = path.join(process.cwd(), "public", "uploads", "stories");
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+        fs.writeFileSync(path.join(uploadsDir, filename), buffer);
+        mediaUrl = `https://codxa-agency.online/uploads/stories/${filename}`;
+      }
+    } else {
+      const body = await req.json().catch(() => ({}));
+      type = body.type || "TEXT";
+      content = body.content || "";
+      mediaUrl = body.mediaUrl || null;
+      audience = body.audience || "EVERYONE";
+
+      if (body.base64) {
+        const cleanBase64 = body.base64.replace(/^data:[^;]+;base64,/, "");
+        const buffer = Buffer.from(cleanBase64, "base64");
+        const isVideo = type === "VIDEO" || body.isVideo === true;
+        const ext = isVideo ? ".mp4" : ".jpg";
+        const filename = `story_${user.id}_${Date.now()}_${crypto.randomBytes(4).toString("hex")}${ext}`;
+        const uploadsDir = path.join(process.cwd(), "public", "uploads", "stories");
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+        fs.writeFileSync(path.join(uploadsDir, filename), buffer);
+        mediaUrl = `https://codxa-agency.online/uploads/stories/${filename}`;
+      }
+    }
 
     const validTypes = ["TEXT", "IMAGE", "VIDEO", "PROJECT_UPDATE", "ANNOUNCEMENT", "MILESTONE"];
     const normalizedType = validTypes.includes(type.toUpperCase()) ? type.toUpperCase() : "TEXT";
@@ -141,7 +197,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: { code: "BAD_REQUEST", message: "Story content or media is required." } }, { status: 400, headers: NO_CACHE_HEADERS });
     }
 
-    const storyContent = `[CODEXA_STORY:${normalizedType}:${audience}]\n${content.trim()}`;
+    const storyContent = `[CODEXA_STORY:${normalizedType}:${audience}]
+${content.trim()}`;
 
     const post = await db.post.create({
       data: {
@@ -170,7 +227,7 @@ export async function POST(req: NextRequest) {
         id: post.id,
         type: normalizedType,
         caption: content.trim(),
-        mediaUrl: post.media?.[0]?.mediaUrl || null,
+        mediaUrl: post.media?.[0]?.mediaUrl || mediaUrl || null,
         createdAt: post.createdAt.toISOString(),
         expiresAt: new Date(post.createdAt.getTime() + 24 * 60 * 60 * 1000).toISOString(),
       },
