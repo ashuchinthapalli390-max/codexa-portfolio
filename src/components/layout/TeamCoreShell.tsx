@@ -27,7 +27,8 @@ import {
   Menu,
   Key,
   ToggleRight,
-  Layers
+  Layers,
+  BookOpen,
 } from "lucide-react";
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
 import { 
@@ -159,8 +160,12 @@ export function TeamCoreShell({
       case "CO_FOUNDER":
         return [
           { label: "Dashboard", href: "/owner", icon: LayoutDashboard },
+          { label: "Leave Approvals", href: "/dashboard/leave", icon: Calendar },
           { label: "Scheduled Classes", href: "/dashboard/classes", icon: GraduationCap },
+          { label: "Daily Topics", href: "/dashboard/classes/topics", icon: BookOpen },
           { label: "Assignments & Reviews", href: "/dashboard/assignments", icon: FileText },
+          { label: "CodeXa AI Settings", href: "/dashboard/ai", icon: Sparkles },
+          { label: "Mobile App Control", href: "/dashboard/apps/mobile", icon: Smartphone },
           { label: "MCP Connections", href: "/dashboard/integrations/mcp", icon: Cpu },
           { label: "Crew", href: "/owner?tab=accounts", icon: Users },
           { label: "Employees", href: "/dashboard/employees", icon: Briefcase },
@@ -178,7 +183,6 @@ export function TeamCoreShell({
           { label: "Documents", href: "/dashboard/documents", icon: FileText },
           { label: "Offer Letters", href: "/dashboard/documents?tab=OFFER_LETTERS", icon: Award },
           { label: "Email", href: "/dashboard/email", icon: Mail },
-          { label: "Mobile App", href: "/dashboard/apps/mobile", icon: Smartphone },
           { label: "Apps Center", href: "/dashboard/apps", icon: Layers },
           { label: "Feature Flags", href: "/dashboard/features", icon: Sliders },
           { label: "Audit Logs", href: "/owner?tab=audit", icon: Clock },

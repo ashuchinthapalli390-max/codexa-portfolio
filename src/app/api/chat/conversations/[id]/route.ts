@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthUserFromRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { chatSupabaseAdmin, isChatConfigured } from "@/lib/supabase/chat-admin";
+import { saveMediaUpload } from "@/lib/media-storage";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
@@ -97,6 +98,27 @@ export async function PATCH(
     return NextResponse.json({ ok: false, error: "Not a member of this conversation" }, { status: 403 });
   }
 
+  // Group avatar validation: only group conversations have group icons
+  if (conv.type !== "GROUP") {
+    return NextResponse.json({
+      ok: false,
+      error: { code: "NOT_A_GROUP", message: "Only group conversations can have group settings or icons." },
+    }, { status: 400 });
+  }
+
+  // Permission check for group modifications
+  const isOwnerOrAdmin =
+    member.role === "OWNER" ||
+    member.role === "ADMIN" ||
+    ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "COO", "OWNER", "ADMIN"].includes(user.role);
+
+  if (!isOwnerOrAdmin) {
+    return NextResponse.json({
+      ok: false,
+      error: { code: "FORBIDDEN", message: "Only group administrators or leadership can update group details." },
+    }, { status: 403 });
+  }
+
   let title: string | undefined;
   let iconUrl: string | undefined;
 
@@ -109,13 +131,15 @@ export async function PATCH(
       const bytes = await file.arrayBuffer();
       const buffer = Buffer.from(bytes);
       const ext = path.extname(file.name) || ".jpg";
-      const filename = `group_${conversationId}_${Date.now()}_${crypto.randomBytes(4).toString("hex")}${ext}`;
-      const uploadsDir = path.join(process.cwd(), "public", "uploads", "groups");
-      if (!fs.existsSync(uploadsDir)) {
-        fs.mkdirSync(uploadsDir, { recursive: true });
+      const filename = `group_${conversationId}_${Date.now()}${ext}`;
+      const uploadRes = await saveMediaUpload("group-icons", buffer, filename, file.type || "image/jpeg", conversationId);
+      if (!uploadRes.publicUrl) {
+        return NextResponse.json({
+          ok: false,
+          error: { code: "GROUP_ICON_UPDATE_FAILED", message: "Failed to upload group icon to cloud storage." },
+        }, { status: 500 });
       }
-      fs.writeFileSync(path.join(uploadsDir, filename), buffer);
-      iconUrl = `https://codxa-agency.online/uploads/groups/${filename}`;
+      iconUrl = uploadRes.publicUrl;
     }
   } else {
     const body = await req.json().catch(() => ({}));
@@ -125,22 +149,16 @@ export async function PATCH(
     if (body.base64) {
       const cleanBase64 = body.base64.replace(/^data:[^;]+;base64,/, "");
       const buffer = Buffer.from(cleanBase64, "base64");
-      const filename = `group_${conversationId}_${Date.now()}_${crypto.randomBytes(4).toString("hex")}.jpg`;
-      const uploadsDir = path.join(process.cwd(), "public", "uploads", "groups");
-      if (!fs.existsSync(uploadsDir)) {
-        fs.mkdirSync(uploadsDir, { recursive: true });
+      const filename = `group_${conversationId}_${Date.now()}.jpg`;
+      const uploadRes = await saveMediaUpload("group-icons", buffer, filename, "image/jpeg", conversationId);
+      if (!uploadRes.publicUrl) {
+        return NextResponse.json({
+          ok: false,
+          error: { code: "GROUP_ICON_UPDATE_FAILED", message: "Failed to upload group icon to cloud storage." },
+        }, { status: 500 });
       }
-      fs.writeFileSync(path.join(uploadsDir, filename), buffer);
-      iconUrl = `https://codxa-agency.online/uploads/groups/${filename}`;
+      iconUrl = uploadRes.publicUrl;
     }
-  }
-
-  // Group avatar validation: only group conversations have group icons
-  if (iconUrl && conv.type !== "GROUP") {
-    return NextResponse.json({
-      ok: false,
-      error: "Only group conversations can have a group icon.",
-    }, { status: 400 });
   }
 
   const existingMeta = conv.metadata || {};

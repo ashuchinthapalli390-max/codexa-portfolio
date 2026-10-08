@@ -1,3 +1,4 @@
+import { saveMediaUpload } from '@/lib/media-storage';
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUserFromRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -120,32 +121,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "clientMessageId required" }, { status: 400 });
     }
 
-    // Handle base64 image or mediaUrl upload
+    // Handle base64 image/video or mediaUrl upload (Cloud-first Supabase storage)
     let savedMediaUrl = "";
     if (mediaUrlInput && typeof mediaUrlInput === "string") {
-      messageType = "IMAGE";
-      if (mediaUrlInput.startsWith("data:image")) {
+      const isVideo = mediaUrlInput.startsWith("data:video") || messageType === "VIDEO";
+      messageType = isVideo ? "VIDEO" : "IMAGE";
+
+      if (mediaUrlInput.startsWith("data:")) {
         try {
-          const match = mediaUrlInput.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
-          if (match) {
-            const ext = match[1] === "jpeg" ? "jpg" : match[1];
-            const cleanBase64 = match[2];
+          const dataUriMatch = mediaUrlInput.match(/^data:([^;]+);base64,(.+)$/);
+          if (dataUriMatch) {
+            const mime = dataUriMatch[1];
+            const cleanBase64 = dataUriMatch[2];
             const buffer = Buffer.from(cleanBase64, "base64");
-            const filename = `chat_${conversationId}_${Date.now()}_${crypto.randomBytes(4).toString("hex")}.${ext}`;
-            const uploadsDir = path.join(process.cwd(), "public", "uploads", "chat");
-            if (!fs.existsSync(uploadsDir)) {
-              fs.mkdirSync(uploadsDir, { recursive: true });
-            }
-            fs.writeFileSync(path.join(uploadsDir, filename), buffer);
-            savedMediaUrl = `https://codxa-agency.online/uploads/chat/${filename}`;
-            text = text && text !== "[Image Attached]" ? text : savedMediaUrl;
+            const ext = mime.includes("video") ? ".mp4" : (mime.includes("png") ? ".png" : ".jpg");
+            const filename = `chat_${conversationId}_${Date.now()}_${crypto.randomBytes(4).toString("hex")}${ext}`;
+            
+            const uploadRes = await saveMediaUpload("chat-media", buffer, filename, mime, conversationId);
+            savedMediaUrl = uploadRes.publicUrl;
+            text = text && text !== "[Image Attached]" && text !== "[Video Attached]" ? text : savedMediaUrl;
           }
         } catch (mediaErr) {
-          console.warn("[Media base64 save warning]", mediaErr);
+          console.warn("[Chat media save warning]", mediaErr);
         }
       } else if (mediaUrlInput.startsWith("http")) {
         savedMediaUrl = mediaUrlInput;
-        text = text && text !== "[Image Attached]" ? text : savedMediaUrl;
+        text = text && text !== "[Image Attached]" && text !== "[Video Attached]" ? text : savedMediaUrl;
       }
     }
 

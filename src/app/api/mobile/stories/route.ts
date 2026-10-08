@@ -1,9 +1,7 @@
-import fs from "fs";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { validateSessionResult, getCurrentSessionResult, generateRequestId } from "@/lib/auth";
-import path from "path";
-import crypto from "crypto";
+import { saveMediaUpload } from "@/lib/media-storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -58,7 +56,6 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: "desc" },
     });
 
-    // Group stories by author
     const authorMap = new Map<string, {
       authorId: string;
       authorName: string;
@@ -159,14 +156,14 @@ export async function POST(req: NextRequest) {
       if (file && file.size > 0) {
         const bytes = await file.arrayBuffer();
         const buffer = Buffer.from(bytes);
-        const ext = path.extname(file.name) || (type === "VIDEO" ? ".mp4" : ".jpg");
-        const filename = `story_${user.id}_${Date.now()}_${crypto.randomBytes(4).toString("hex")}${ext}`;
-        const uploadsDir = path.join(process.cwd(), "public", "uploads", "stories");
-        if (!fs.existsSync(uploadsDir)) {
-          fs.mkdirSync(uploadsDir, { recursive: true });
-        }
-        fs.writeFileSync(path.join(uploadsDir, filename), buffer);
-        mediaUrl = `https://codxa-agency.online/uploads/stories/${filename}`;
+        const uploadRes = await saveMediaUpload(
+          "stories",
+          buffer,
+          file.name || "story.jpg",
+          file.type || (type === "VIDEO" ? "video/mp4" : "image/jpeg"),
+          user.id
+        );
+        mediaUrl = uploadRes.publicUrl;
       }
     } else {
       const body = await req.json().catch(() => ({}));
@@ -179,14 +176,14 @@ export async function POST(req: NextRequest) {
         const cleanBase64 = body.base64.replace(/^data:[^;]+;base64,/, "");
         const buffer = Buffer.from(cleanBase64, "base64");
         const isVideo = type === "VIDEO" || body.isVideo === true;
-        const ext = isVideo ? ".mp4" : ".jpg";
-        const filename = `story_${user.id}_${Date.now()}_${crypto.randomBytes(4).toString("hex")}${ext}`;
-        const uploadsDir = path.join(process.cwd(), "public", "uploads", "stories");
-        if (!fs.existsSync(uploadsDir)) {
-          fs.mkdirSync(uploadsDir, { recursive: true });
-        }
-        fs.writeFileSync(path.join(uploadsDir, filename), buffer);
-        mediaUrl = `https://codxa-agency.online/uploads/stories/${filename}`;
+        const uploadRes = await saveMediaUpload(
+          "stories",
+          buffer,
+          isVideo ? "story.mp4" : "story.jpg",
+          isVideo ? "video/mp4" : "image/jpeg",
+          user.id
+        );
+        mediaUrl = uploadRes.publicUrl;
       }
     }
 

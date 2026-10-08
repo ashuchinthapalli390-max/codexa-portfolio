@@ -244,6 +244,53 @@ export async function GET(req: NextRequest) {
     const totalMarkedSlots = presentCount + lateCount + leaveCount + absentCount;
     const percentage = totalMarkedSlots > 0 ? Math.round(((presentCount + lateCount) / totalMarkedSlots) * 100) : 100;
 
+    // Embed scheduled classes and topics below attendance
+    const todayDateStr = now.toISOString().split("T")[0];
+    const userDomain = user.employmentProfile?.internshipDomain || user.department || "All Domains";
+    const classes = await db.scheduledClass.findMany({
+      where: {
+        OR: [
+          { domain: "All Domains" },
+          { domain: { contains: userDomain, mode: "insensitive" } },
+          { domain: "Technical Track" },
+          { domain: "Full Stack" },
+        ],
+      },
+      orderBy: [
+        { classDate: "asc" },
+        { startTime: "asc" },
+      ],
+      take: 10,
+    });
+
+    const formattedClasses = classes.map((c) => ({
+      id: c.id,
+      title: c.title,
+      domain: c.domain,
+      batch: c.batch,
+      topic: c.topic,
+      subtopics: c.subtopics,
+      instructorId: c.instructorId,
+      instructorName: c.instructorName,
+      instructor_name: c.instructorName,
+      classDate: c.classDate.toISOString().split("T")[0],
+      class_date: c.classDate.toISOString().split("T")[0],
+      startTime: c.startTime,
+      start_time: c.startTime,
+      endTime: c.endTime,
+      end_time: c.endTime,
+      duration: c.duration,
+      status: c.status,
+      mode: c.mode,
+      meetingLink: c.meetingLink,
+      meeting_link: c.meetingLink,
+      learningObjectives: c.learningObjectives,
+      learning_objectives: c.learningObjectives,
+      resources: c.resources,
+      recordingUrl: c.recordingUrl,
+      recording_url: c.recordingUrl,
+    }));
+
     return NextResponse.json({
       ok: true,
       isManagement: false,
@@ -275,6 +322,9 @@ export async function GET(req: NextRequest) {
         absentCount,
         percentage,
       },
+      scheduledClasses: formattedClasses,
+      todayClasses: formattedClasses.filter((c) => c.classDate === todayDateStr),
+      classes: formattedClasses,
       history: allMyRecords.map((r: any) => ({
         id: r.id,
         date: r.createdAt.toISOString().split("T")[0],

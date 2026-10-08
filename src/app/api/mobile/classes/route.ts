@@ -35,7 +35,34 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized." } }, { status: 401, headers: NO_CACHE_HEADERS });
     }
 
+    const { searchParams } = new URL(req.url);
+    const dateParam = searchParams.get("date"); // YYYY-MM-DD
+    const monthParam = searchParams.get("month"); // YYYY-MM
+
     const todayStr = new Date().toISOString().split("T")[0];
+
+    // If specific date requested
+    if (dateParam) {
+      const dateClasses = await db.$queryRawUnsafe<any[]>(`
+        SELECT 
+          id, title, domain, batch, topic, subtopics, instructor_id, instructor_name,
+          to_char(class_date, 'YYYY-MM-DD') as class_date,
+          start_time, end_time, duration, status, mode, meeting_link, learning_objectives, resources, recording_url,
+          created_at
+        FROM scheduled_classes
+        WHERE class_date = $1::date
+        ORDER BY start_time ASC
+      `, dateParam);
+
+      return NextResponse.json({
+        ok: true,
+        selectedDate: dateParam,
+        today: dateClasses,
+        classes: dateClasses,
+        upcoming: [],
+        count: dateClasses.length,
+      }, { headers: NO_CACHE_HEADERS });
+    }
 
     const todayClasses = await db.$queryRawUnsafe<any[]>(`
       SELECT 
@@ -72,11 +99,20 @@ export async function GET(req: NextRequest) {
       LIMIT 10
     `, todayStr);
 
+    // Also get all scheduled dates in current month or next 30 days for calendar indicators
+    const scheduledDates = await db.$queryRawUnsafe<any[]>(`
+      SELECT DISTINCT to_char(class_date, 'YYYY-MM-DD') as class_date, count(*)::int as count
+      FROM scheduled_classes
+      GROUP BY class_date
+      ORDER BY class_date ASC
+    `);
+
     return NextResponse.json({
       ok: true,
       today: todayClasses,
       upcoming: upcomingClasses,
       past: pastClasses,
+      scheduledDates: scheduledDates.map((d: any) => ({ date: d.class_date, count: d.count })),
       count: todayClasses.length + upcomingClasses.length,
     }, { headers: NO_CACHE_HEADERS });
 
@@ -162,5 +198,90 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     console.error(`[POST /api/mobile/classes] [${requestId}]`, err);
     return NextResponse.json({ ok: false, error: { code: "SERVER_ERROR", message: "Failed to schedule class." } }, { status: 500, headers: NO_CACHE_HEADERS });
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  const requestId = generateRequestId();
+
+  try {
+    const user = await resolveRequestUser(req);
+    if (!user) {
+      return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized." } }, { status: 401, headers: NO_CACHE_HEADERS });
+    }
+
+    const role = getEffectiveRole(user);
+    const canSchedule = ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "OWNER", "ADMIN"].includes(role);
+    if (!canSchedule) {
+      return NextResponse.json({ ok: false, error: { code: "FORBIDDEN", message: "Leadership permission required." } }, { status: 403, headers: NO_CACHE_HEADERS });
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const { id, title, topic, subtopics, classDate, startTime, endTime, status, meetingLink, resources } = body;
+
+    if (!id) {
+      return NextResponse.json({ ok: false, error: { code: "BAD_REQUEST", message: "Class ID is required." } }, { status: 400, headers: NO_CACHE_HEADERS });
+    }
+
+    const updateData: any = {};
+    if (title) updateData.title = title;
+    if (topic) updateData.topic = topic;
+    if (subtopics) updateData.subtopics = subtopics;
+    if (status) updateData.status = status;
+    if (meetingLink !== undefined) updateData.meetingLink = meetingLink;
+    if (resources !== undefined) updateData.resources = resources;
+    if (startTime) updateData.startTime = startTime;
+    if (endTime) updateData.endTime = endTime;
+    if (classDate) updateData.classDate = new Date(classDate);
+
+    const updated = await db.scheduledClass.update({
+      where: { id },
+      data: updateData,
+    });
+
+    return NextResponse.json({
+      ok: true,
+      message: "Class updated successfully.",
+      class: updated,
+    }, { headers: NO_CACHE_HEADERS });
+  } catch (err: any) {
+    console.error(`[PATCH /api/mobile/classes] [${requestId}]`, err);
+    return NextResponse.json({ ok: false, error: { code: "SERVER_ERROR", message: "Failed to update class: " + err.message } }, { status: 500, headers: NO_CACHE_HEADERS });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  const requestId = generateRequestId();
+
+  try {
+    const user = await resolveRequestUser(req);
+    if (!user) {
+      return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized." } }, { status: 401, headers: NO_CACHE_HEADERS });
+    }
+
+    const role = getEffectiveRole(user);
+    const canDelete = ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "OWNER"].includes(role);
+    if (!canDelete) {
+      return NextResponse.json({ ok: false, error: { code: "FORBIDDEN", message: "Leadership permission required to delete class." } }, { status: 403, headers: NO_CACHE_HEADERS });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json({ ok: false, error: { code: "BAD_REQUEST", message: "Class ID is required." } }, { status: 400, headers: NO_CACHE_HEADERS });
+    }
+
+    await db.scheduledClass.delete({
+      where: { id },
+    });
+
+    return NextResponse.json({
+      ok: true,
+      message: "Class removed successfully.",
+    }, { headers: NO_CACHE_HEADERS });
+  } catch (err: any) {
+    console.error(`[DELETE /api/mobile/classes] [${requestId}]`, err);
+    return NextResponse.json({ ok: false, error: { code: "SERVER_ERROR", message: "Failed to delete class: " + err.message } }, { status: 500, headers: NO_CACHE_HEADERS });
   }
 }

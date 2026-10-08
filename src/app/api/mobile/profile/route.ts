@@ -138,3 +138,5 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: false, error: { code: "SERVER_ERROR" } }, { status: 500 });
   }
 }
+
+export const PUT = PATCH;

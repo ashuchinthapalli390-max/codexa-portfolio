@@ -45,72 +45,94 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "100", 10)));
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const andConditions: any[] = [];
 
     // Role filtering with null-safe and active status protection
-    if (roleFilter === "INTERNS") {
-      where.role = "INTERN";
-      where.OR = [
-        { isActive: true },
-        { employmentProfile: { status: "ACTIVE" } },
-      ];
-    } else if (roleFilter === "EMPLOYEES") {
-      where.role = { in: ["EMPLOYEE", "CONTRACTOR"] };
-      where.isActive = true;
-    } else if (roleFilter === "MANAGEMENT") {
-      where.role = { in: ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "COO", "OWNER", "ADMIN"] };
-      where.isActive = true;
+    if (roleFilter === "INTERNS" || roleFilter === "INTERN") {
+      andConditions.push({
+        OR: [
+          { role: "INTERN" },
+          { orgRole: "INTERN" },
+        ],
+      });
+      andConditions.push({
+        OR: [
+          { isActive: true },
+          { employmentProfile: { status: "ACTIVE" } },
+        ],
+      });
+    } else if (roleFilter === "EMPLOYEES" || roleFilter === "EMPLOYEE") {
+      andConditions.push({
+        OR: [
+          { role: { in: ["EMPLOYEE", "CONTRACTOR"] } },
+          { orgRole: { in: ["EMPLOYEE", "CONTRACTOR"] } },
+        ],
+      });
+      andConditions.push({ isActive: true });
+    } else if (roleFilter === "MANAGEMENT" || roleFilter === "LEADERSHIP") {
+      andConditions.push({
+        OR: [
+          { role: { in: ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "COO", "OWNER", "ADMIN"] } },
+          { orgRole: { in: ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "COO", "OWNER", "ADMIN"] } },
+        ],
+      });
+      andConditions.push({ isActive: true });
     } else {
-      where.isActive = true;
+      andConditions.push({ isActive: true });
     }
 
     // Department filtering
     if (deptFilter && deptFilter !== "ALL") {
-      where.OR = [
-        { department: { contains: deptFilter, mode: "insensitive" } },
-        { employmentProfile: { department: { contains: deptFilter, mode: "insensitive" } } },
-      ];
+      andConditions.push({
+        OR: [
+          { department: { contains: deptFilter, mode: "insensitive" } },
+          { employmentProfile: { department: { contains: deptFilter, mode: "insensitive" } } },
+          { employmentProfile: { internshipDomain: { contains: deptFilter, mode: "insensitive" } } },
+        ],
+      });
     }
 
-    // Keyword search (Name, username, Employee ID, Intern ID, designation, skills)
+    // Keyword search (Name, username, Employee ID, Intern ID, designation, skills, college)
     if (query) {
-      where.AND = [
-        {
-          OR: [
-            { fullName: { contains: query, mode: "insensitive" } },
-            { username: { contains: query, mode: "insensitive" } },
-            { email: { contains: query, mode: "insensitive" } },
-            { department: { contains: query, mode: "insensitive" } },
-            {
-              employmentProfile: {
-                OR: [
-                  { employeeId: { contains: query, mode: "insensitive" } },
-                  { designation: { contains: query, mode: "insensitive" } },
-                  { department: { contains: query, mode: "insensitive" } },
-                ],
+      andConditions.push({
+        OR: [
+          { fullName: { contains: query, mode: "insensitive" } },
+          { username: { contains: query, mode: "insensitive" } },
+          { email: { contains: query, mode: "insensitive" } },
+          { department: { contains: query, mode: "insensitive" } },
+          {
+            employmentProfile: {
+              OR: [
+                { employeeId: { contains: query, mode: "insensitive" } },
+                { designation: { contains: query, mode: "insensitive" } },
+                { department: { contains: query, mode: "insensitive" } },
+                { internshipDomain: { contains: query, mode: "insensitive" } },
+                { college: { contains: query, mode: "insensitive" } },
+              ],
+            },
+          },
+          {
+            profile: {
+              OR: [
+                { displayName: { contains: query, mode: "insensitive" } },
+                { primaryRole: { contains: query, mode: "insensitive" } },
+                { headline: { contains: query, mode: "insensitive" } },
+                { bio: { contains: query, mode: "insensitive" } },
+              ],
+            },
+          },
+          {
+            skills: {
+              some: {
+                skillName: { contains: query, mode: "insensitive" },
               },
             },
-            {
-              profile: {
-                OR: [
-                  { displayName: { contains: query, mode: "insensitive" } },
-                  { primaryRole: { contains: query, mode: "insensitive" } },
-                  { headline: { contains: query, mode: "insensitive" } },
-                  { bio: { contains: query, mode: "insensitive" } },
-                ],
-              },
-            },
-            {
-              skills: {
-                some: {
-                  skillName: { contains: query, mode: "insensitive" },
-                },
-              },
-            },
-          ],
-        },
-      ];
+          },
+        ],
+      });
     }
+
+    const where: any = andConditions.length > 0 ? { AND: andConditions } : {};
 
     const [total, users] = await Promise.all([
       db.user.count({ where }),
@@ -169,10 +191,11 @@ export async function GET(req: NextRequest) {
         department: emp?.internshipDomain || emp?.department || u.department || "General",
         designation: emp?.designation || u.profile?.primaryRole || u.role,
         employeeId: emp?.employeeId || null,
-        profileMediaUrl: u.profileMediaUrl || u.profile?.mediaUrl || null,
+        profileMediaUrl: u.profileMediaUrl || u.profile?.profileMediaUrl || u.profile?.mediaUrl || null,
         headline: u.profile?.headline || null,
         bio: u.profile?.bio || null,
         skills: skillsList,
+        isActive: u.isActive,
         isSelf: u.id === caller.id,
         internship: emp ? {
           internId: emp.employeeId || null,

@@ -27,7 +27,7 @@ async function resolveRequestUser(req: NextRequest) {
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { username: string } }
+  { params }: { params: { id: string } }
 ) {
   const requestId = generateRequestId();
 
@@ -40,25 +40,24 @@ export async function GET(
       );
     }
 
-    const rawUsername = params.username?.trim();
-    if (!rawUsername) {
+    const rawIdentifier = params.id?.trim();
+    if (!rawIdentifier) {
       return NextResponse.json(
-        { ok: false, error: { code: "BAD_REQUEST", message: "Username parameter missing." }, requestId },
+        { ok: false, error: { code: "BAD_REQUEST", message: "User identifier missing." }, requestId },
         { status: 400, headers: NO_CACHE_HEADERS }
       );
     }
 
-    const cleanUsername = rawUsername.replace(/^@/, "");
+    const cleanIdentifier = rawIdentifier.replace(/^@/, "");
 
     const user = await db.user.findFirst({
       where: {
         OR: [
-          { username: { equals: cleanUsername, mode: "insensitive" } },
-          { id: cleanUsername },
-          { email: { equals: cleanUsername, mode: "insensitive" } },
-          { employmentProfile: { employeeId: { equals: cleanUsername, mode: "insensitive" } } },
+          { id: cleanIdentifier },
+          { username: { equals: cleanIdentifier, mode: "insensitive" } },
+          { email: { equals: cleanIdentifier, mode: "insensitive" } },
+          { employmentProfile: { employeeId: { equals: cleanIdentifier, mode: "insensitive" } } },
         ],
-        isActive: true,
       },
       include: {
         profile: true,
@@ -80,6 +79,7 @@ export async function GET(
             referenceNumber: true,
             joiningDate: true,
             endDate: true,
+            status: true,
           },
         },
         skills: {
@@ -135,12 +135,12 @@ export async function GET(
       yearOfStudy: emp?.yearOfStudy || null,
       academicBranch: emp?.academicBranch || null,
       referenceNumber: emp?.referenceNumber || null,
-      profileMediaUrl: user.profileMediaUrl || user.profile?.profileMediaUrl || user.profile?.mediaUrl || null,
+      profileMediaUrl: user.profileMediaUrl || user.profile?.mediaUrl || null,
       headline: user.profile?.headline || null,
       bio: user.profile?.bio || user.profile?.publicBio || null,
-      status: emp?.status || (user.isActive ? "ACTIVE" : "INACTIVE"),
       mentorName: emp?.mentorName || null,
       joiningDate: emp?.joiningDate?.toISOString() || null,
+      status: emp?.status || (user.isActive ? "ACTIVE" : "INACTIVE"),
       skills: user.skills.map((s) => s.skillName),
       links: user.links,
       githubUrl: user.profile?.githubUrl || null,
@@ -148,29 +148,18 @@ export async function GET(
       portfolioUrl: user.profile?.portfolioUrl || null,
       projects: combinedProjects,
       isSelf: user.id === caller.id,
-      internship: emp ? {
-        internId: emp.employeeId || null,
-        domain: emp.internshipDomain || emp.department || "Technical Track",
-        duration: emp.internshipDuration || (emp.internshipDurationMonths ? `${emp.internshipDurationMonths} Months` : "3 Months"),
-        months: emp.internshipDurationMonths || 3,
-        startDate: emp?.internshipStartDate ? new Date(emp.internshipStartDate).toISOString().split("T")[0] : (emp?.joiningDate ? new Date(emp.joiningDate).toISOString().split("T")[0] : null),
-        endDate: emp?.internshipEndDate ? new Date(emp.internshipEndDate).toISOString().split("T")[0] : (emp?.endDate ? new Date(emp.endDate).toISOString().split("T")[0] : null),
-        mentor: emp.mentorName || "Shaik Ashu (Founder)",
-        status: emp.status || "ACTIVE",
-        college: emp.college || null,
-        academicBranch: emp.academicBranch || null,
-        referenceNumber: emp.referenceNumber || null,
-      } : null,
     };
 
-    return NextResponse.json({
-      ok: true,
-      profile: safeProfile,
-      requestId,
-    }, { headers: NO_CACHE_HEADERS });
-
+    return NextResponse.json(
+      {
+        ok: true,
+        profile: safeProfile,
+        requestId,
+      },
+      { headers: NO_CACHE_HEADERS }
+    );
   } catch (err: any) {
-    console.error(`[GET /api/mobile/profile/:username error] [${requestId}]`, err);
+    console.error(`[GET /api/mobile/people/:id/profile error] [${requestId}]`, err);
     return NextResponse.json(
       { ok: false, error: { code: "SERVER_ERROR", message: "Could not load profile." }, requestId },
       { status: 500, headers: NO_CACHE_HEADERS }

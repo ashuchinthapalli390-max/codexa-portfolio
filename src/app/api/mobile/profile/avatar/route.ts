@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { validateSessionResult, getCurrentSessionResult, generateRequestId } from "@/lib/auth";
-import path from "path";
-import crypto from "crypto";
-import fs from "fs";
+import { uploadMediaFile } from "@/lib/media-storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,7 +32,10 @@ export async function POST(req: NextRequest) {
   try {
     const user = await resolveRequestUser(req);
     if (!user) {
-      return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized." } }, { status: 401, headers: NO_CACHE_HEADERS });
+      return NextResponse.json(
+        { ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized. Please log in." } },
+        { status: 401, headers: NO_CACHE_HEADERS }
+      );
     }
 
     let mediaUrl = "";
@@ -54,17 +55,21 @@ export async function POST(req: NextRequest) {
       if (file && file.size > 0) {
         const bytes = await file.arrayBuffer();
         const buffer = Buffer.from(bytes);
-        const ext = path.extname(file.name) || ".jpg";
-        const safeExt = [".jpg", ".jpeg", ".png", ".webp"].includes(ext.toLowerCase()) ? ext.toLowerCase() : ".jpg";
-        const filename = `avatar_${user.id}_${Date.now()}_${crypto.randomBytes(4).toString("hex")}${safeExt}`;
-        
-        const uploadsDir = path.join(process.cwd(), "public", "uploads", "avatars");
-        if (!fs.existsSync(uploadsDir)) {
-          fs.mkdirSync(uploadsDir, { recursive: true });
+        const uploadRes = await uploadMediaFile({
+          userId: user.id,
+          category: "AVATAR",
+          fileBuffer: buffer,
+          originalFilename: file.name,
+          mimeType: file.type,
+        });
+
+        if (!uploadRes.success) {
+          return NextResponse.json(
+            { ok: false, error: { code: "PHOTO_UPLOAD_FAILED", message: uploadRes.error || "Failed to upload avatar." }, requestId },
+            { status: 400, headers: NO_CACHE_HEADERS }
+          );
         }
-        
-        fs.writeFileSync(path.join(uploadsDir, filename), buffer);
-        mediaUrl = `https://codxa-agency.online/uploads/avatars/${filename}`;
+        mediaUrl = uploadRes.publicUrl;
       } else {
         mediaUrl = (formData.get("mediaUrl") as string) || "";
       }
@@ -75,30 +80,45 @@ export async function POST(req: NextRequest) {
       zoom = Number(body.zoom || 1);
 
       if (body.base64) {
-        const cleanBase64 = body.base64.replace(/^data:image\/\w+;base64,/, "");
+        const cleanBase64 = body.base64.replace(/^data:[^;]+;base64,/, "");
         const buffer = Buffer.from(cleanBase64, "base64");
-        const filename = `avatar_${user.id}_${Date.now()}_${crypto.randomBytes(4).toString("hex")}.jpg`;
-        const uploadsDir = path.join(process.cwd(), "public", "uploads", "avatars");
-        if (!fs.existsSync(uploadsDir)) {
-          fs.mkdirSync(uploadsDir, { recursive: true });
+        const uploadRes = await uploadMediaFile({
+          userId: user.id,
+          category: "AVATAR",
+          fileBuffer: buffer,
+          originalFilename: body.filename || `avatar_${Date.now()}.jpg`,
+          mimeType: "image/jpeg",
+        });
+
+        if (!uploadRes.success) {
+          return NextResponse.json(
+            { ok: false, error: { code: "PHOTO_UPLOAD_FAILED", message: uploadRes.error || "Failed to upload avatar." }, requestId },
+            { status: 400, headers: NO_CACHE_HEADERS }
+          );
         }
-        fs.writeFileSync(path.join(uploadsDir, filename), buffer);
-        mediaUrl = `https://codxa-agency.online/uploads/avatars/${filename}`;
+        mediaUrl = uploadRes.publicUrl;
       } else {
         mediaUrl = body.mediaUrl || "";
       }
     }
 
-    if (!mediaUrl) {
-      return NextResponse.json({ ok: false, error: { code: "MISSING_IMAGE", message: "Image file or valid data is required." } }, { status: 400, headers: NO_CACHE_HEADERS });
+    const isRemoving = mediaUrl === "" || mediaUrl === "REMOVE";
+
+    if (!mediaUrl && !isRemoving) {
+      return NextResponse.json(
+        { ok: false, error: { code: "MISSING_IMAGE", message: "Image file or valid image data is required." } },
+        { status: 400, headers: NO_CACHE_HEADERS }
+      );
     }
 
-    // Update user profile image in database
+    const targetUrl = isRemoving ? null : mediaUrl;
+
+    // Update both User and TeamProfile records in database
     await Promise.all([
       db.user.update({
         where: { id: user.id },
         data: {
-          profileMediaUrl: mediaUrl,
+          profileMediaUrl: targetUrl,
           cropX,
           cropY,
           zoom,
@@ -107,8 +127,8 @@ export async function POST(req: NextRequest) {
       db.teamProfile.upsert({
         where: { userId: user.id },
         update: {
-          profileMediaUrl: mediaUrl,
-          mediaUrl: mediaUrl,
+          profileMediaUrl: targetUrl,
+          mediaUrl: targetUrl,
           cropX,
           cropY,
           zoom,
@@ -116,33 +136,43 @@ export async function POST(req: NextRequest) {
         create: {
           userId: user.id,
           displayName: user.displayName || user.username || "Team Member",
-          profileMediaUrl: mediaUrl,
-          mediaUrl: mediaUrl,
+          profileMediaUrl: targetUrl,
+          mediaUrl: targetUrl,
           cropX,
           cropY,
           zoom,
         },
       }),
-      db.mediaAsset.create({
-        data: {
-          userId: user.id,
-          mediaType: "AVATAR",
-          publicUrl: mediaUrl,
-          cropX,
-          cropY,
-          zoom,
-        },
-      }).catch(() => {}),
+      !isRemoving && targetUrl
+        ? db.mediaAsset.create({
+            data: {
+              userId: user.id,
+              mediaType: "AVATAR",
+              publicUrl: targetUrl,
+              cropX,
+              cropY,
+              zoom,
+            },
+          }).catch(() => {})
+        : Promise.resolve(),
     ]);
 
-    return NextResponse.json({
-      ok: true,
-      message: "Avatar updated successfully.",
-      avatarUrl: mediaUrl,
-    }, { headers: NO_CACHE_HEADERS });
-
+    return NextResponse.json(
+      {
+        ok: true,
+        success: true,
+        message: isRemoving ? "Profile photo removed." : "Profile photo updated successfully across website and mobile.",
+        avatarUrl: targetUrl,
+        publicUrl: targetUrl,
+        requestId,
+      },
+      { headers: NO_CACHE_HEADERS }
+    );
   } catch (err: any) {
     console.error(`[POST /api/mobile/profile/avatar] [${requestId}]`, err);
-    return NextResponse.json({ ok: false, error: { code: "SERVER_ERROR", message: "Failed to update profile picture." } }, { status: 500, headers: NO_CACHE_HEADERS });
+    return NextResponse.json(
+      { ok: false, error: { code: "PHOTO_UPLOAD_FAILED", message: err?.message || "Failed to update profile photo." }, requestId },
+      { status: 500, headers: NO_CACHE_HEADERS }
+    );
   }
 }
