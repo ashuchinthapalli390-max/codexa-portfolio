@@ -31,11 +31,11 @@ export async function GET(req: NextRequest) {
         r.id, r.user_id, r.resource_type, r.reason, r.status,
         r.reviewer_decision, r.reviewer_notes, r.reviewed_by_name, r.reviewed_at,
         r.provisioning_status, r.provisioned_at, r.activation_instructions, r.requested_at,
-        u.full_name, u.username, u.email, u.role,
-        ep.intern_id, ep.employee_id, ep.department
+        u."fullName" as full_name, u.username, u.email, u.role,
+        ep."employeeId" as intern_id, ep."employeeId" as employee_id, ep.department
       FROM ai_access_requests r
       JOIN "User" u ON u.id = r.user_id
-      LEFT JOIN "EmploymentProfile" ep ON ep.user_id = u.id
+      LEFT JOIN "EmploymentProfile" ep ON ep."userId" = u.id
       ORDER BY r.requested_at DESC
       LIMIT 100
     `);

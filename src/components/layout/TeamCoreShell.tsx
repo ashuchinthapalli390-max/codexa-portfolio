@@ -158,6 +158,8 @@ export function TeamCoreShell({
       case "CO_FOUNDER":
         return [
           { label: "Dashboard", href: "/owner", icon: LayoutDashboard },
+          { label: "Scheduled Classes", href: "/dashboard/classes", icon: GraduationCap },
+          { label: "Assignments & Reviews", href: "/dashboard/assignments", icon: FileText },
           { label: "MCP Connections", href: "/dashboard/integrations/mcp", icon: Cpu },
           { label: "Crew", href: "/owner?tab=accounts", icon: Users },
           { label: "Employees", href: "/dashboard/employees", icon: Briefcase },
@@ -202,6 +204,8 @@ export function TeamCoreShell({
       case "CTO":
         return [
           { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+          { label: "Scheduled Classes", href: "/dashboard/classes", icon: GraduationCap },
+          { label: "Assignments & Reviews", href: "/dashboard/assignments", icon: FileText },
           { label: "Projects", href: "/admin?tab=projects", icon: FolderGit2 },
           { label: "Project Approvals", href: "/dashboard/approvals?type=PROJECT", icon: CheckCircle2 },
           { label: "Employees", href: "/dashboard/employees", icon: Briefcase },
@@ -221,6 +225,8 @@ export function TeamCoreShell({
           { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
           { label: "Employees", href: "/dashboard/employees", icon: Briefcase },
           { label: "Interns", href: "/dashboard/interns", icon: GraduationCap },
+          { label: "Scheduled Classes", href: "/dashboard/classes", icon: GraduationCap },
+          { label: "Assignments", href: "/dashboard/assignments", icon: FileText },
           { label: "Profiles", href: "/team", icon: User },
           { label: "Attendance", href: "/dashboard/attendance", icon: Clock },
           { label: "UPI Verification", href: "/dashboard/payments", icon: Receipt },
@@ -239,6 +245,7 @@ export function TeamCoreShell({
           { label: "Crew", href: "/dashboard/accounts", icon: Users },
           { label: "Employees", href: "/dashboard/employees", icon: Briefcase },
           { label: "Interns", href: "/dashboard/interns", icon: GraduationCap },
+          { label: "Scheduled Classes", href: "/dashboard/classes", icon: GraduationCap },
           { label: "Profiles", href: "/team", icon: User },
           { label: "Attendance Summary", href: "/dashboard/attendance", icon: Clock },
           { label: "UPI Payments", href: "/dashboard/payments", icon: Receipt },
@@ -253,6 +260,8 @@ export function TeamCoreShell({
           { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
           { label: "My Profile", href: "/dashboard/profile", icon: User },
           { label: "Internship Details", href: "/dashboard/interns", icon: GraduationCap },
+          { label: "Scheduled Classes", href: "/dashboard/classes", icon: GraduationCap },
+          { label: "My Assignments", href: "/dashboard/assignments", icon: FileText },
           { label: "Payments", href: "/dashboard/payments", icon: Receipt },
           { label: "Offer Letter", href: "/dashboard/documents?tab=OFFER_LETTERS", icon: Award },
           { label: "Documents", href: "/dashboard/documents?tab=ALL", icon: FileCheck },

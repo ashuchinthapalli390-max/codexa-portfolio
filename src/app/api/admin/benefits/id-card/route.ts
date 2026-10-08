@@ -30,11 +30,11 @@ export async function GET(req: NextRequest) {
       SELECT 
         s.id, s.user_id, s.storage_path, s.image_url, s.version, s.status,
         s.rejection_reason, s.reviewed_by_name, s.reviewed_at, s.submitted_at,
-        u.full_name, u.username, u.email, u.role,
-        ep.intern_id, ep.employee_id, ep.department
+        u."fullName" as full_name, u.username, u.email, u.role,
+        ep."employeeId" as intern_id, ep."employeeId" as employee_id, ep.department
       FROM id_card_photo_submissions s
       JOIN "User" u ON u.id = s.user_id
-      LEFT JOIN "EmploymentProfile" ep ON ep.user_id = u.id
+      LEFT JOIN "EmploymentProfile" ep ON ep."userId" = u.id
       ORDER BY s.submitted_at DESC
       LIMIT 100
     `);

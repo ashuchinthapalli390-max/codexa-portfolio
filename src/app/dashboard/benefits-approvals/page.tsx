@@ -376,7 +376,7 @@ export default function BenefitsApprovalsPage() {
                         </td>
                         <td className="p-4 max-w-xs">
                           <div className="text-neutral-300 text-xs italic bg-neutral-900/50 p-2 rounded-lg border border-white/5">
-                            "{req.reason || "General internship coding assistance"}"
+                            &ldquo;{req.reason || "General internship coding assistance"}&rdquo;
                           </div>
                         </td>
                         <td className="p-4">

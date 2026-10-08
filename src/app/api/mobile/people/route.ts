@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
     const roleFilter = searchParams.get("role")?.trim().toUpperCase() || "ALL";
     const deptFilter = searchParams.get("dept")?.trim() || "";
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
-    const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "20", 10)));
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "100", 10)));
     const skip = (page - 1) * limit;
 
     const where: any = {};

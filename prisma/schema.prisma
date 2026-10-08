@@ -888,6 +888,8 @@ model MobileAppConfig {
   softUpdateEnabled  Boolean @default(false)
   maintenanceEnabled Boolean @default(false)
   maintenanceMessage String  @default("CodeXa is undergoing scheduled maintenance. Please try again shortly.")
+  expectedMaintenanceEnd DateTime?
+  releaseNotes      String?  @default("Production release with Core database synchronization and Daily Team Workspace features.")
   configVersion     Int      @default(1)
 
   // Download & Distribution URLs
@@ -1650,5 +1652,145 @@ model TrustedUpiTransaction {
   @@index([status])
 }
 
+// ─── SCHEDULED CLASSES & TRAINING HUB ─────────────────────────────────────────
+model ScheduledClass {
+  id                 String    @id
+  title              String
+  domain             String    @default("All Domains")
+  batch              String    @default("Batch-2026")
+  topic              String
+  subtopics          Json?     @default("[]")
+  instructorId       String?   @map("instructor_id")
+  instructorName     String    @default("CodeXa Lead Instructor") @map("instructor_name")
+  classDate          DateTime  @map("class_date") @db.Date
+  startTime          String    @map("start_time")
+  endTime            String    @map("end_time")
+  duration           String    @default("1h 30m")
+  status             String    @default("UPCOMING") // UPCOMING, LIVE, COMPLETED, CANCELLED, RESCHEDULED
+  mode               String    @default("ONLINE")
+  meetingLink        String?   @map("meeting_link")
+  learningObjectives String?   @map("learning_objectives")
+  resources          Json?     @default("[]")
+  recordingUrl       String?   @map("recording_url")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at")
 
+  questions          ClassQuestion[]
 
+  @@map("scheduled_classes")
+}
+
+model ClassQuestion {
+  id         String    @id
+  classId    String    @map("class_id")
+  userId     String    @map("user_id")
+  userName   String    @map("user_name")
+  userRole   String    @default("INTERN") @map("user_role")
+  question   String
+  answer     String?
+  answeredAt DateTime? @map("answered_at")
+  answeredBy String?   @map("answered_by")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  scheduledClass ScheduledClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@map("class_questions")
+}
+
+// ─── ASSIGNMENTS & SUBMISSION WORKFLOW ────────────────────────────────────────
+model Assignment {
+  id             String    @id
+  title          String
+  description    String
+  assignedBy     String?   @map("assigned_by")
+  assignedByName String    @default("CodeXa Technical Lead") @map("assigned_by_name")
+  domain         String    @default("All Domains")
+  classId        String?   @map("class_id")
+  projectId      String?   @map("project_id")
+  submissionType String    @default("BOTH") @map("submission_type") // TEXT, REPOSITORY, BOTH
+  dueDate        DateTime  @map("due_date")
+  lateCutoff     DateTime? @map("late_cutoff")
+  requirements   String?
+  status         String    @default("ACTIVE") // ACTIVE, CLOSED, ARCHIVED
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  submissions    AssignmentSubmission[]
+
+  @@map("assignments")
+}
+
+model AssignmentSubmission {
+  id             String    @id
+  assignmentId   String    @map("assignment_id")
+  userId         String    @map("user_id")
+  userName       String    @map("user_name")
+  userRole       String    @default("INTERN") @map("user_role")
+  internId       String?   @map("intern_id")
+  submissionType String    @default("TEXT") @map("submission_type")
+  textContent    String?   @map("text_content")
+  repositoryUrl  String?   @map("repository_url")
+  branch         String?
+  commitSha      String?   @map("commit_sha")
+  notes          String?
+  revision       Int       @default(1)
+  status         String    @default("SUBMITTED") // SUBMITTED, UNDER_REVIEW, REVISION_REQUESTED, APPROVED, GRADED
+  grade          String?
+  feedback       String?
+  reviewerId     String?   @map("reviewer_id")
+  reviewerName   String?   @map("reviewer_name")
+  reviewedAt     DateTime? @map("reviewed_at")
+  submittedAt    DateTime  @default(now()) @map("submitted_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  assignment     Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@unique([assignmentId, userId, revision], map: "uq_user_assignment_rev")
+  @@map("assignment_submissions")
+}
+
+// ─── POST-PAYMENT BENEFITS: ID CARD & AI ACCESS ──────────────────────────────
+model IdCardPhotoSubmission {
+  id               String    @id
+  userId           String    @map("user_id")
+  paymentRequestId String?   @map("payment_request_id")
+  storagePath      String    @map("storage_path")
+  imageUrl         String    @map("image_url")
+  mimeType         String?   @default("image/jpeg") @map("mime_type")
+  fileSize         Int?      @map("file_size")
+  version          Int       @default(1)
+  status           String    @default("SUBMITTED") // SUBMITTED, APPROVED, REJECTED, PREPARING, READY, ISSUED
+  rejectionReason  String?   @map("rejection_reason")
+  reviewedBy       String?   @map("reviewed_by")
+  reviewedByName   String?   @map("reviewed_by_name")
+  reviewedAt       DateTime? @map("reviewed_at")
+  submittedAt      DateTime  @default(now()) @map("submitted_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@map("id_card_photo_submissions")
+}
+
+model AiAccessRequest {
+  id                     String    @id
+  userId                 String    @map("user_id")
+  paymentRequestId       String?   @map("payment_request_id")
+  resourceType           String    @default("GEMINI_PRO_ACCESS") @map("resource_type")
+  reason                 String?
+  status                 String    @default("PENDING_APPROVAL") // PENDING_APPROVAL, APPROVED_PENDING_PROVISIONING, ACCESS_GRANTED, REJECTED, WAITLISTED, REVOKED
+  reviewerDecision       String?   @map("reviewer_decision")
+  reviewerNotes          String?   @map("reviewer_notes")
+  reviewedBy             String?   @map("reviewed_by")
+  reviewedByName         String?   @map("reviewed_by_name")
+  reviewedAt             DateTime? @map("reviewed_at")
+  provisioningStatus     String?   @default("PENDING") @map("provisioning_status")
+  provisionedAt          DateTime? @map("provisioned_at")
+  provisionedBy          String?   @map("provisioned_by")
+  activationInstructions String?   @map("activation_instructions")
+  requestedAt            DateTime  @default(now()) @map("requested_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@map("ai_access_requests")
+}

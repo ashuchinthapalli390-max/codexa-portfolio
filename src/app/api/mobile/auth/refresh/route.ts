@@ -102,16 +102,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. Issue fresh session token (rolling renewal)
-    const newToken = generateSessionToken();
-    const newHash = hashToken(newToken);
+    // 4. Extend active session expiry (30 days from now) without invalidating concurrent in-flight requests
     const newExpiresAt = new Date(now.getTime() + SESSION_MAX_AGE_SECONDS * 1000);
 
-    // Update existing session record with new token and extended expiry
     await db.session.update({
       where: { id: session.id },
       data: {
-        sessionTokenHash: newHash,
         expiresAt: newExpiresAt,
         lastSeenAt: now,
       },
@@ -122,8 +118,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      accessToken: newToken,
-      refreshToken: newToken,
+      accessToken: tokenClean,
+      refreshToken: tokenClean,
       user: {
         id: user.id,
         username: user.username,

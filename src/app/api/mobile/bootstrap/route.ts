@@ -81,6 +81,52 @@ export async function GET(req: NextRequest) {
     const globalConfig = await getOrCreateGlobalMobileConfig();
     const featureFlags = await resolveAllMobileFeatures(user, globalConfig);
 
+    // Maintenance Mode enforcement:
+    if (globalConfig.maintenanceEnabled && effectiveRole !== "FOUNDER" && effectiveRole !== "CO_FOUNDER") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: {
+            code: "MAINTENANCE_MODE",
+            message: globalConfig.maintenanceMessage || "CodeXa is currently under scheduled maintenance.",
+          },
+          maintenance: {
+            enabled: true,
+            title: "CodeXa Maintenance",
+            message: globalConfig.maintenanceMessage || "CodeXa is undergoing scheduled maintenance.",
+            expectedEndAt: (globalConfig as any).expectedMaintenanceEnd || null,
+          },
+          requestId,
+        },
+        { status: 503, headers: NO_CACHE_HEADERS }
+      );
+    }
+
+    // Force Update Check if client specified version header or query param
+    const clientVersion = req.headers.get("x-app-version") || req.nextUrl.searchParams.get("version");
+    if (clientVersion && globalConfig.minVersion && globalConfig.forceUpdateEnabled) {
+      if (clientVersion < globalConfig.minVersion) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: {
+              code: "UPDATE_REQUIRED",
+              message: "A required update for CodeXa is available. Please update to continue.",
+            },
+            version: {
+              minimumSupported: globalConfig.minVersion,
+              latest: globalConfig.currentVersion,
+              forceUpdate: true,
+              updateUrl: globalConfig.androidApkUrl || globalConfig.downloadUrl || "https://codxa-agency.online/downloads/CodeXa.apk",
+              releaseNotes: (globalConfig as any).releaseNotes || "Please update to the latest version of CodeXa.",
+            },
+            requestId,
+          },
+          { status: 426, headers: NO_CACHE_HEADERS }
+        );
+      }
+    }
+
     // 2. Resolve Role Permissions
     const permSet = ROLE_PERMISSIONS[effectiveRole] || new Set();
     const permissions = Array.from(permSet);
@@ -114,17 +160,64 @@ export async function GET(req: NextRequest) {
       };
     }
 
-    // 4. Attendance State
+    // 4. Attendance State (Authoritative Core DB)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
+    const now = new Date();
 
+    const isLeadership = ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "COO", "OWNER", "ADMIN"].includes(effectiveRole);
     const isInternPreStart = effectiveRole === "INTERN" && emp?.joiningDate ? new Date(emp.joiningDate).getTime() > Date.now() : false;
 
+    // Check active attendance window in database
+    const activeWindow = await db.attendanceWindow.findFirst({
+      where: {
+        status: "ACTIVE",
+        startTime: { lte: now },
+        endTime: { gt: now },
+      },
+      orderBy: { createdAt: "desc" },
+    }).catch(() => null);
+
     let attendance: any;
-    if (isInternPreStart) {
+    if (isLeadership) {
+      const [todayPresentCount, totalEligible] = await Promise.all([
+        db.attendanceRecord.count({
+          where: { date: { gte: today, lt: tomorrow }, status: "PRESENT" },
+        }).catch(() => 0),
+        db.user.count({
+          where: { role: { in: ["INTERN", "EMPLOYEE"] }, isActive: true },
+        }).catch(() => 0),
+      ]);
+
       attendance = {
+        isManagement: true,
+        canMark: false,
+        lifecycleStatus: activeWindow ? "WINDOW_ACTIVE" : "CLOSED",
+        message: activeWindow ? "Attendance window is open." : "No active attendance window.",
+        currentWindow: activeWindow ? {
+          id: activeWindow.id,
+          isOpen: true,
+          startTime: activeWindow.startTime.toISOString(),
+          endTime: activeWindow.endTime.toISOString(),
+          remainingSeconds: Math.max(0, Math.floor((activeWindow.endTime.getTime() - now.getTime()) / 1000)),
+        } : {
+          isOpen: false,
+          startTime: null,
+          endTime: null,
+          remainingSeconds: 0,
+        },
+        metrics: {
+          presentCount: todayPresentCount,
+          totalEligible,
+        },
+        todayRecord: null,
+        stats: null,
+      };
+    } else if (isInternPreStart) {
+      attendance = {
+        isManagement: false,
         lifecycleStatus: "PRE_START",
         canMark: false,
         isPreStart: true,
@@ -148,15 +241,26 @@ export async function GET(req: NextRequest) {
         },
       }).catch(() => null);
 
+      const isWindowOpen = Boolean(activeWindow);
+      const canMarkNow = isWindowOpen && !todayRecord && Boolean(featureFlags.MOBILE_ATTENDANCE);
+
       attendance = {
-        lifecycleStatus: todayRecord ? "COMPLETED" : "WINDOW_ACTIVE",
-        canMark: !todayRecord && Boolean(featureFlags.MOBILE_ATTENDANCE),
+        isManagement: false,
+        lifecycleStatus: todayRecord ? "COMPLETED" : isWindowOpen ? "WINDOW_ACTIVE" : "CLOSED",
+        canMark: canMarkNow,
         isPreStart: false,
-        message: todayRecord ? "Attendance marked for today." : "Attendance window open.",
+        message: todayRecord
+          ? `Attendance marked for today (${todayRecord.status}).`
+          : isWindowOpen
+            ? "Attendance window open."
+            : "Attendance window is closed.",
         startDate: emp?.joiningDate ? emp.joiningDate.toISOString() : null,
         currentWindow: {
-          isOpen: !todayRecord,
-          startTime: today.toISOString(),
+          id: activeWindow?.id || null,
+          isOpen: isWindowOpen,
+          startTime: activeWindow?.startTime?.toISOString() || null,
+          endTime: activeWindow?.endTime?.toISOString() || null,
+          remainingSeconds: activeWindow ? Math.max(0, Math.floor((activeWindow.endTime.getTime() - now.getTime()) / 1000)) : 0,
         },
         todayRecord: todayRecord ? {
           id: todayRecord.id,
@@ -168,7 +272,7 @@ export async function GET(req: NextRequest) {
     }
 
     // 5. Active Projects & Operational Metrics
-    const isLeadership = ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "COO"].includes(effectiveRole);
+    // isLeadership already in scope
 
     let operationalMetrics: any = null;
     if (isLeadership) {

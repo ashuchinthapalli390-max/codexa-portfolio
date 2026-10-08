@@ -24,7 +24,9 @@ export async function GET(req: NextRequest) {
           message:
             globalConfig.maintenanceMessage ||
             "CodeXa is temporarily unavailable while we perform system upgrades.",
-          expectedEndAt: null,
+          expectedEndAt: globalConfig.expectedMaintenanceEnd
+            ? globalConfig.expectedMaintenanceEnd.toISOString()
+            : null,
         },
         version: {
           minimumSupported: globalConfig.minVersion || "1.0.0",
@@ -36,6 +38,7 @@ export async function GET(req: NextRequest) {
             globalConfig.downloadUrl ||
             "https://codxa-agency.online/downloads/CodeXa.apk",
           releaseNotes:
+            globalConfig.releaseNotes ||
             "Production release with Core database synchronization and Daily Team Workspace features.",
         },
         serverTime: new Date().toISOString(),

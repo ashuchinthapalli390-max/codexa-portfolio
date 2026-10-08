@@ -156,8 +156,10 @@ export async function PATCH(req: NextRequest) {
       "buildNumber",
       "maintenanceEnabled",
       "maintenanceMessage",
+      "expectedMaintenanceEnd",
       "forceUpdateEnabled",
       "softUpdateEnabled",
+      "releaseNotes",
       "downloadUrl",
       "androidApkUrl",
       "playStoreUrl",
@@ -248,7 +250,7 @@ export async function PATCH(req: NextRequest) {
 
     for (const key of allowedFields) {
       if (body[key] !== undefined) {
-        if (key === "announcementStartDate" || key === "announcementEndDate") {
+        if (key === "announcementStartDate" || key === "announcementEndDate" || key === "expectedMaintenanceEnd") {
           updateData[key] = body[key] ? new Date(body[key]) : null;
         } else {
           updateData[key] = body[key];
