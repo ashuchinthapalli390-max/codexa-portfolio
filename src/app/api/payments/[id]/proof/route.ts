@@ -4,16 +4,11 @@ import { db } from "@/lib/db";
 import { savePaymentProof } from "@/lib/payment-storage";
 import {
   startPaymentAttempt,
-  SupportedUpiMethod,
   logPaymentAudit,
   ALLOWED_PROOF_MIME_TYPES,
   MAX_PROOF_FILE_SIZE_BYTES,
 } from "@/lib/payments/automated-upi";
-import { analyzePaymentScreenshot } from "@/lib/payments/analyze-payment-proof";
-import {
-  verifyPaymentAttemptWithEvidence,
-  getFriendlyFailureMessage,
-} from "@/lib/payments/verify-payment-attempt";
+import { dispatchProofSubmittedNotifications } from "@/lib/payments/manual-approval-notifications";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,14 +16,12 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/payments/[id]/proof
  * 
- * FULLY AUTOMATIC SCREENSHOT-BASED UPI PAYMENT INGESTION:
- * - NO manual UTR input accepted
- * - NO manual payment date or time accepted
- * - Accepts ONLY screenshot image (JPEG, PNG, WebP <= 10MB)
- * - Executes server-side OCR and heuristic parsing via analyzePaymentScreenshot
- * - Strictly verifies ₹450 amount, success status, UTR uniqueness, and 5-min session window
- * - Reconciles against TrustedUpiTransaction feed
- * - Returns deterministic SUCCESS or FAILED outcome
+ * FAST, SECURE MANUAL PAYMENT APPROVAL INGESTION:
+ * - Accepts payment screenshot (JPEG, PNG, WebP <= 10MB)
+ * - Persists proof privately
+ * - Sets status immediately to PENDING_APPROVAL
+ * - Dispatches notifications to Founder and Co-Founder (Email + Attachment, Web Push, In-App)
+ * - Returns prompt response without blocking on slow OCR or bank APIs
  */
 export async function POST(
   req: NextRequest,
@@ -108,37 +101,21 @@ export async function POST(
       );
     }
 
-    // Resolve active attempt
+    // Resolve or initialize attempt
     const now = new Date();
     let targetAttempt = attemptId
       ? await db.paymentAttempt.findUnique({ where: { id: attemptId } })
       : null;
 
     if (!targetAttempt) {
-      // Find latest non-expired active attempt
       targetAttempt =
         payment.attempts.find(
           (a) =>
-            ["PAYMENT_STARTED", "AWAITING_PROOF", "AWAITING_SCREENSHOT"].includes(a.status) &&
-            new Date(a.expiresAt) > now
+            ["PAYMENT_STARTED", "AWAITING_PROOF", "AWAITING_SCREENSHOT", "PENDING_APPROVAL"].includes(a.status)
         ) || null;
     }
 
-    // If no active attempt exists, check if latest attempt expired
     if (!targetAttempt) {
-      const latestAttempt = payment.attempts[0];
-      if (latestAttempt && new Date(latestAttempt.expiresAt) <= now) {
-        return NextResponse.json(
-          {
-            status: "EXPIRED",
-            reason: "UPLOAD_EXPIRED",
-            error: getFriendlyFailureMessage("UPLOAD_EXPIRED"),
-          },
-          { status: 400 }
-        );
-      }
-
-      // Auto-initialize session if none active
       const newAttemptResult = await startPaymentAttempt({
         paymentId: payment.id,
         userId: user.id,
@@ -151,26 +128,6 @@ export async function POST(
       return NextResponse.json(
         { error: "Could not initialize payment session attempt." },
         { status: 500 }
-      );
-    }
-
-    // Check if session has expired
-    if (now > new Date(targetAttempt.expiresAt)) {
-      await db.paymentAttempt.update({
-        where: { id: targetAttempt.id },
-        data: {
-          status: "EXPIRED",
-          verificationReason: "UPLOAD_EXPIRED",
-        },
-      });
-
-      return NextResponse.json(
-        {
-          status: "EXPIRED",
-          reason: "UPLOAD_EXPIRED",
-          error: getFriendlyFailureMessage("UPLOAD_EXPIRED"),
-        },
-        { status: 400 }
       );
     }
 
@@ -198,96 +155,86 @@ export async function POST(
       "unknown";
     const userAgent = req.headers.get("user-agent") || "unknown";
 
-    // Set attempt status to ANALYZING_PROOF
-    await db.paymentAttempt.update({
-      where: { id: targetAttempt.id },
-      data: {
-        status: "ANALYZING_PROOF",
-        submittedAt: now,
-        proofImageUrl: uploadResult.filePath,
-      },
+    // Atomically persist PENDING_APPROVAL on attempt and payment request
+    await db.$transaction(async (tx) => {
+      await tx.paymentAttempt.update({
+        where: { id: targetAttempt!.id },
+        data: {
+          status: "PENDING_APPROVAL",
+          submittedAt: now,
+          proofImageUrl: uploadResult.filePath,
+          proofImageHash: uploadResult.fileHash,
+        },
+      });
+
+      await tx.paymentRequest.update({
+        where: { id: payment.id },
+        data: {
+          paymentStatus: "PENDING_APPROVAL",
+          proofImageUrl: uploadResult.filePath,
+          proofImageMimeType: mimeType,
+          proofImageHash: uploadResult.fileHash,
+          paymentMethod: targetAttempt!.selectedMethod || payment.paymentMethod || "OTHER_UPI",
+          submittedAt: now,
+        },
+      });
     });
 
     await logPaymentAudit({
-      action: "PAYMENT_PROOF_ANALYSIS_STARTED",
+      action: "PAYMENT_PROOF_SUBMITTED_FOR_APPROVAL",
       actorId: user.id,
       targetId: payment.id,
       details: {
         attemptId: targetAttempt.id,
         fileSize: proofBuffer.length,
         mimeType,
+        filePath: uploadResult.filePath,
+        selectedMethod: targetAttempt.selectedMethod,
       },
       ipAddress,
       userAgent,
     });
 
-    // ─── EXECUTE OCR & SCREENSHOT UNDERSTANDING PIPELINE ─────────────────────
-    const ocrResult = await analyzePaymentScreenshot(proofBuffer, mimeType);
-
-    await logPaymentAudit({
-      action: "PAYMENT_PROOF_ANALYSIS_COMPLETED",
-      actorId: user.id,
-      targetId: payment.id,
-      details: {
-        attemptId: targetAttempt.id,
-        detectedApp: ocrResult.detectedApp,
-        detectedStatus: ocrResult.detectedStatus,
-        detectedAmount: ocrResult.detectedAmount,
-        detectedUtr: ocrResult.detectedUtr,
-        confidence: ocrResult.confidence,
+    // Asynchronously dispatch all management notifications (Founder & Co-Founder)
+    dispatchProofSubmittedNotifications({
+      payment: {
+        id: payment.id,
+        referenceId: payment.referenceId,
+        userId: user.id,
+        userName: payment.userName || user.displayName || user.displayName || user.username,
+        userEmail: payment.userEmail || user.email,
+        domain: payment.domain,
+        internId: payment.internId,
+        fixedAmount: 450,
+        paymentMethod: targetAttempt.selectedMethod || payment.paymentMethod || "OTHER_UPI",
+        submittedAt: now,
+        proofImageUrl: uploadResult.filePath,
       },
-      ipAddress,
-      userAgent,
-    });
-
-    // Set attempt status to VERIFYING
-    await db.paymentAttempt.update({
-      where: { id: targetAttempt.id },
-      data: {
-        status: "VERIFYING",
+      attempt: {
+        id: targetAttempt.id,
+        selectedMethod: targetAttempt.selectedMethod,
+        submittedAt: now,
+        proofImageUrl: uploadResult.filePath,
       },
-    });
-
-    await logPaymentAudit({
-      action: "PAYMENT_AUTO_VERIFICATION_STARTED",
-      actorId: user.id,
-      targetId: payment.id,
-      details: {
-        attemptId: targetAttempt.id,
-        utr: ocrResult.detectedUtr,
-        amount: ocrResult.detectedAmount,
-      },
-      ipAddress,
-      userAgent,
-    });
-
-    // ─── EXECUTE DETERMINISTIC VERIFICATION ORCHESTRATION ────────────────────
-    const decision = await verifyPaymentAttemptWithEvidence({
-      attemptId: targetAttempt.id,
-      userId: user.id,
-      ocrResult,
-      proofFilePath: uploadResult.filePath,
-      ipAddress,
-      userAgent,
+    }).catch((err) => {
+      console.error("[Management Notification Dispatch Error]", err);
     });
 
     return NextResponse.json({
-      success: decision.status === "SUCCESS",
-      ...decision,
-      ocrDetails: {
-        detectedApp: ocrResult.detectedApp,
-        detectedStatus: ocrResult.detectedStatus,
-        detectedAmount: ocrResult.detectedAmount,
-        detectedUtr: ocrResult.detectedUtr ? `••••••${ocrResult.detectedUtr.slice(-4)}` : null,
-        detectedDate: ocrResult.detectedDate,
-        detectedTime: ocrResult.detectedTime,
-      },
+      success: true,
+      status: "PENDING_APPROVAL",
+      message: "Payment proof submitted successfully. The CodeXa Founder or Co-Founder will review your payment and update its status.",
+      submittedAt: now.toISOString(),
+      proofImageUrl: uploadResult.filePath,
+      referenceId: payment.referenceId,
+      amount: 450,
+      paymentMethod: targetAttempt.selectedMethod || "OTHER_UPI",
     });
   } catch (error: any) {
     console.error("POST /api/payments/[id]/proof error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to process automatic payment verification" },
-      { status: 400 }
+      { error: error.message || "Failed to submit payment screenshot" },
+      { status: 500 }
     );
   }
 }

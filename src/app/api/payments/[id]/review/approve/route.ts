@@ -3,8 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getEffectiveRole } from "@/lib/permissions";
 import { logPaymentAudit } from "@/lib/payments/automated-upi";
-import { sendPaymentApprovedEmail } from "@/lib/email/notifications";
-import { sendPushNotification } from "@/lib/push";
+import { dispatchPaymentApprovedToIntern } from "@/lib/payments/manual-approval-notifications";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -75,8 +74,8 @@ export async function POST(
           utrNumber: targetAttempt?.utrNumber || payment.utrNumber,
           verifiedAt: verifiedNow,
           verifiedByName: `${approverName} (${role})`,
-          verificationSource: "ADMIN_EXCEPTION_APPROVAL",
-          adminNotes: notes ? `Approved exception: ${notes}` : payment.adminNotes,
+          verificationSource: "MANUAL_RECEIPT_CONFIRMATION",
+          adminNotes: notes ? `Approved: ${notes}` : payment.adminNotes,
           paidAt: verifiedNow,
         },
       });
@@ -88,8 +87,8 @@ export async function POST(
           data: {
             status: "SUCCESS",
             verifiedAt: verifiedNow,
-            verificationReason: "ADMIN_APPROVED_EXCEPTION",
-            verificationSource: "ADMIN_EXCEPTION_APPROVAL",
+            verificationReason: "MANUAL_RECEIPT_CONFIRMATION",
+            verificationSource: "MANUAL_RECEIPT_CONFIRMATION",
           },
         });
       }
@@ -118,35 +117,25 @@ export async function POST(
       },
     });
 
-    // 5. Send Idempotent Success Email
-    const recipientEmail = payment.userEmail || payment.user?.email;
-    if (recipientEmail) {
-      sendPaymentApprovedEmail({
-        recipientEmail,
-        recipientName: payment.userName || "Intern",
+    // 5. Dispatch All Intern Notifications (In-App, Push, Email)
+    dispatchPaymentApprovedToIntern({
+      payment: {
+        id: payment.id,
         referenceId: payment.referenceId,
-        title: payment.title,
-        amount: Number(payment.fixedAmount) || 450,
-        utrNumber: targetAttempt?.utrNumber || payment.utrNumber || "Verified by Administration",
-      }).catch((err) => console.error("[Review Approve Email Error]", err));
-    }
-
-    // 6. Push Notification to Intern
-    sendPushNotification(payment.userId, {
-      title: "🎉 CodeXa Payment Approved",
-      body: `Your mandatory internship payment (${payment.referenceId}) has been verified and cleared by CodeXa Administration!`,
-      icon: "/email-assets/codexa-logo.png",
-      badge: "/email-assets/codexa-logo.png",
-      tag: "payment-approved",
-      data: {
-        type: "MANDATORY_SERVICE_PAYMENT_SUCCESS",
-        url: "/dashboard/payments",
+        userId: payment.userId,
+        userName: payment.userName || payment.user?.fullName,
+        userEmail: payment.userEmail || payment.user?.email,
+        internId: payment.internId,
+        fixedAmount: Number(payment.fixedAmount) || 450,
+        paymentMethod: targetAttempt?.selectedMethod || payment.paymentMethod || "UPI",
       },
-    }).catch(() => {});
+      approverName,
+      approverRole: role,
+    }).catch((err) => console.error("[Payment Approved Dispatch Error]", err));
 
     return NextResponse.json({
       success: true,
-      message: "Payment exception successfully approved.",
+      message: "Payment successfully approved and recorded.",
       paymentStatus: "APPROVED",
       verifiedAt: verifiedNow.toISOString(),
     });

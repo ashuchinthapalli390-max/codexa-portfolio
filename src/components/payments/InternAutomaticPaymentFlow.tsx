@@ -70,6 +70,9 @@ interface PaymentData {
   cashNotes?: string | null;
   paidAt?: string | null;
   verificationSource?: string | null;
+  submittedAt?: string | null;
+  proofImageUrl?: string | null;
+  rejectionReason?: string | null;
 }
 
 interface SettingsData {
@@ -167,6 +170,26 @@ export function InternAutomaticPaymentFlow({
         setupTimer(data.activeAttempt.expiresAt);
 
         if (
+          data.activeAttempt.status === "PENDING_APPROVAL" ||
+          data.payment?.paymentStatus === "PENDING_APPROVAL"
+        ) {
+          setVerificationResult({
+            status: "PENDING_APPROVAL",
+            referenceId: data.payment?.referenceId,
+            amount: 450,
+            paymentMethod: data.activeAttempt.selectedMethod || data.payment?.paymentMethod || "UPI",
+            submittedAt: data.activeAttempt.submittedAt || data.payment?.submittedAt || new Date().toISOString(),
+            screenshotUrl: data.payment?.proofImageUrl ? `/api/payments/${data.payment.id}/proof-image` : null,
+          });
+        } else if (
+          data.activeAttempt.status === "REJECTED" ||
+          data.payment?.paymentStatus === "REJECTED"
+        ) {
+          setVerificationResult({
+            status: "REJECTED",
+            reason: data.payment?.rejectionReason || data.activeAttempt?.verificationReason || "Screenshot could not be verified by CodeXa management.",
+          });
+        } else if (
           ["VERIFYING", "ANALYZING_PROOF"].includes(data.activeAttempt.status)
         ) {
           setVerifying(true);
@@ -508,7 +531,7 @@ export function InternAutomaticPaymentFlow({
     window.open(waUrl, "_blank", "noopener,noreferrer");
   };
 
-  // 100% AUTOMATIC SCREENSHOT SUBMISSION (ZERO MANUAL ENTRY)
+  // MANUAL PAYMENT APPROVAL SCREENSHOT SUBMISSION (ZERO OCR DELAY, INSTANT PENDING_APPROVAL)
   const handleSubmitProof = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!payment) return;
@@ -522,7 +545,6 @@ export function InternAutomaticPaymentFlow({
       setSubmittingProof(true);
       setProofError(null);
       setAnalyzingStep("UPLOADING");
-      setVerificationStage(1);
 
       const formData = new FormData();
       formData.append("screenshot", screenshotFile);
@@ -530,87 +552,44 @@ export function InternAutomaticPaymentFlow({
         formData.append("attemptId", activeAttempt.id);
       }
 
-      // Progressively advance stage indicators
-      const timerStage2 = setTimeout(() => {
-        setAnalyzingStep("OCR_ANALYSIS");
-        setVerificationStage(2);
-      }, 600);
-
-      const timerStage3 = setTimeout(() => {
-        setVerificationStage(3);
-      }, 1500);
-
-      const timerStage4 = setTimeout(() => {
-        setAnalyzingStep("SETTLEMENT_RECONCILING");
-        setVerificationStage(4);
-      }, 2400);
-
-      const timerStage5 = setTimeout(() => {
-        setVerificationStage(5);
-      }, 3500);
-
       const res = await fetch(`/api/payments/${payment.id}/proof`, {
         method: "POST",
         body: formData,
       });
 
-      clearTimeout(timerStage2);
-      clearTimeout(timerStage3);
-      clearTimeout(timerStage4);
-      clearTimeout(timerStage5);
-
       const data = await res.json();
 
       if (!res.ok) {
-        if (data.status === "EXPIRED" || data.reason === "UPLOAD_EXPIRED") {
-          setTimerExpired(true);
-          setProofError(
-            "Payment verification window expired. Please start a new 5-minute session below."
-          );
-        } else {
-          setProofError(data.error || "Automatic payment verification failed.");
-        }
-        setVerificationResult({
-          status: "FAILED",
-          reason: data.reason || "PROOF_UNREADABLE",
-          error: data.userMessage || data.error,
-        });
+        setProofError(data.error || "Failed to submit screenshot.");
         return;
       }
 
-      if (data.status === "SUCCESS") {
-        setVerificationStage(6);
+      // Proof ingested immediately -> transition to PENDING_APPROVAL
+      if (data.status === "PENDING_APPROVAL" || data.success) {
+        setVerificationResult({
+          status: "PENDING_APPROVAL",
+          referenceId: data.referenceId || payment.referenceId,
+          amount: data.amount || 450,
+          paymentMethod: data.paymentMethod || selectedMethod,
+          submittedAt: data.submittedAt || new Date().toISOString(),
+          screenshotUrl: previewUrl,
+        });
+        setPayment((prev) => (prev ? { ...prev, paymentStatus: "PENDING_APPROVAL" } : null));
+        if (onStatusChange) onStatusChange("PENDING_APPROVAL");
+      } else if (data.status === "SUCCESS") {
         setVerificationResult({
           status: "SUCCESS",
           verifiedAt: data.verifiedAt || new Date().toISOString(),
-          utrNumber: data.utrNumber,
           amount: data.amount || 450,
-          paymentApp: data.paymentApp || selectedMethod,
+          paymentApp: data.paymentMethod || selectedMethod,
         });
         setInternPaid(true);
         if (onStatusChange) onStatusChange("APPROVED");
-      } else if (data.status === "REVIEW_REQUIRED") {
-        setVerificationResult({
-          status: "REVIEW_REQUIRED",
-          reason: data.reason,
-          error: data.userMessage || "Your payment proof was received. Verification is still in progress. Please do not pay again.",
-          utrNumber: data.utrNumber || data.ocrDetails?.detectedUtr,
-          paymentApp: data.paymentApp || data.ocrDetails?.detectedApp || selectedMethod,
-          amount: 450,
-        });
-      } else if (data.status === "FAILED") {
-        setVerificationResult({
-          status: "FAILED",
-          reason: data.reason,
-          error: data.userMessage || data.error,
-        });
-      } else if (["VERIFYING", "ANALYZING_PROOF"].includes(data.status)) {
-        setVerifying(true);
       }
     } catch (err: any) {
       console.error("Proof submission error:", err);
       setProofError(
-        err.message || "An unexpected error occurred during automatic verification."
+        err.message || "An unexpected error occurred while submitting screenshot."
       );
     } finally {
       setSubmittingProof(false);
@@ -806,6 +785,10 @@ export function InternAutomaticPaymentFlow({
               className={`font-mono font-bold uppercase ${
                 isCompleted
                   ? "text-emerald-400"
+                  : verificationResult?.status === "PENDING_APPROVAL" || payment.paymentStatus === "PENDING_APPROVAL"
+                  ? "text-amber-400"
+                  : verificationResult?.status === "REJECTED" || payment.paymentStatus === "REJECTED"
+                  ? "text-rose-400"
                   : verifying
                   ? "text-amber-400"
                   : timerExpired
@@ -815,6 +798,10 @@ export function InternAutomaticPaymentFlow({
             >
               {isCompleted
                 ? "Payment Successful"
+                : verificationResult?.status === "PENDING_APPROVAL" || payment.paymentStatus === "PENDING_APPROVAL"
+                ? "Pending Approval"
+                : verificationResult?.status === "REJECTED" || payment.paymentStatus === "REJECTED"
+                ? "Proof Rejected"
                 : verifying
                 ? "Verifying Payment"
                 : timerExpired
@@ -1503,7 +1490,7 @@ export function InternAutomaticPaymentFlow({
                       className="mt-2.5 px-4 py-1.5 rounded-xl bg-bright-red/20 hover:bg-bright-red/30 border border-bright-red/40 text-bright-red hover:text-white text-[11px] font-orbitron font-bold uppercase transition-all shadow-[0_0_12px_rgba(239,35,60,0.2)] flex items-center gap-1.5"
                     >
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      IF PAID, VERIFY
+                      IF PAID, SUBMIT SCREENSHOT
                     </button>
                   </div>
                 </div>
@@ -1617,124 +1604,79 @@ export function InternAutomaticPaymentFlow({
                 </motion.div>
               )}
 
-              {/* ─── 5. LIVE OCR ANALYSIS & MULTI-STEP VERIFICATION PROGRESS (SECTION 6 & 7) ─── */}
-              {(submittingProof || verifying) && (
-                <div className="p-6 sm:p-8 rounded-3xl bg-[#0f0f0f] border border-amber-500/40 space-y-6 shadow-2xl">
-                  <div className="text-center space-y-2">
-                    <div className="w-12 h-12 border-3 border-amber-500/20 border-t-amber-400 rounded-full animate-spin mx-auto" />
-                    <h3 className="font-orbitron font-bold text-white text-lg">
-                      {verificationStage >= 5
-                        ? "Reconciling with Bank Settlement Feed..."
-                        : verificationStage >= 4
-                        ? "Verifying Amount & Receiver..."
-                        : verificationStage >= 3
-                        ? "Extracting Transaction Information..."
-                        : verificationStage >= 2
-                        ? "Analyzing Payment Screenshot with OCR..."
-                        : "Uploading Screenshot..."}
-                    </h3>
-                    <p className="text-xs text-zinc-400 max-w-md mx-auto">
-                      Automated server pipeline is validating your transaction proof against official settlement records.
-                    </p>
-                  </div>
-
-                  {/* 6-Stage Visual Stepper */}
-                  <div className="space-y-2.5 max-w-md mx-auto p-4 rounded-2xl bg-black/40 border border-white/5 font-mono text-xs">
-                    {[
-                      { step: 1, label: "Screenshot uploaded securely" },
-                      { step: 2, label: "Analyzing payment image with neural OCR" },
-                      { step: 3, label: "Extracting transaction reference (UTR) & date" },
-                      { step: 4, label: "Validating ₹450 amount & receiving account" },
-                      { step: 5, label: "Reconciling against trusted bank settlement feed" },
-                      { step: 6, label: "Final verification decision" },
-                    ].map((item) => {
-                      const isDone = verificationStage > item.step;
-                      const isCurrent = verificationStage === item.step;
-                      return (
-                        <div
-                          key={item.step}
-                          className={`flex items-center gap-3 p-2 rounded-xl transition-colors ${
-                            isCurrent
-                              ? "bg-amber-500/10 text-amber-300 border border-amber-500/20"
-                              : isDone
-                              ? "text-emerald-400"
-                              : "text-zinc-600"
-                          }`}
-                        >
-                          <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0">
-                            {isDone ? (
-                              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                            ) : isCurrent ? (
-                              <RefreshCw className="w-3.5 h-3.5 text-amber-400 animate-spin" />
-                            ) : (
-                              <div className="w-2 h-2 rounded-full bg-zinc-700" />
-                            )}
-                          </div>
-                          <span className={`text-[11px] ${isCurrent ? "font-bold text-white" : ""}`}>
-                            {item.label}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="text-center">
-                    <span className="text-[10px] font-mono text-zinc-500 uppercase">
-                      Please keep this window open &bull; Refreshing will not restart completed analysis
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* ─── 5.5 REVIEW REQUIRED / PENDING RECONCILIATION CARD (SECTION 10) ─── */}
-              {verificationResult?.status === "REVIEW_REQUIRED" && !submittingProof && !verifying && (
-                <div className="p-6 sm:p-8 rounded-3xl bg-amber-950/30 border border-amber-500/40 text-center space-y-5 shadow-2xl">
-                  <div className="w-14 h-14 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 mx-auto">
-                    <Clock className="w-8 h-8 animate-pulse" />
+              {/* ─── 5. PENDING APPROVAL CONFIRMATION CARD (PHASE 4 #14) ──────────── */}
+              {(verificationResult?.status === "PENDING_APPROVAL" || payment.paymentStatus === "PENDING_APPROVAL") && !isCompleted && (
+                <div className="p-6 sm:p-8 rounded-3xl bg-amber-950/20 border border-amber-500/40 text-center space-y-6 shadow-2xl animate-in fade-in duration-200">
+                  <div className="w-16 h-16 rounded-3xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 mx-auto">
+                    <Clock className="w-9 h-9 animate-pulse" />
                   </div>
 
                   <div>
                     <span className="px-3 py-1 rounded-full text-xs font-orbitron font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 uppercase tracking-wider">
-                      Verification In Progress
+                      Pending Approval
                     </span>
-                    <h3 className="font-orbitron font-bold text-white text-xl mt-3">
-                      PROOF RECEIVED — REVIEW REQUIRED
+                    <h3 className="text-2xl sm:text-3xl font-orbitron font-bold text-white mt-3">
+                      PAYMENT PROOF SUBMITTED
                     </h3>
                     <p className="text-sm font-semibold text-amber-300 mt-2 max-w-lg mx-auto">
-                      Your payment proof was received. Verification is still in progress. Please do not pay again.
+                      Your payment screenshot has been received successfully. The CodeXa Founder or Co-Founder will review your payment and update its status.
                     </p>
                     <p className="text-xs text-zinc-400 mt-1 max-w-md mx-auto">
-                      Our administrative team is reconciling your transaction reference with official bank settlement records. Your spot and payment attempt are securely recorded.
+                      Please do not pay again. Founder / Co-Founder verification is in progress. Once confirmed, your ID Card and AI Tools benefits will be unlocked automatically.
                     </p>
                   </div>
 
-                  {/* Verification Evidence Summary */}
-                  <div className="max-w-md mx-auto p-4 rounded-2xl bg-black/40 border border-white/10 text-left text-xs font-mono space-y-2">
+                  {/* Payment Proof Details Breakdown */}
+                  <div className="max-w-md mx-auto p-5 rounded-2xl bg-black/50 border border-white/10 text-left text-xs font-mono space-y-2.5">
                     <div className="flex justify-between py-1 border-b border-white/5">
-                      <span className="text-zinc-500">Amount:</span>
-                      <span className="text-white font-bold">₹450.00</span>
+                      <span className="text-zinc-500">Amount Paid:</span>
+                      <span className="text-emerald-400 font-bold text-sm">₹450.00</span>
                     </div>
-                    {verificationResult.utrNumber && (
-                      <div className="flex justify-between py-1 border-b border-white/5">
-                        <span className="text-zinc-500">Detected UTR:</span>
-                        <span className="text-amber-300 font-bold">{verificationResult.utrNumber}</span>
+                    <div className="flex justify-between py-1 border-b border-white/5">
+                      <span className="text-zinc-500">Payment Method:</span>
+                      <span className="text-zinc-200 font-semibold">
+                        {verificationResult?.paymentMethod || payment.paymentMethod || selectedMethod}
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-white/5">
+                      <span className="text-zinc-500">Payment Reference:</span>
+                      <span className="text-white font-bold">
+                        {verificationResult?.referenceId || payment.referenceId}
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-white/5">
+                      <span className="text-zinc-500">Submitted At:</span>
+                      <span className="text-zinc-300">
+                        {new Date(
+                          verificationResult?.submittedAt || payment.submittedAt || Date.now()
+                        ).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-white/5">
+                      <span className="text-zinc-500">Current Status:</span>
+                      <span className="text-amber-400 font-bold uppercase">PENDING APPROVAL</span>
+                    </div>
+
+                    {/* Screenshot Preview Thumbnail */}
+                    {(previewUrl || verificationResult?.screenshotUrl || payment.proofImageUrl) && (
+                      <div className="pt-2">
+                        <span className="text-[11px] text-zinc-500 block mb-1.5">Submitted Screenshot:</span>
+                        <div className="rounded-xl border border-white/10 bg-[#0d0d0d] p-1 flex justify-center">
+                          <img
+                            src={previewUrl || verificationResult?.screenshotUrl || `/api/payments/${payment.id}/proof-image`}
+                            alt="Submitted Payment Proof"
+                            className="max-h-48 rounded-lg object-contain"
+                          />
+                        </div>
                       </div>
                     )}
-                    <div className="flex justify-between py-1 border-b border-white/5">
-                      <span className="text-zinc-500">Payment App:</span>
-                      <span className="text-zinc-300">{verificationResult.paymentApp || selectedMethod}</span>
-                    </div>
-                    <div className="flex justify-between py-1">
-                      <span className="text-zinc-500">Status:</span>
-                      <span className="text-amber-400 font-bold">AWAITING ADMIN APPROVAL</span>
-                    </div>
                   </div>
 
                   <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
                     <button
                       type="button"
                       onClick={loadPaymentData}
-                      className="px-5 py-2.5 rounded-xl bg-[#222] hover:bg-[#333] border border-white/10 text-white text-xs font-orbitron font-bold uppercase transition-all flex items-center gap-2"
+                      className="px-6 py-2.5 rounded-xl bg-[#222] hover:bg-[#333] border border-white/10 text-white text-xs font-orbitron font-bold uppercase transition-all flex items-center gap-2 shadow-lg"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
                       <span>REFRESH STATUS</span>
@@ -1743,135 +1685,184 @@ export function InternAutomaticPaymentFlow({
                 </div>
               )}
 
-              {/* ─── 6. FAILURE SCREEN (SECTION 38-40) ─────────────────────────────── */}
-              {verificationResult?.status === "FAILED" && !submittingProof && !verifying && (
-                <div className="p-6 sm:p-8 rounded-3xl bg-rose-950/30 border border-rose-500/40 text-center space-y-4">
-                  <div className="w-14 h-14 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 mx-auto">
-                    <XCircle className="w-8 h-8" />
-                  </div>
-                  <div>
-                    <h3 className="font-orbitron font-bold text-white text-lg">
-                      PAYMENT NOT VERIFIED
-                    </h3>
-                    <p className="text-xs text-rose-200 mt-1 max-w-md mx-auto">
-                      {verificationResult.error ||
-                        "Payment could not be automatically confirmed. Please make sure the screenshot is clear and shows the completed transaction details."}
-                    </p>
-                  </div>
-
-                  <div>
-                    <button
-                      type="button"
-                      onClick={handleRetry}
-                      className="px-6 py-2.5 rounded-xl bg-crimson hover:bg-bright-red text-white text-xs font-orbitron font-bold uppercase transition-all shadow-lg"
-                    >
-                      START NEW PAYMENT ATTEMPT
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* ─── 7. PURE SCREENSHOT UPLOAD FORM (ZERO MANUAL ENTRY) ──────────── */}
-              {!submittingProof && !verifying && !isCompleted && verificationResult?.status !== "REVIEW_REQUIRED" && (
-                <form
-                  id="proof-upload-section"
-                  onSubmit={handleSubmitProof}
-                  className="p-6 sm:p-8 rounded-3xl bg-[#0d0d0d] border border-white/10 space-y-6 shadow-xl"
-                >
-                  <div className="border-b border-white/10 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              {/* ─── 6. REJECTION CARD (PHASE 7 #36) ──────────────────────────────── */}
+              {(verificationResult?.status === "REJECTED" || payment.paymentStatus === "REJECTED") &&
+                verificationResult?.status !== "PENDING_APPROVAL" &&
+                !isCompleted && (
+                  <div className="p-6 sm:p-8 rounded-3xl bg-rose-950/30 border border-rose-500/40 text-center space-y-5 shadow-2xl animate-in fade-in duration-200">
+                    <div className="w-14 h-14 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 mx-auto">
+                      <XCircle className="w-8 h-8" />
+                    </div>
                     <div>
-                      <h2 className="text-lg font-orbitron font-bold text-white flex items-center gap-2">
-                        <Upload className="w-5 h-5 text-emerald-400" />
-                        Payment Screenshot Verification
-                      </h2>
-                      <p className="text-xs text-zinc-400 mt-1">
-                        Upload your UPI receipt. CodeXa automatically extracts and verifies all transaction details.
+                      <span className="px-3 py-1 rounded-full text-xs font-orbitron font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30 uppercase tracking-wider">
+                        Payment Proof Rejected
+                      </span>
+                      <h3 className="font-orbitron font-bold text-white text-xl mt-3">
+                        PAYMENT PROOF REJECTED
+                      </h3>
+                      <p className="text-sm text-rose-300 font-semibold mt-2 max-w-lg mx-auto">
+                        Reason: {verificationResult?.reason || payment.rejectionReason || "Proof could not be verified by CodeXa management."}
+                      </p>
+                      <p className="text-xs text-zinc-400 mt-1 max-w-md mx-auto">
+                        If your screenshot was unclear or cut off, you can upload a new screenshot below for the same payment. Do not make a second transfer if ₹450 was already debited from your account.
                       </p>
                     </div>
 
-                    {timerExpired && (
+                    <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVerificationResult(null);
+                          setScreenshotFile(null);
+                          setPreviewUrl(null);
+                          setProofError(null);
+                        }}
+                        className="px-6 py-2.5 rounded-xl bg-bright-red hover:bg-bright-red/90 text-white text-xs font-orbitron font-bold uppercase transition-all shadow-lg flex items-center gap-2"
+                      >
+                        <Upload className="w-4 h-4" />
+                        <span>UPLOAD NEW SCREENSHOT</span>
+                      </button>
                       <button
                         type="button"
                         onClick={handleRetry}
-                        className="self-start sm:self-auto px-3 py-1.5 rounded-xl bg-[#222] hover:bg-[#333] border border-white/10 text-xs font-mono text-zinc-300"
+                        className="px-5 py-2.5 rounded-xl bg-[#222] hover:bg-[#333] border border-white/10 text-zinc-300 text-xs font-orbitron font-bold uppercase transition-all"
                       >
-                        Restart 5-Min Window
+                        START NEW PAYMENT
                       </button>
-                    )}
-                  </div>
-
-                  {proofError && (
-                    <div className="p-3.5 rounded-xl bg-crimson/15 border border-crimson/30 text-crimson text-xs flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4 shrink-0" />
-                      <span>{proofError}</span>
                     </div>
-                  )}
+                  </div>
+                )}
 
-                  {/* Screenshot Upload Dropzone (Section 9 & 10) */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold text-zinc-300 flex items-center justify-between">
-                      <span>Payment Screenshot *</span>
-                      <span className="text-[11px] text-zinc-500">
-                        Max 10 MB (JPEG, PNG, WebP)
-                      </span>
-                    </label>
+              {/* ─── 7. SCREENSHOT UPLOAD FORM (PHASE 4 #10) ───────────────────────── */}
+              {!isCompleted &&
+                verificationResult?.status !== "PENDING_APPROVAL" &&
+                payment.paymentStatus !== "PENDING_APPROVAL" &&
+                verificationResult?.status !== "REJECTED" &&
+                payment.paymentStatus !== "REJECTED" && (
+                  <form
+                    id="proof-upload-section"
+                    onSubmit={handleSubmitProof}
+                    className="p-6 sm:p-8 rounded-3xl bg-[#0d0d0d] border border-white/10 space-y-6 shadow-xl"
+                  >
+                    <div className="border-b border-white/10 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <h2 className="text-lg font-orbitron font-bold text-white flex items-center gap-2">
+                          <Upload className="w-5 h-5 text-emerald-400" />
+                          Submit Payment Screenshot
+                        </h2>
+                        <p className="text-xs text-zinc-400 mt-1">
+                          Upload the screenshot showing your completed ₹450 payment. The CodeXa Founder or Co-Founder will review and confirm your payment.
+                        </p>
+                      </div>
 
-                    <div className="relative border-2 border-dashed border-white/10 hover:border-crimson/50 rounded-2xl p-6 text-center transition-colors bg-[#121212]">
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        onChange={handleFileChange}
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                      />
-
-                      {previewUrl ? (
-                        <div className="flex flex-col items-center gap-3">
-                          <img
-                            src={previewUrl}
-                            alt="Preview"
-                            className="max-h-56 rounded-xl object-contain border border-white/10"
-                          />
-                          <span className="text-xs text-zinc-400">
-                            Click or drag to replace screenshot
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="space-y-2 py-4">
-                          <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center mx-auto text-zinc-400">
-                            <Upload className="w-6 h-6 text-bright-red" />
-                          </div>
-                          <div className="text-xs text-zinc-300">
-                            <span className="font-semibold text-white">Click to upload</span> or drag and drop
-                          </div>
-                          <p className="text-[11px] text-zinc-500 max-w-sm mx-auto">
-                            Upload the full transaction screen from PhonePe, Google Pay, Paytm, or your bank UPI app.
-                          </p>
-                        </div>
+                      {timerExpired && (
+                        <button
+                          type="button"
+                          onClick={handleRetry}
+                          className="self-start sm:self-auto px-3 py-1.5 rounded-xl bg-[#222] hover:bg-[#333] border border-white/10 text-xs font-mono text-zinc-300"
+                        >
+                          Restart 5-Min Window
+                        </button>
                       )}
                     </div>
-                  </div>
 
-                  {/* Auto Extraction Note */}
-                  <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/5 text-[11px] text-zinc-400 flex items-center gap-2.5">
-                    <Shield className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>
-                      <strong>Zero Manual Entry:</strong> UTR number, transaction date, time, and amount are automatically extracted and verified by CodeXa.
-                    </span>
-                  </div>
+                    {/* Bill & Transfer Context Summary */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 rounded-2xl bg-[#141414] border border-white/5 text-xs font-mono">
+                      <div>
+                        <span className="text-zinc-500 text-[10px] uppercase block">Payment Amount</span>
+                        <span className="text-emerald-400 font-bold text-sm">₹450 Fixed</span>
+                      </div>
+                      <div>
+                        <span className="text-zinc-500 text-[10px] uppercase block">Payment Method</span>
+                        <span className="text-white font-semibold">{selectedMethod}</span>
+                      </div>
+                      <div>
+                        <span className="text-zinc-500 text-[10px] uppercase block">Payment Reference</span>
+                        <span className="text-white font-semibold truncate block">{payment.referenceId}</span>
+                      </div>
+                    </div>
 
-                  {/* Submit Button (Section 9) */}
-                  <div>
-                    <button
-                      type="submit"
-                      disabled={submittingProof || !screenshotFile || timerExpired}
-                      className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:brightness-110 text-white font-orbitron font-bold text-sm tracking-wider uppercase transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <Upload className="w-4 h-4" />
-                      <span>UPLOAD PAYMENT SCREENSHOT</span>
-                    </button>
-                  </div>
-                </form>
-              )}
+                    {proofError && (
+                      <div className="p-3.5 rounded-xl bg-crimson/15 border border-crimson/30 text-crimson text-xs flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 shrink-0" />
+                        <span>{proofError}</span>
+                      </div>
+                    )}
+
+                    {/* Screenshot Upload Dropzone */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-zinc-300 flex items-center justify-between">
+                        <span>Payment Screenshot *</span>
+                        <span className="text-[11px] text-zinc-500">
+                          Max 10 MB (JPEG, PNG, WebP)
+                        </span>
+                      </label>
+
+                      <div className="relative border-2 border-dashed border-white/10 hover:border-crimson/50 rounded-2xl p-6 text-center transition-colors bg-[#121212]">
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          onChange={handleFileChange}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        />
+
+                        {previewUrl ? (
+                          <div className="flex flex-col items-center gap-3">
+                            <img
+                              src={previewUrl}
+                              alt="Screenshot Preview"
+                              className="max-h-56 rounded-xl object-contain border border-white/10 shadow-lg"
+                            />
+                            <span className="text-xs text-zinc-400">
+                              Click or drag to replace screenshot
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="space-y-2 py-4">
+                            <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center mx-auto text-zinc-400">
+                              <Upload className="w-6 h-6 text-bright-red" />
+                            </div>
+                            <div className="text-xs text-zinc-300">
+                              <span className="font-semibold text-white">Click to upload</span> or drag and drop
+                            </div>
+                            <p className="text-[11px] text-zinc-500 max-w-sm mx-auto">
+                              Upload the full transaction screen from PhonePe, Google Pay, Paytm, or your bank UPI app showing ₹450 paid to CodeXa.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Manual Approval Notice */}
+                    <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/5 text-[11px] text-zinc-400 flex items-center gap-2.5">
+                      <Shield className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>
+                        <strong>Fast Verification:</strong> Once submitted, your screenshot is routed immediately to Founder &amp; Co-Founder for review and receipt confirmation.
+                      </span>
+                    </div>
+
+                    {/* Submit Button */}
+                    <div>
+                      <button
+                        type="submit"
+                        disabled={submittingProof || !screenshotFile}
+                        className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:brightness-110 text-white font-orbitron font-bold text-sm tracking-wider uppercase transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {submittingProof ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            <span>UPLOADING SCREENSHOT...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4" />
+                            <span>UPLOAD SCREENSHOT</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                )}
             </>
           )}
         </>

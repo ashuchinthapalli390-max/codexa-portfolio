@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getEffectiveRole } from "@/lib/permissions";
 import { logPaymentAudit } from "@/lib/payments/automated-upi";
-import { sendPushNotification } from "@/lib/push";
+import { dispatchPaymentRejectedToIntern } from "@/lib/payments/manual-approval-notifications";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -74,7 +74,7 @@ export async function POST(
       await tx.paymentRequest.update({
         where: { id: payment.id },
         data: {
-          paymentStatus: "FAILED",
+          paymentStatus: "REJECTED",
           rejectedAt: rejectedNow,
           rejectedBy: user.id,
           rejectedByName: `${rejecterName} (${role})`,
@@ -87,7 +87,7 @@ export async function POST(
           where: { id: targetAttempt.id },
           data: {
             status: "FAILED",
-            verificationReason: "ADMIN_REJECTED",
+            verificationReason: `ADMIN_REJECTED: ${rejectionNote}`,
           },
         });
       }
@@ -107,23 +107,25 @@ export async function POST(
       },
     });
 
-    // Notify intern
-    sendPushNotification(payment.userId, {
-      title: "❌ Payment Proof Rejected",
-      body: `Your payment proof was rejected: "${rejectionNote}". You may submit a new attempt from the dashboard.`,
-      icon: "/email-assets/codexa-logo.png",
-      badge: "/email-assets/codexa-logo.png",
-      tag: "payment-rejected",
-      data: {
-        type: "MANDATORY_SERVICE_PAYMENT_REJECTED",
-        url: "/dashboard/payments",
+    // Notify intern via Email, Web Push, and In-App
+    dispatchPaymentRejectedToIntern({
+      payment: {
+        id: payment.id,
+        referenceId: payment.referenceId,
+        userId: payment.userId,
+        userName: payment.userName,
+        userEmail: payment.userEmail,
+        internId: payment.internId,
       },
-    }).catch(() => {});
+      reason: rejectionNote,
+      reviewerName: rejecterName,
+      reviewerRole: role,
+    }).catch((err) => console.error("[Payment Rejected Dispatch Error]", err));
 
     return NextResponse.json({
       success: true,
       message: "Payment proof rejected.",
-      paymentStatus: "FAILED",
+      paymentStatus: "REJECTED",
     });
   } catch (error: any) {
     console.error("POST /api/payments/[id]/review/reject error:", error);

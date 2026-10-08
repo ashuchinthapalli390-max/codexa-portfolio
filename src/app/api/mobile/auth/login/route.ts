@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { identifier, password, deviceId, deviceName, platform } = body || {};
+    const { identifier, password, deviceId, deviceName, platform, fcmToken } = body || {};
 
     if (!identifier || !password) {
       return NextResponse.json(
@@ -170,6 +170,8 @@ export async function POST(req: NextRequest) {
           update: {
             lastActive: new Date(),
             appVersion: req.headers.get("x-app-version") || "1.0.0",
+            fcmToken: fcmToken || undefined,
+            isRevoked: false,
           },
           create: {
             id: `${user.id}_${deviceId}`,
@@ -178,6 +180,8 @@ export async function POST(req: NextRequest) {
             deviceName: deviceName || "Mobile Device",
             platform: platform || "ANDROID",
             appVersion: req.headers.get("x-app-version") || "1.0.0",
+            fcmToken: fcmToken || null,
+            isRevoked: false,
           },
         });
       } catch (devErr) {

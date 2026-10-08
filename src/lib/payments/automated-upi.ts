@@ -232,13 +232,18 @@ export async function getOrCreateInternPayment(userId: string) {
     };
   }
 
-  // Check if there is an active session
+  // Check if there is an active session or pending approval attempt
   const now = new Date();
-  const activeAttempt = payment.attempts.find(
-    (a) =>
-      ["PAYMENT_STARTED", "AWAITING_PROOF", "VERIFYING"].includes(a.status) &&
-      new Date(a.expiresAt) > now
-  );
+  const activeAttempt =
+    payment.attempts.find((a) => a.status === "PENDING_APPROVAL") ||
+    payment.attempts.find((a) => a.status === "SUCCESS") ||
+    payment.attempts.find(
+      (a) =>
+        ["PAYMENT_STARTED", "AWAITING_PROOF", "VERIFYING"].includes(a.status) &&
+        new Date(a.expiresAt) > now
+    ) ||
+    payment.attempts[0] ||
+    null;
 
   return {
     payment,

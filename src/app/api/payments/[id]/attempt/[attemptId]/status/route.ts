@@ -43,12 +43,31 @@ export async function GET(
       : null;
 
     let step = "AWAITING_SCREENSHOT";
-    if (attempt.status === "ANALYZING_PROOF") step = "ANALYZING_PROOF";
-    else if (attempt.status === "VERIFYING") step = "VERIFYING";
-    else if (attempt.status === "SUCCESS") step = "SUCCESS";
-    else if (attempt.status === "REVIEW_REQUIRED") step = "REVIEW_REQUIRED";
-    else if (attempt.status === "FAILED") step = "FAILED";
-    else if (attempt.status === "EXPIRED") step = "EXPIRED";
+    if (
+      attempt.status === "PENDING_APPROVAL" ||
+      attempt.paymentRequest.paymentStatus === "PENDING_APPROVAL"
+    ) {
+      step = "PENDING_APPROVAL";
+    } else if (attempt.status === "ANALYZING_PROOF") {
+      step = "PENDING_APPROVAL";
+    } else if (attempt.status === "VERIFYING") {
+      step = "PENDING_APPROVAL";
+    } else if (
+      attempt.status === "SUCCESS" ||
+      attempt.paymentRequest.paymentStatus === "APPROVED"
+    ) {
+      step = "SUCCESS";
+    } else if (attempt.status === "REVIEW_REQUIRED") {
+      step = "PENDING_APPROVAL";
+    } else if (
+      attempt.status === "FAILED" ||
+      attempt.paymentRequest.paymentStatus === "FAILED" ||
+      attempt.paymentRequest.paymentStatus === "REJECTED"
+    ) {
+      step = "FAILED";
+    } else if (attempt.status === "EXPIRED") {
+      step = "EXPIRED";
+    }
 
     return NextResponse.json({
       status: attempt.status,

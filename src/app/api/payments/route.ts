@@ -230,7 +230,11 @@ export async function GET(req: NextRequest) {
           paidCount += 1;
         } else if (p.cashStatus === "PENDING_CASH_APPROVAL") {
           cashPendingCount += 1;
-        } else if (p.paymentStatus === "PENDING_VERIFICATION" || p.paymentStatus === "VERIFYING") {
+        } else if (
+          p.paymentStatus === "PENDING_APPROVAL" ||
+          p.paymentStatus === "PENDING_VERIFICATION" ||
+          p.paymentStatus === "VERIFYING"
+        ) {
           upiVerifyingCount += 1;
         } else if (p.paymentStatus === "FAILED") {
           failedCount += 1;

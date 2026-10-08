@@ -22,11 +22,17 @@ export async function sendEmail({
   to,
   subject,
   html,
+  attachments,
 }: {
   from: string;
   to: string;
   subject: string;
   html: string;
+  attachments?: Array<{
+    filename: string;
+    content?: Buffer | string;
+    path?: string;
+  }>;
 }): Promise<SendEmailResult> {
   if (!resend) {
     console.log(`[RESEND LOCAL LOG] To: ${to} | Subject: ${subject}`);
@@ -34,12 +40,16 @@ export async function sendEmail({
   }
 
   try {
-    const data = await resend.emails.send({
+    const payload: any = {
       from,
       to,
       subject,
       html,
-    });
+    };
+    if (attachments && attachments.length > 0) {
+      payload.attachments = attachments;
+    }
+    const data = await resend.emails.send(payload);
     return { success: true, data };
   } catch (error: any) {
     console.error(`[RESEND ERROR] Failed to send email to ${to}:`, error);

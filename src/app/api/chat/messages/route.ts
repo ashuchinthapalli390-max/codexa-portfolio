@@ -204,16 +204,22 @@ export async function POST(req: NextRequest) {
             // Send real FCM push alert
             try {
               const { sendFcmPushToUser } = await import("@/lib/firebase-admin");
-              await sendFcmPushToUser(m.core_user_id, {
-                title: user.username || "CodeXa Message",
-                body: messageType === "IMAGE" ? "📷 Sent a photo" : (text || "New message").slice(0, 100),
+              const senderDisplayName = user.displayName || user.username || "Colleague";
+              const pushBody = messageType === "IMAGE" ? "?? Sent a photo" : (text || "New message").slice(0, 100);
+              const pushRes = await sendFcmPushToUser(m.core_user_id, {
+                title: senderDisplayName,
+                body: pushBody,
                 data: {
                   conversationId,
                   senderId: user.id,
+                  senderName: senderDisplayName,
                   type: "CHAT",
                 },
               });
-            } catch (_) {}
+              console.log("[FCM PUSH RESULT]", { recipient: m.core_user_id, pushRes });
+            } catch (fcmErr) {
+              console.warn("[FCM PUSH ERROR]", fcmErr);
+            }
           }
         }
       }

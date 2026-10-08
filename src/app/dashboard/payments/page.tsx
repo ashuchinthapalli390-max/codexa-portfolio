@@ -77,6 +77,8 @@ interface PaymentItem {
     | "PAYMENT_STARTED"
     | "PENDING_VERIFICATION"
     | "VERIFYING"
+    | "PENDING_APPROVAL"
+    | "REVIEW_REQUIRED"
     | "APPROVED"
     | "REJECTED"
     | "CANCELLED"
@@ -177,6 +179,7 @@ export default function PaymentsPage() {
   const [reviewAction, setReviewAction] = useState<"APPROVE" | "REJECT" | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [reviewAdminNotes, setReviewAdminNotes] = useState("");
+  const [confirmReceivedChecked, setConfirmReceivedChecked] = useState(false);
   const [duplicateWarnings, setDuplicateWarnings] = useState<any>({});
   const [zoomedProofUrl, setZoomedProofUrl] = useState<string | null>(null);
 
@@ -397,15 +400,32 @@ export default function PaymentsPage() {
     );
   }, [payments]);
 
-  const reviewRequiredList = useMemo(() => {
+  const pendingApprovalsList = useMemo(() => {
     return payments.filter(
       (p) =>
+        p.paymentStatus === "PENDING_APPROVAL" ||
         p.paymentStatus === "VERIFYING" ||
         p.paymentStatus === "PENDING_VERIFICATION" ||
-        p.paymentStatus === "FAILED" ||
-        (p.submissions && p.submissions.length > 0 && p.paymentStatus !== "APPROVED" && p.paymentStatus !== "SUCCESS")
+        (p.submissions &&
+          p.submissions.some(
+            (s: any) =>
+              s.status === "PENDING_APPROVAL" ||
+              s.status === "PENDING" ||
+              s.status === "PENDING_VERIFICATION"
+          ))
     );
   }, [payments]);
+
+  const rejectedList = useMemo(() => {
+    return payments.filter(
+      (p) =>
+        p.paymentStatus === "REJECTED" ||
+        p.cashStatus === "CASH_REJECTED" ||
+        p.paymentStatus === "FAILED"
+    );
+  }, [payments]);
+
+  const reviewRequiredList = pendingApprovalsList;
 
   // Trigger individual payment reminder
   const handleTriggerTableReminder = async (e: React.MouseEvent, paymentId: string) => {
@@ -494,6 +514,7 @@ export default function PaymentsPage() {
     setReviewAction(null);
     setRejectionReason("");
     setReviewAdminNotes("");
+    setConfirmReceivedChecked(false);
     setDuplicateWarnings({});
 
     try {
@@ -507,6 +528,28 @@ export default function PaymentsPage() {
       console.error("Error loading payment detail:", err);
     }
   };
+
+  // Deep-linking: auto-open payment review modal when redirected from Email or Web Push (?review=... or ?paymentId=...)
+  useEffect(() => {
+    const reviewId = searchParams.get("review") || searchParams.get("paymentId");
+    if (!reviewId || selectedReviewPayment || !isPrivileged) return;
+
+    const matched = payments.find((p) => p.id === reviewId || p.referenceId === reviewId);
+    if (matched) {
+      openReviewModal(matched);
+      setActiveTab("pending-approvals");
+    } else if (payments.length > 0) {
+      fetch(`/api/payments/${encodeURIComponent(reviewId)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.payment) {
+            openReviewModal(data.payment);
+            setActiveTab("pending-approvals");
+          }
+        })
+        .catch(() => {});
+    }
+  }, [searchParams, payments, selectedReviewPayment, isPrivileged]);
 
   // Submit Verification Decision
   const handleVerifyDecision = async (action: "APPROVE" | "REJECT") => {
@@ -544,28 +587,32 @@ export default function PaymentsPage() {
     }
   };
 
-  // Founder / Co-Founder Exception Approval (Calls /api/payments/[id]/review/approve)
+  // Founder / Co-Founder Approval (Calls /api/payments/[id]/review/approve)
   const handleApproveException = async () => {
     if (!selectedReviewPayment) return;
+    if (!confirmReceivedChecked) {
+      alert("Please confirm that you have independently checked and confirmed receipt of ₹450 in the official CodeXa receiving account.");
+      return;
+    }
     try {
       setReviewLoading(true);
       const res = await fetch(`/api/payments/${selectedReviewPayment.id}/review/approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          notes: reviewAdminNotes || "Manual exception approval by Founder/Co-Founder",
+          notes: reviewAdminNotes || "Manual receipt confirmation by Founder/Co-Founder",
         }),
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || "Failed to approve payment exception.");
+        alert(data.error || "Failed to approve payment.");
         return;
       }
-      alert(`Payment ${selectedReviewPayment.referenceId} approved successfully! Intern access cleared.`);
+      alert(`Payment ${selectedReviewPayment.referenceId} approved successfully! Intern benefits unlocked.`);
       setSelectedReviewPayment(null);
       await fetchData(true);
     } catch (err: any) {
-      alert(err.message || "Network error approving payment exception.");
+      alert(err.message || "Network error approving payment.");
     } finally {
       setReviewLoading(false);
     }
@@ -829,6 +876,15 @@ export default function PaymentsPage() {
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
           <CheckCircle2 className="w-3.5 h-3.5" />
           {p.cashStatus === "CASH_RECEIVED" ? "Cash Received" : "Paid & Approved"}
+        </span>
+      );
+    }
+
+    if (p.paymentStatus === "PENDING_APPROVAL") {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/20 border border-amber-500/40 text-amber-300 animate-pulse">
+          <Clock className="w-3.5 h-3.5 text-amber-400" />
+          Pending Approval
         </span>
       );
     }
@@ -1123,14 +1179,14 @@ export default function PaymentsPage() {
               className="w-full p-3 rounded-xl bg-[#141414] border border-crimson/30 text-white text-xs font-semibold focus:outline-none focus:border-bright-red transition-all"
             >
               <option value="overview">📊 Overview & Metrics</option>
+              <option value="pending-approvals">⏳ Pending Approvals ({pendingApprovalsList.length})</option>
               <option value="all">💳 All Payments ({payments.length})</option>
               <option value="paid">✅ Paid Interns ({paidList.length})</option>
               <option value="not-paid">⏳ Not Paid Roster ({notPaidList.length})</option>
-              {canApproveCash && <option value="queue">⏱ UPI Queue ({verificationQueue.length})</option>}
-              <option value="review-required">⚠️ Review Required ({reviewRequiredList.length})</option>
               {canApproveCash && <option value="cash-approvals">💵 Cash Approvals ({cashApprovalsList.length})</option>}
-              <option value="analytics">📈 Analytics & Methods</option>
+              <option value="rejected">❌ Rejected ({rejectedList.length})</option>
               <option value="history">📜 Audit Logs & History</option>
+              <option value="analytics">📈 Analytics & Methods</option>
               {canManage && <option value="create">➕ Create Request</option>}
               {canManageSettings && <option value="settings">⚙️ Payment Settings</option>}
             </select>
@@ -1149,6 +1205,24 @@ export default function PaymentsPage() {
             >
               <TrendingUp className="w-4 h-4 text-bright-red" />
               Overview
+            </button>
+
+            {/* Pending Approvals Tab (Phase 7 #28 & #29) */}
+            <button
+              onClick={() => setActiveTab("pending-approvals")}
+              className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
+                activeTab === "pending-approvals"
+                  ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
+                  : "text-zinc-400 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              <Clock className="w-4 h-4 text-amber-400" />
+              Pending Approvals ({pendingApprovalsList.length})
+              {pendingApprovalsList.length > 0 && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
+                  {pendingApprovalsList.length}
+                </span>
+              )}
             </button>
 
             {/* All Payments Tab */}
@@ -1190,24 +1264,6 @@ export default function PaymentsPage() {
               Not Paid ({notPaidList.length})
             </button>
 
-            {/* Review Required Tab (Dedicated Exception Console) */}
-            <button
-              onClick={() => setActiveTab("review-required")}
-              className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
-                activeTab === "review-required"
-                  ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
-                  : "text-zinc-400 hover:text-white hover:bg-white/5"
-              }`}
-            >
-              <AlertTriangle className="w-4 h-4 text-amber-400" />
-              Review Required
-              {reviewRequiredList.length > 0 && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
-                  {reviewRequiredList.length}
-                </span>
-              )}
-            </button>
-
             {/* Cash Approvals Tab (Founder & Co-Founder) */}
             {canApproveCash && (
               <button
@@ -1228,25 +1284,31 @@ export default function PaymentsPage() {
               </button>
             )}
 
-            {/* UPI Verification Queue (Founder, Co-Founder, Executive) */}
-            {canApproveCash && (
-              <button
-                onClick={() => setActiveTab("queue")}
-                className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
-                  activeTab === "queue"
-                    ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
-                    : "text-zinc-400 hover:text-white hover:bg-white/5"
-                }`}
-              >
-                <Clock className="w-4 h-4 text-blue-400" />
-                UPI Queue
-                {verificationQueue.length > 0 && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                    {verificationQueue.length}
-                  </span>
-                )}
-              </button>
-            )}
+            {/* Rejected Tab */}
+            <button
+              onClick={() => setActiveTab("rejected")}
+              className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
+                activeTab === "rejected"
+                  ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
+                  : "text-zinc-400 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              <XCircle className="w-4 h-4 text-crimson" />
+              Rejected ({rejectedList.length})
+            </button>
+
+            {/* Payment History & Audit Timeline Tab */}
+            <button
+              onClick={() => setActiveTab("history")}
+              className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium rounded-t-xl transition-all whitespace-nowrap ${
+                activeTab === "history"
+                  ? "bg-[#181818] text-white border-b-2 border-bright-red font-semibold"
+                  : "text-zinc-400 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              <FileText className="w-4 h-4 text-indigo-400" />
+              History &amp; Logs
+            </button>
 
             {/* Analytics Tab */}
             <button
@@ -1312,18 +1374,18 @@ export default function PaymentsPage() {
         <div className="space-y-6 animate-in fade-in duration-150">
           {/* Action Callout Banners */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {reviewRequiredList.length > 0 && (
+            {pendingApprovalsList.length > 0 && (
               <div
-                onClick={() => setActiveTab("review-required")}
+                onClick={() => setActiveTab("pending-approvals")}
                 className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 hover:border-amber-500/60 transition-all cursor-pointer flex items-center justify-between"
               >
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
-                    <AlertTriangle className="w-5 h-5" />
+                    <Clock className="w-5 h-5 animate-pulse" />
                   </div>
                   <div>
-                    <h4 className="text-xs font-bold text-white">Review Required</h4>
-                    <p className="text-[11px] text-amber-300/80">{reviewRequiredList.length} exceptions pending review</p>
+                    <h4 className="text-xs font-bold text-white">Pending Approvals</h4>
+                    <p className="text-[11px] text-amber-300/80">{pendingApprovalsList.length} payment screenshot proofs awaiting review</p>
                   </div>
                 </div>
                 <ChevronRight className="w-4 h-4 text-amber-400" />
@@ -1740,91 +1802,195 @@ export default function PaymentsPage() {
         </div>
       )}
 
-      {/* ─── TAB: UPI VERIFICATION QUEUE (FOUNDER / CO-FOUNDER) ──────────────── */}
-      {isPrivileged && canApproveCash && activeTab === "queue" && (
+      {/* ─── TAB: PENDING APPROVALS (PHASE 7 #28, #29, #30) ──────────────────── */}
+      {isPrivileged && (activeTab === "pending-approvals" || activeTab === "queue" || activeTab === "review-required") && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400 flex items-center gap-2">
-              <Clock className="w-4 h-4 text-blue-400" />
-              Awaiting UPI Verification ({verificationQueue.length})
-            </h2>
-            <span className="text-xs text-zinc-500">Ordered by earliest submitted</span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#111111] p-4 rounded-2xl border border-amber-500/30">
+            <div>
+              <h2 className="text-sm font-orbitron font-bold text-amber-400 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-amber-400 animate-pulse" />
+                Pending Approvals ({pendingApprovalsList.length})
+              </h2>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                UPI payment screenshot proofs submitted by interns. Independently check receipt of ₹450 before approving.
+              </p>
+            </div>
+            <div className="text-xs text-amber-300 font-mono bg-amber-500/10 px-3 py-1.5 rounded-xl border border-amber-500/30 w-fit">
+              Awaiting Review: {pendingApprovalsList.length} Requests
+            </div>
           </div>
 
           {loading ? (
             <div className="p-12 text-center rounded-2xl bg-[#0f0f0f] border border-white/5 space-y-3">
-              <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" />
-              <p className="text-xs text-zinc-400">Loading verification queue...</p>
+              <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto" />
+              <p className="text-xs text-zinc-400">Loading pending approvals...</p>
             </div>
-          ) : verificationQueue.length === 0 ? (
-            <div className="p-12 text-center rounded-2xl bg-[#0f0f0f] border border-white/5">
-              <CheckCircle2 className="w-10 h-10 text-emerald-500/50 mx-auto mb-3" />
+          ) : pendingApprovalsList.length === 0 ? (
+            <div className="p-12 text-center rounded-2xl bg-[#0f0f0f] border border-white/5 space-y-2">
+              <CheckCircle2 className="w-10 h-10 text-emerald-500/50 mx-auto mb-2" />
               <p className="text-sm text-zinc-300 font-medium">All Caught Up!</p>
-              <p className="text-xs text-zinc-500 mt-1">There are no pending UPI screenshot verifications at this time.</p>
+              <p className="text-xs text-zinc-500">There are no pending screenshot approval requests right now.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {verificationQueue.map((item) => (
-                <div
-                  key={item.id}
-                  className="p-5 rounded-2xl bg-[#0f0f0f] border border-white/10 hover:border-blue-500/40 transition-all flex flex-col justify-between space-y-4 shadow-lg group"
-                >
-                  <div>
-                    <div className="flex items-start justify-between gap-2 mb-3">
-                      <span className="font-mono text-xs font-bold text-bright-red bg-crimson/10 px-2.5 py-1 rounded-md border border-crimson/20">
-                        {item.referenceId}
-                      </span>
-                      {renderStatusBadge(item)}
-                    </div>
+            <div className="rounded-2xl bg-[#0f0f0f] border border-white/10 overflow-hidden shadow-xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-zinc-300">
+                  <thead className="bg-[#141414] text-zinc-400 uppercase text-[11px] tracking-wider border-b border-white/5">
+                    <tr>
+                      <th className="py-3.5 px-4 font-semibold">Intern Name</th>
+                      <th className="py-3.5 px-4 font-semibold">Intern ID</th>
+                      <th className="py-3.5 px-4 font-semibold">Domain</th>
+                      <th className="py-3.5 px-4 font-semibold">Amount</th>
+                      <th className="py-3.5 px-4 font-semibold">Payment Method</th>
+                      <th className="py-3.5 px-4 font-semibold">Payment Reference</th>
+                      <th className="py-3.5 px-4 font-semibold">Screenshot</th>
+                      <th className="py-3.5 px-4 font-semibold">Submitted At</th>
+                      <th className="py-3.5 px-4 font-semibold">Status</th>
+                      <th className="py-3.5 px-4 font-semibold text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {pendingApprovalsList.map((p) => (
+                      <tr key={p.id} className="hover:bg-white/[0.02] transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="font-semibold text-white">{p.userName}</div>
+                          <div className="text-[11px] text-zinc-500">{p.userEmail}</div>
+                        </td>
+                        <td className="py-3 px-4 font-mono font-semibold text-zinc-300">
+                          {p.internId || p.user?.employmentProfile?.employeeId || p.employeeId || "-"}
+                        </td>
+                        <td className="py-3 px-4 text-zinc-300">
+                          {p.domain || p.user?.department || "General"}
+                        </td>
+                        <td className="py-3 px-4 font-bold text-emerald-400 font-mono">
+                          ₹{(p.fixedAmount || 450).toLocaleString()}
+                        </td>
+                        <td className="py-3 px-4">
+                          {renderMethodBadge(p.paymentMethod)}
+                        </td>
+                        <td className="py-3 px-4 font-mono text-zinc-300">
+                          {p.referenceId}
+                        </td>
+                        <td className="py-3 px-4">
+                          {p.proofImageUrl ? (
+                            <button
+                              type="button"
+                              onClick={() => setZoomedProofUrl(`/api/payments/${p.id}/proof-image`)}
+                              className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white text-[11px] font-semibold border border-white/10 flex items-center gap-1 transition-colors"
+                            >
+                              <Eye className="w-3 h-3 text-amber-400" /> VIEW
+                            </button>
+                          ) : (
+                            <span className="text-zinc-600 text-[11px]">N/A</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-zinc-400 text-[11px]">
+                          {p.submittedAt
+                            ? new Date(p.submittedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
+                            : new Date(p.createdAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
+                        </td>
+                        <td className="py-3 px-4">
+                          {renderStatusBadge(p)}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => openReviewModal(p)}
+                            className="px-3.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 hover:text-white text-xs font-orbitron font-bold uppercase transition-all shadow-[0_0_12px_rgba(245,158,11,0.2)]"
+                          >
+                            REVIEW PAYMENT
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
-                    <h3 className="font-semibold text-white text-base group-hover:text-bright-red transition-colors">
-                      {item.title}
-                    </h3>
-                    <p className="text-xs text-zinc-400 mt-0.5 line-clamp-1">{item.description}</p>
+      {/* ─── TAB: REJECTED PAYMENTS ─────────────────────────────────────────── */}
+      {isPrivileged && activeTab === "rejected" && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#111111] p-4 rounded-2xl border border-rose-500/30">
+            <div>
+              <h2 className="text-sm font-orbitron font-bold text-rose-400 flex items-center gap-2">
+                <XCircle className="w-5 h-5 text-rose-400" />
+                Rejected Payments ({rejectedList.length})
+              </h2>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Payments where proof was rejected by Founder/Co-Founder. Interns can submit corrected proof against their bill.
+              </p>
+            </div>
+            <div className="text-xs text-rose-300 font-mono bg-rose-500/10 px-3 py-1.5 rounded-xl border border-rose-500/30 w-fit">
+              Total Rejected: {rejectedList.length}
+            </div>
+          </div>
 
-                    <div className="mt-4 pt-3 border-t border-white/5 space-y-2 text-xs">
-                      <div className="flex items-center justify-between text-zinc-300">
-                        <span className="text-zinc-500">User:</span>
-                        <span className="font-medium">{item.userName || item.userEmail}</span>
-                      </div>
-                      <div className="flex items-center justify-between text-zinc-300">
-                        <span className="text-zinc-500">Role / Domain:</span>
-                        <span>{item.userRole} &bull; {item.domain || "General"}</span>
-                      </div>
-                      <div className="flex items-center justify-between text-zinc-300">
-                        <span className="text-zinc-500">Payable Amount:</span>
-                        <span className="font-bold text-sm text-emerald-400">₹{item.fixedAmount.toLocaleString()}</span>
-                      </div>
-                      {item.utrNumber && (
-                        <div className="flex items-center justify-between text-zinc-300">
-                          <span className="text-zinc-500">UTR / Ref:</span>
-                          <span className="font-mono text-zinc-200">{item.utrNumber}</span>
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between text-zinc-500 text-[11px]">
-                        <span>Submitted:</span>
-                        <span>{item.submittedAt ? new Date(item.submittedAt).toLocaleString() : "Just now"}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-3 border-t border-white/5 flex items-center gap-2">
-                    <button
-                      onClick={() => openReviewModal(item)}
-                      className="flex-1 py-2 px-3 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-                    >
-                      <Eye className="w-3.5 h-3.5" /> Review &amp; Decide
-                    </button>
-                    <Link
-                      href={`/dashboard/payments/${item.id}`}
-                      className="p-2 rounded-xl bg-[#181818] hover:bg-[#202020] border border-white/10 text-zinc-400 hover:text-white transition-colors"
-                      title="View Full Page"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </Link>
-                  </div>
-                </div>
-              ))}
+          {loading ? (
+            <div className="p-12 text-center rounded-2xl bg-[#0f0f0f] border border-white/5 space-y-3">
+              <div className="w-8 h-8 border-2 border-rose-500 border-t-transparent rounded-full animate-spin mx-auto" />
+              <p className="text-xs text-zinc-400">Loading rejected payments...</p>
+            </div>
+          ) : rejectedList.length === 0 ? (
+            <div className="p-12 text-center rounded-2xl bg-[#0f0f0f] border border-white/5 space-y-2">
+              <CheckCircle2 className="w-10 h-10 text-emerald-500/50 mx-auto mb-2" />
+              <p className="text-sm text-zinc-300 font-medium">No Rejected Payments</p>
+              <p className="text-xs text-zinc-500">There are no rejected payment records.</p>
+            </div>
+          ) : (
+            <div className="rounded-2xl bg-[#0f0f0f] border border-white/10 overflow-hidden shadow-xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-zinc-300">
+                  <thead className="bg-[#141414] text-zinc-400 uppercase text-[11px] tracking-wider border-b border-white/5">
+                    <tr>
+                      <th className="py-3.5 px-4 font-semibold">Intern ID & Name</th>
+                      <th className="py-3.5 px-4 font-semibold">Domain</th>
+                      <th className="py-3.5 px-4 font-semibold">Amount</th>
+                      <th className="py-3.5 px-4 font-semibold">Method</th>
+                      <th className="py-3.5 px-4 font-semibold">Rejection Reason</th>
+                      <th className="py-3.5 px-4 font-semibold">Reviewed By</th>
+                      <th className="py-3.5 px-4 font-semibold text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {rejectedList.map((p) => (
+                      <tr key={p.id} className="hover:bg-white/[0.02] transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="font-semibold text-white">{p.userName}</div>
+                          <div className="text-[11px] text-zinc-500">{p.internId || p.employeeId || "-"}</div>
+                        </td>
+                        <td className="py-3 px-4 text-zinc-300">
+                          {p.domain || "General"}
+                        </td>
+                        <td className="py-3 px-4 font-bold text-white font-mono">
+                          ₹{(p.fixedAmount || 450).toLocaleString()}
+                        </td>
+                        <td className="py-3 px-4">
+                          {renderMethodBadge(p.paymentMethod)}
+                        </td>
+                        <td className="py-3 px-4 text-rose-300 font-medium">
+                          {p.rejectionReason || p.cashRejectionReason || "Proof unverified"}
+                        </td>
+                        <td className="py-3 px-4 text-zinc-400 text-[11px]">
+                          {p.rejectedByName || p.verifiedByName || "Management"}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => openReviewModal(p)}
+                            className="px-3 py-1.5 rounded-xl bg-[#222] hover:bg-[#333] text-zinc-300 text-xs font-semibold border border-white/10"
+                          >
+                            View
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
@@ -2794,10 +2960,15 @@ export default function PaymentsPage() {
                   {selectedReviewPayment.referenceId}
                 </span>
                 <h3 className="text-base font-orbitron font-bold text-white mt-1.5 flex items-center gap-2">
-                  <span>Verify Payment Proof</span>
+                  <span>Payment Approval Review</span>
                   {selectedReviewPayment.paymentStatus === "APPROVED" && (
                     <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
                       Already Approved
+                    </span>
+                  )}
+                  {selectedReviewPayment.paymentStatus === "PENDING_APPROVAL" && (
+                    <span className="text-[11px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30 animate-pulse">
+                      Pending Founder/Co-Founder Review
                     </span>
                   )}
                 </h3>
@@ -2834,7 +3005,7 @@ export default function PaymentsPage() {
                 )}
 
                 <div className="p-4 rounded-xl bg-[#141414] border border-white/5 space-y-2">
-                  <span className="text-[11px] font-semibold uppercase text-zinc-500 block">User Information</span>
+                  <span className="text-[11px] font-semibold uppercase text-zinc-500 block">Intern Details</span>
                   <div className="flex justify-between">
                     <span className="text-zinc-500">Name:</span>
                     <span className="font-semibold text-white">{selectedReviewPayment.userName}</span>
@@ -2847,6 +3018,10 @@ export default function PaymentsPage() {
                     <span className="text-zinc-500">Role &amp; Domain:</span>
                     <span className="text-zinc-300">{selectedReviewPayment.userRole} &bull; {selectedReviewPayment.domain}</span>
                   </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">Duration Track:</span>
+                    <span className="text-zinc-300">{getDomainDurationLabel(selectedReviewPayment.domain)}</span>
+                  </div>
                   {selectedReviewPayment.internId && (
                     <div className="flex justify-between">
                       <span className="text-zinc-500">Intern ID:</span>
@@ -2856,58 +3031,82 @@ export default function PaymentsPage() {
                 </div>
 
                 <div className="p-4 rounded-xl bg-[#141414] border border-white/5 space-y-2">
-                  <span className="text-[11px] font-semibold uppercase text-zinc-500 block">Transaction Details</span>
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500">Bill Title:</span>
-                    <span className="font-medium text-white">{selectedReviewPayment.title}</span>
-                  </div>
+                  <span className="text-[11px] font-semibold uppercase text-zinc-500 block">Payment Details</span>
                   <div className="flex justify-between">
                     <span className="text-zinc-500">Payable Amount:</span>
-                    <span className="font-bold text-sm text-emerald-400">₹{selectedReviewPayment.fixedAmount.toLocaleString()}</span>
+                    <span className="font-bold text-sm text-emerald-400">₹{(selectedReviewPayment.fixedAmount || 450).toLocaleString()} Fixed</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-zinc-500">UTR / Ref Number:</span>
+                    <span className="text-zinc-500">Payment Method:</span>
+                    <span className="text-white font-medium">{selectedReviewPayment.paymentMethod || selectedReviewPayment.upiApp || "UPI"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">Official Receiver:</span>
+                    <span className="font-mono text-zinc-300">shaikashu33@fam (CodeXa Agency)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">CodeXa Reference:</span>
                     <span className="font-mono font-semibold text-white bg-black/40 px-2 py-0.5 rounded border border-white/10">
-                      {selectedReviewPayment.utrNumber || "NOT PROVIDED"}
+                      {selectedReviewPayment.referenceId}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-zinc-500">UPI App:</span>
-                    <span className="text-zinc-300">{selectedReviewPayment.upiApp || "Standard UPI"}</span>
+                    <span className="text-zinc-500">Attempt Started:</span>
+                    <span className="text-zinc-400">
+                      {new Date(selectedReviewPayment.createdAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
+                    </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-zinc-500">Payment Date:</span>
+                    <span className="text-zinc-500">Proof Submitted:</span>
                     <span className="text-zinc-300">
-                      {selectedReviewPayment.paymentDate
-                        ? new Date(selectedReviewPayment.paymentDate).toLocaleDateString()
+                      {selectedReviewPayment.submittedAt
+                        ? new Date(selectedReviewPayment.submittedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
                         : "N/A"}
                     </span>
                   </div>
                 </div>
 
+                {/* Independent Receipt Confirmation Checkbox (Phase 7 #33) */}
+                {selectedReviewPayment.paymentStatus !== "APPROVED" && (
+                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs">
+                    <label className="flex items-start gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={confirmReceivedChecked}
+                        onChange={(e) => setConfirmReceivedChecked(e.target.checked)}
+                        className="mt-0.5 rounded border-amber-400 text-amber-500 focus:ring-0 w-4 h-4 shrink-0"
+                      />
+                      <span className="leading-relaxed">
+                        <strong>Receipt Confirmation:</strong> Have you independently confirmed receipt of ₹450 in the official CodeXa receiving account?
+                      </span>
+                    </label>
+                  </div>
+                )}
+
                 {reviewAction === "REJECT" && (
                   <div className="p-4 rounded-xl bg-crimson/10 border border-crimson/30 space-y-3">
-                    <label className="block font-semibold text-crimson">Select Rejection Reason *</label>
+                    <label className="block font-semibold text-crimson text-xs">Select Rejection Reason *</label>
                     <select
                       value={rejectionReason}
                       onChange={(e) => setRejectionReason(e.target.value)}
-                      className="w-full p-2 bg-[#161616] border border-crimson/40 rounded-xl text-xs text-white"
+                      className="w-full p-2.5 bg-[#161616] border border-crimson/40 rounded-xl text-xs text-white"
                     >
-                      <option value="">-- Choose Preset Reason --</option>
-                      <option value="Payment proof unclear / unreadable">Payment proof unclear / unreadable</option>
-                      <option value="Amount mismatch">Amount mismatch (Not matching ₹450)</option>
-                      <option value="Unable to verify transaction in bank statement">Unable to verify transaction in bank statement</option>
-                      <option value="Duplicate screenshot already submitted">Duplicate screenshot already submitted</option>
-                      <option value="Incorrect UTR / transaction ID">Incorrect UTR / transaction ID</option>
-                      <option value="Payment not received">Payment not received in CodeXa account</option>
+                      <option value="">-- Choose Standard Reason --</option>
+                      <option value="Amount not received">Amount not received</option>
+                      <option value="Unable to identify transaction">Unable to identify transaction</option>
+                      <option value="Screenshot unclear">Screenshot unclear</option>
+                      <option value="Screenshot does not correspond to this payment">Screenshot does not correspond to this payment</option>
+                      <option value="Duplicate/previously used payment evidence">Duplicate/previously used payment evidence</option>
+                      <option value="Wrong receiver">Wrong receiver</option>
+                      <option value="Other">Other</option>
                     </select>
 
                     <input
                       type="text"
-                      placeholder="Or enter custom reason..."
+                      placeholder="Or enter custom rejection note..."
                       value={rejectionReason}
                       onChange={(e) => setRejectionReason(e.target.value)}
-                      className="w-full p-2 bg-[#161616] border border-white/10 rounded-xl text-xs text-white"
+                      className="w-full p-2.5 bg-[#161616] border border-white/10 rounded-xl text-xs text-white"
                     />
                   </div>
                 )}
@@ -2915,7 +3114,7 @@ export default function PaymentsPage() {
 
               <div className="space-y-3">
                 <span className="text-[11px] font-semibold uppercase text-zinc-400 block">
-                  Payment Proof Screenshot
+                  Payment Proof Screenshot (Evidence)
                 </span>
 
                 <div className="p-2 rounded-2xl bg-[#080808] border border-white/10 flex items-center justify-center min-h-[300px] max-h-[460px] overflow-hidden relative group">
@@ -2932,7 +3131,7 @@ export default function PaymentsPage() {
                         onClick={() => setZoomedProofUrl(`/api/payments/${selectedReviewPayment.id}/proof-image`)}
                         className="absolute bottom-3 right-3 px-3 py-1.5 rounded-xl bg-black/80 hover:bg-black text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg border border-white/20 opacity-90 group-hover:opacity-100 transition-opacity"
                       >
-                        <Eye className="w-3.5 h-3.5" /> Open Lightbox
+                        <Eye className="w-3.5 h-3.5" /> Open Lightbox / Zoom
                       </button>
                     </>
                   ) : (
@@ -2941,15 +3140,17 @@ export default function PaymentsPage() {
                 </div>
 
                 <div className="flex items-center justify-between text-[11px] text-zinc-500 px-1">
-                  <span>Click image to view in full-screen Lightbox</span>
-                  <a
-                    href={`/api/payments/${selectedReviewPayment.id}/proof-image`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-bright-red hover:underline flex items-center gap-1"
-                  >
-                    Open in New Tab <ExternalLink className="w-3 h-3" />
-                  </a>
+                  <span>Click image to zoom or view in full-screen Lightbox</span>
+                  {selectedReviewPayment.proofImageUrl && (
+                    <a
+                      href={`/api/payments/${selectedReviewPayment.id}/proof-image`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-bright-red hover:underline flex items-center gap-1"
+                    >
+                      Open in New Tab <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
                 </div>
               </div>
             </div>
@@ -2967,15 +3168,6 @@ export default function PaymentsPage() {
               {/* Founder / Co-Founder Controls vs Executive Read-Only */}
               {effectiveRole === "FOUNDER" || effectiveRole === "CO_FOUNDER" ? (
                 <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => handleAdminOverride("RETRY_VERIFY")}
-                    disabled={reviewLoading}
-                    className="px-3.5 py-2 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 text-xs font-semibold transition-colors disabled:opacity-50"
-                  >
-                    {reviewLoading ? "Working..." : "Retry Auto-Verification"}
-                  </button>
-
                   {reviewAction !== "REJECT" ? (
                     <button
                       type="button"
@@ -2983,16 +3175,16 @@ export default function PaymentsPage() {
                       disabled={reviewLoading}
                       className="px-4 py-2 rounded-xl bg-crimson/20 hover:bg-crimson/30 border border-crimson/40 text-crimson text-xs font-bold transition-colors"
                     >
-                      Reject Proof
+                      REJECT PAYMENT
                     </button>
                   ) : (
                     <button
                       type="button"
                       onClick={handleRejectException}
-                      disabled={reviewLoading}
-                      className="px-5 py-2 rounded-xl bg-crimson hover:bg-crimson/90 text-white text-xs font-bold transition-all shadow-lg"
+                      disabled={reviewLoading || !rejectionReason.trim()}
+                      className="px-5 py-2 rounded-xl bg-crimson hover:bg-crimson/90 text-white text-xs font-bold transition-all shadow-lg disabled:opacity-50"
                     >
-                      {reviewLoading ? "Processing..." : "Confirm Rejection"}
+                      {reviewLoading ? "Processing..." : "CONFIRM REJECTION"}
                     </button>
                   )}
 
@@ -3000,11 +3192,11 @@ export default function PaymentsPage() {
                     <button
                       type="button"
                       onClick={handleApproveException}
-                      disabled={reviewLoading}
-                      className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-[0_0_15px_rgba(34,197,94,0.3)] flex items-center gap-1.5 disabled:opacity-50"
+                      disabled={reviewLoading || !confirmReceivedChecked}
+                      className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-[0_0_15px_rgba(34,197,94,0.3)] flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <Check className="w-4 h-4" />
-                      {reviewLoading ? "Approving..." : "Approve Exception"}
+                      {reviewLoading ? "Approving..." : "APPROVE PAYMENT"}
                     </button>
                   )}
                 </div>
