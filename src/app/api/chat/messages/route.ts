@@ -110,6 +110,12 @@ export async function POST(req: NextRequest) {
     let text = body.text || body.message || "";
     const clientMessageId = body.clientMessageId || body.clientId;
     let messageType = body.messageType || "TEXT";
+    const stickerId = body.stickerId;
+    const catalogVersion = body.catalogVersion;
+    if (stickerId || messageType === "STICKER") {
+      messageType = "STICKER";
+      if (stickerId) text = stickerId;
+    }
     const replyToMessageId = body.replyToMessageId;
     const mediaUrlInput = body.mediaUrl;
 
@@ -206,7 +212,7 @@ export async function POST(req: NextRequest) {
             try {
               const { sendFcmPushToUser } = await import("@/lib/firebase-admin");
               const senderDisplayName = user.displayName || user.username || "Colleague";
-              const pushBody = messageType === "IMAGE" ? "?? Sent a photo" : (text || "New message").slice(0, 100);
+              const pushBody = messageType === "STICKER" ? "🎨 Sent a sticker" : messageType === "IMAGE" ? "📷 Sent a photo" : (text || "New message").slice(0, 100);
               const pushRes = await sendFcmPushToUser(m.core_user_id, {
                 title: senderDisplayName,
                 body: pushBody,
