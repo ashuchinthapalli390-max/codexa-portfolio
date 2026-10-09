@@ -93,7 +93,8 @@ export async function GET(req: NextRequest) {
         otherUpiEnabled: (settings as any)?.otherUpiEnabled ?? true,
         cashEnabled: (settings as any)?.cashEnabled ?? true,
         receiverName: (settings as any)?.receiverName || "CodeXa Agency",
-        defaultUpiId: (settings as any)?.defaultUpiId || "shaikashu33@fam",
+        defaultUpiId: (settings as any)?.defaultUpiId || (settings as any)?.upiId || "7075920852@ptyes",
+        upiId: (settings as any)?.upiId || (settings as any)?.defaultUpiId || "7075920852@ptyes",
         coFounderWhatsApp: (settings as any)?.coFounderWhatsApp || "7075920852",
       },
     };

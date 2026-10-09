@@ -164,7 +164,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       attempts: sanitizedAttempts,
       paymentAccount: resolvedAccount || {
         name: "CodeXa Official",
-        upiId: process.env.DEFAULT_UPI_ID || "shaikashu33@fam",
+        upiId: process.env.DEFAULT_UPI_ID || "7075920852@ptyes",
         payeeName: process.env.DEFAULT_UPI_NAME || "CodeXa Agency",
       },
     };

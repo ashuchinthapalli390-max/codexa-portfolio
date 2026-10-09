@@ -715,7 +715,7 @@ export function InternAutomaticPaymentFlow({
     (payment.paymentStatus === "REJECTED" || verificationResult?.status === "REJECTED") &&
     !isPendingApproval;
 
-  const upiId = activeAttempt?.upiIdSnapshot || settings?.upiId || "shaikashu33@fam";
+  const upiId = activeAttempt?.upiIdSnapshot || settings?.upiId || "7075920852@ptyes";
   const receiverName =
     activeAttempt?.receiverSnapshot || settings?.receiverName || "CodeXa Agency";
   const amountStr = "450.00";

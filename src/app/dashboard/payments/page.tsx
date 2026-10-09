@@ -3074,7 +3074,7 @@ export default function PaymentsPage() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-zinc-500">Official Receiver:</span>
-                    <span className="font-mono text-zinc-300">shaikashu33@fam (CodeXa Agency)</span>
+                    <span className="font-mono text-zinc-300">7075920852@ptyes (CodeXa Agency)</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-zinc-500">CodeXa Reference:</span>

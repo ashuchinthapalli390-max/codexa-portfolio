@@ -272,7 +272,7 @@ async function runTests() {
     const bankTx = await addTrustedTransaction({
       utrNumber: trustedUtr,
       amount: 450.0,
-      receiverUpi: settings.upiId || "shaikashu33@fam",
+      receiverUpi: settings.upiId || "7075920852@ptyes",
       senderName: "Automated Intern Account",
       bankReference: "BANK-REF-" + Date.now(),
     });
@@ -337,7 +337,7 @@ async function runTests() {
           userId: testIntern.id,
           selectedMethod: "PAYTM",
           amountSnapshot: new Prisma.Decimal("450.00"),
-          upiIdSnapshot: "shaikashu33@fam",
+          upiIdSnapshot: "7075920852@ptyes",
           receiverSnapshot: "CodeXa",
           startedAt: new Date(),
           expiresAt: new Date(Date.now() + 300000),
@@ -371,7 +371,7 @@ async function runTests() {
           userId: testIntern.id,
           selectedMethod: "OTHER_UPI",
           amountSnapshot: new Prisma.Decimal("450.00"),
-          upiIdSnapshot: "shaikashu33@fam",
+          upiIdSnapshot: "7075920852@ptyes",
           receiverSnapshot: "CodeXa",
           startedAt: new Date(),
           expiresAt: new Date(Date.now() + 300000),

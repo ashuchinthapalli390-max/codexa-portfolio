@@ -402,7 +402,7 @@ function extractReceiver(
     confidence += 0.5;
   }
 
-  // Check UPI VPA e.g. shaikashu33@fam, codexa@upi, etc.
+  // Check UPI VPA e.g. 7075920852@ptyes, codexa@upi, etc.
   const vpaRegex = /\b([a-zA-Z0-9.\-_]{2,40}@[a-zA-Z]{2,15})\b/;
   const vpaMatch = text.match(vpaRegex);
   if (vpaMatch && vpaMatch[1]) {

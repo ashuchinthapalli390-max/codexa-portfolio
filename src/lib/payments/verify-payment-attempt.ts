@@ -340,7 +340,7 @@ export async function verifyPaymentAttemptWithEvidence(params: {
 
   // Check 3.7: Receiver Validation
   if (ocrResult.detectedReceiverUpi) {
-    const officialUpi = (settings.upiId || settings.defaultUpiId || "shaikashu33@fam").toLowerCase();
+    const officialUpi = (settings.upiId || settings.defaultUpiId || "7075920852@ptyes").toLowerCase();
     if (!ocrResult.detectedReceiverUpi.includes(officialUpi) && !officialUpi.includes(ocrResult.detectedReceiverUpi)) {
       checks.receiver = "FAIL";
       return await recordFailure(attempt, ocrResult, proofFilePath, "RECEIVER_MISMATCH", checks, ["RECEIVER_MISMATCH"], ipAddress, userAgent);

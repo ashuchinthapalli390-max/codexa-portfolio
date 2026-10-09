@@ -28,7 +28,7 @@ export const MANDATORY_ID_CARD_AMOUNT = 150.0;
 export const MANDATORY_AI_TOOLS_AMOUNT = 300.0;
 
 export const DEFAULT_RECEIVER_NAME = "CodeXa Agency";
-export const DEFAULT_RECEIVER_UPI = "shaikashu33@fam";
+export const DEFAULT_RECEIVER_UPI = "7075920852@ptyes";
 export const DEFAULT_PROOF_WINDOW_MINUTES = 5;
 export const DEFAULT_CLOCK_TOLERANCE_SECONDS = 60;
 export const MAX_PROOF_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB

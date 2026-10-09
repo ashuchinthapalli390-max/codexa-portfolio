@@ -31,7 +31,7 @@ export function FounderPaymentSettingsTab() {
 
   // Settings State
   const [receiverName, setReceiverName] = useState("CodeXa Agency");
-  const [upiId, setUpiId] = useState("shaikashu33@fam");
+  const [upiId, setUpiId] = useState("7075920852@ptyes");
   const [qrCodeUrl, setQrCodeUrl] = useState("");
   const [fixedAmount, setFixedAmount] = useState(450);
   const [phonePeEnabled, setPhonePeEnabled] = useState(true);
@@ -99,7 +99,7 @@ export function FounderPaymentSettingsTab() {
       const data = await res.json();
       const s = data.settings;
       setReceiverName(s.receiverName || s.upiDisplayName || "CodeXa Agency");
-      setUpiId(s.upiId || s.defaultUpiId || "shaikashu33@fam");
+      setUpiId(s.upiId || s.defaultUpiId || "7075920852@ptyes");
       setQrCodeUrl(s.qrCodeUrl || "");
       setFixedAmount(Number(s.fixedInternshipAmount || 450));
       setTentativeAmount(Number(s.fixedInternshipAmount || 450));
