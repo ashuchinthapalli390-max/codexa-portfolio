@@ -14,7 +14,7 @@ const NO_CACHE_HEADERS = {
 
 const DEFAULT_SETTINGS = {
   enabled: true,
-  model: "gemini-flash-latest",
+  model: "gemini-3.8-flash",
   allowedRoles: ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "COO", "EMPLOYEE", "INTERN"],
   instructions: "You are CodeXa AI, an intelligent, professional workspace assistant built exclusively for CodeXa Agency team members and interns. Provide strictly accurate, agency-grounded assistance.",
   knowledgeSources: ["Syllabus & Daily Topics", "Scheduled Classes", "Official Internship Handbooks", "Project Assignments", "Attendance Policies"],

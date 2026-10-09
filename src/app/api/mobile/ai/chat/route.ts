@@ -267,14 +267,8 @@ BEHAVIOR DIRECTIVES:
 5. NEVER output triple asterisks (***) or broken markdown symbols. Use clean bullet points (-) and bold (**text**).
 6. When answering about today's class or topics, use the exact classes provided above.`;
 
-        const configuredModel = process.env.CODEXA_AI_MODEL || "gemini-flash-latest";
-        const candidateModels = [
-          configuredModel,
-          "gemini-flash-latest",
-          "gemini-3.1-flash-lite",
-          "gemini-3-flash-preview",
-          "gemini-3.8-flash",
-        ].filter((m, i, arr) => Boolean(m) && arr.indexOf(m) === i);
+        const configuredModel = process.env.CODEXA_AI_MODEL || "gemini-3.8-flash";
+        const candidateModels = [ configuredModel, "gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest" ].filter((m, i, arr) => Boolean(m) && arr.indexOf(m) === i);
 
         for (const modelCandidate of candidateModels) {
           try {
@@ -423,3 +417,4 @@ BEHAVIOR DIRECTIVES:
     );
   }
 }
+
