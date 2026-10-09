@@ -1048,6 +1048,70 @@ model MobileSession {
   @@index([isRevoked])
 }
 
+// ─── MOBILE APP RELEASES & APK VERSION CONTROL ─────────────────────────────
+model MobileAppRelease {
+  id                            String    @id @default(cuid())
+  appId                         String    @default("codexa-mobile")
+  platform                      String    @default("ANDROID") // "ANDROID" | "IOS"
+  packageName                   String    @default("com.codexa.app")
+  versionName                   String    // e.g. "1.0.5"
+  versionCode                   Int       // e.g. 105
+  releaseChannel                String    @default("STABLE") // "STABLE" | "BETA"
+  storageProvider               String    @default("SUPABASE") // "SUPABASE" | "VERCEL_BLOB"
+  storageBucket                 String    @default("mobile-releases")
+  storageKey                    String    // e.g. "codexa-apk/stable/1.0.5/codexa-1.0.5.apk"
+  apkDownloadUrl                String    // Server-resolvable or public CDN download URL
+  apkFileSize                   BigInt    @default(0)
+  apkSha256                     String    // SHA-256 integrity checksum
+  signingCertificateFingerprint String?   // SHA-256 certificate fingerprint
+  releaseNotes                  String?   @db.Text
+  status                        String    @default("DRAFT") // "UPLOADING" | "UPLOADED" | "VALIDATING" | "DRAFT" | "PUBLISHED" | "ARCHIVED" | "FAILED"
+  updateType                    String    @default("OPTIONAL") // "OPTIONAL" | "MANDATORY"
+  minimumSupportedVersionCode   Int       @default(1)
+  isCurrentPublished            Boolean   @default(false)
+  uploadedById                  String
+  uploadedByName                String?
+  uploadedAt                    DateTime  @default(now())
+  publishedById                 String?
+  publishedByName               String?
+  publishedAt                   DateTime?
+  downloadCount                 Int       @default(0)
+  updateSuccessCount            Int       @default(0)
+  validationReport              Json?     // Detailed APK validation results
+  createdAt                     DateTime  @default(now())
+  updatedAt                     DateTime  @updatedAt
+
+  events                        MobileReleaseEvent[]
+
+  @@unique([platform, releaseChannel, versionCode])
+  @@index([platform])
+  @@index([releaseChannel])
+  @@index([status])
+  @@index([versionCode])
+  @@index([isCurrentPublished])
+  @@index([uploadedById])
+}
+
+model MobileReleaseEvent {
+  id          String   @id @default(cuid())
+  releaseId   String
+  eventType   String   // "CHECK_UPDATE" | "DOWNLOAD_START" | "DOWNLOAD_COMPLETE" | "UPDATE_INSTALLED" | "DOWNLOAD_FAILED"
+  userId      String?
+  deviceId    String?
+  versionCode Int?
+  ipAddress   String?
+  userAgent   String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  release     MobileAppRelease @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+
+  @@index([releaseId])
+  @@index([eventType])
+  @@index([createdAt])
+  @@index([userId])
+}
+
 // ─── DESKTOP LICENSING & DEVICE ACTIVATION ────────────────────────────────────
 model DesktopLicense {
   id               String   @id @default(cuid())

@@ -578,21 +578,38 @@ export async function resolveFullMobilePackage(
   // Employment / Intern Profile info
   const empProfile = user?.employmentProfile || null;
 
+  // Fetch active published Android release
+  const publishedRelease = await db.mobileAppRelease.findFirst({
+    where: { platform: "ANDROID", releaseChannel: "STABLE", isCurrentPublished: true, status: "PUBLISHED" },
+  });
+
+  const latestVer = publishedRelease?.versionName || globalConfig.currentVersion || "1.0.0";
+  const latestBuild = publishedRelease?.versionCode || globalConfig.buildNumber || 1;
+  const activeApkUrl =
+    publishedRelease?.apkDownloadUrl || globalConfig.androidApkUrl || globalConfig.downloadUrl || null;
+
   return {
     app: {
       name: globalConfig.appName || "CodeXa",
-      version: globalConfig.currentVersion || "1.0.0",
+      version: latestVer,
+      latestVersion: latestVer,
+      latestVersionCode: latestBuild,
+      buildNumber: latestBuild,
       minimumVersion: globalConfig.minVersion || "1.0.0",
-      buildNumber: globalConfig.buildNumber || 1,
+      minimumSupportedVersionCode: publishedRelease?.minimumSupportedVersionCode || 1,
       platformStatus: globalConfig.platformStatus || "ACTIVE",
       maintenance: Boolean(globalConfig.maintenanceEnabled),
       maintenanceMessage: globalConfig.maintenanceMessage,
-      forceUpdate: Boolean(globalConfig.forceUpdateEnabled),
+      forceUpdate: Boolean(globalConfig.forceUpdateEnabled) || publishedRelease?.updateType === "MANDATORY",
       softUpdate: Boolean(globalConfig.softUpdateEnabled),
+      sha256: publishedRelease?.apkSha256 || null,
+      fileSizeBytes: publishedRelease ? Number(publishedRelease.apkFileSize || 0) : null,
+      releaseNotes: publishedRelease?.releaseNotes || globalConfig.releaseNotes || null,
     },
 
     downloads: {
-      apkUrl: globalConfig.androidApkUrl || globalConfig.downloadUrl || null,
+      apkUrl: activeApkUrl,
+      downloadUrl: activeApkUrl,
       playStoreUrl: globalConfig.playStoreUrl || null,
       iosStoreUrl: globalConfig.iosStoreUrl || null,
       altUrl: globalConfig.altDownloadUrl || null,

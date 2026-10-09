@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOrCreateGlobalMobileConfig } from "@/lib/mobile-features";
+import { db } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +14,24 @@ const NO_CACHE_HEADERS = {
 export async function GET(req: NextRequest) {
   try {
     const globalConfig = await getOrCreateGlobalMobileConfig();
+
+    const publishedRelease = await db.mobileAppRelease.findFirst({
+      where: {
+        platform: "ANDROID",
+        releaseChannel: "STABLE",
+        isCurrentPublished: true,
+        status: "PUBLISHED",
+      },
+    });
+
+    const latestVersion = publishedRelease?.versionName || globalConfig.currentVersion || "1.0.0";
+    const latestVersionCode = publishedRelease?.versionCode || globalConfig.buildNumber || 1;
+    const minVersionCode = publishedRelease?.minimumSupportedVersionCode || 1;
+    const downloadUrl =
+      publishedRelease?.apkDownloadUrl ||
+      globalConfig.androidApkUrl ||
+      globalConfig.downloadUrl ||
+      "https://codxa-agency.online/downloads/CodeXa.apk";
 
     return NextResponse.json(
       {
@@ -30,14 +49,17 @@ export async function GET(req: NextRequest) {
         },
         version: {
           minimumSupported: globalConfig.minVersion || "1.0.0",
-          latest: globalConfig.currentVersion || "1.0.0",
-          forceUpdate: Boolean(globalConfig.forceUpdateEnabled),
+          latest: latestVersion,
+          latestVersionCode,
+          minimumSupportedVersionCode: minVersionCode,
+          forceUpdate: Boolean(globalConfig.forceUpdateEnabled) || publishedRelease?.updateType === "MANDATORY",
           optionalUpdate: Boolean(globalConfig.softUpdateEnabled),
-          updateUrl:
-            globalConfig.androidApkUrl ||
-            globalConfig.downloadUrl ||
-            "https://codxa-agency.online/downloads/CodeXa.apk",
+          updateUrl: downloadUrl,
+          downloadUrl,
+          sha256: publishedRelease?.apkSha256 || null,
+          fileSizeBytes: publishedRelease ? Number(publishedRelease.apkFileSize || 0) : null,
           releaseNotes:
+            publishedRelease?.releaseNotes ||
             globalConfig.releaseNotes ||
             "Production release with Core database synchronization and Daily Team Workspace features.",
         },

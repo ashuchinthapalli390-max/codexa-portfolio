@@ -41,9 +41,11 @@ import {
   Share2,
 } from "lucide-react";
 import { canManageMobile, canViewMobile, getEffectiveRole } from "@/lib/permissions";
+import { ApkManagementTab } from "@/components/mobile-admin/ApkManagementTab";
 
 type TabId =
   | "overview"
+  | "apk_management"
   | "version"
   | "features"
   | "attendance"
@@ -69,6 +71,7 @@ interface TabMeta {
 
 const TABS: TabMeta[] = [
   { id: "overview", label: "Overview", icon: Activity },
+  { id: "apk_management", label: "APK Management", icon: Download },
   { id: "version", label: "App Version", icon: Smartphone },
   { id: "features", label: "Features", icon: Layers },
   { id: "attendance", label: "Attendance", icon: Clock },
@@ -85,6 +88,7 @@ const TABS: TabMeta[] = [
   { id: "announcement", label: "Announcement", icon: Radio },
   { id: "advanced", label: "Advanced & Audit", icon: Settings },
 ];
+
 
 const ROLES_LIST = [
   "FOUNDER",
@@ -810,6 +814,11 @@ export default function MobileAppControlCenterPage() {
                   </div>
                 </div>
               </div>
+            )}
+
+            {/* APK MANAGEMENT TAB */}
+            {activeTab === "apk_management" && (
+              <ApkManagementTab isEditor={Boolean(isEditor)} effectiveRole={effectiveRole} />
             )}
 
             {/* 2. APP VERSION & DOWNLOAD SETTINGS TAB */}

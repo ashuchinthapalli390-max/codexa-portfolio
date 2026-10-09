@@ -35,21 +35,86 @@ export async function GET(req: NextRequest) {
   const conversationsWithDetails = await Promise.all(
     (data || []).map(async (conv: any) => {
       if (conv.type === "DIRECT") {
-        const otherMember = (conv.conversation_members || []).find(
+        let otherUserId = (conv.conversation_members || []).find(
           (m: any) => m.core_user_id !== user.id
-        );
-        if (otherMember) {
+        )?.core_user_id;
+
+        if (!otherUserId && conv.direct_pair_key) {
+          const parts = String(conv.direct_pair_key).split("::");
+          otherUserId = parts.find((p: string) => p !== user.id);
+        }
+
+        if (otherUserId) {
           const userRecord = await prisma.user.findUnique({
-            where: { id: otherMember.core_user_id },
-            select: { id: true, fullName: true, username: true, role: true, profileMediaUrl: true },
+            where: { id: otherUserId },
+            select: {
+              id: true,
+              fullName: true,
+              username: true,
+              role: true,
+              profileMediaUrl: true,
+              profile: {
+                select: {
+                  displayName: true,
+                  mediaUrl: true,
+                },
+              },
+            },
           });
+
+          const displayName =
+            userRecord?.fullName ||
+            userRecord?.profile?.displayName ||
+            userRecord?.username ||
+            "CodeXa Colleague";
+
+          const avatarUrl =
+            userRecord?.profileMediaUrl ||
+            userRecord?.profile?.mediaUrl ||
+            null;
+
+          const recipientUser = {
+            id: otherUserId,
+            fullName: displayName,
+            displayName,
+            name: displayName,
+            username: userRecord?.username || "colleague",
+            role: userRecord?.role || "MEMBER",
+            profileMediaUrl: avatarUrl,
+            avatarUrl,
+          };
+
           return {
             ...conv,
-            recipientUser: userRecord || { id: otherMember.core_user_id, fullName: "CodeXa Colleague", username: "colleague" },
+            name: displayName,
+            title: displayName,
+            avatarUrl,
+            recipientUser,
+            peer: recipientUser,
+            otherParticipantCoreUserId: otherUserId,
+            otherParticipantDisplayName: displayName,
+            otherParticipantUsername: userRecord?.username || "colleague",
+            otherParticipantAvatar: avatarUrl,
+            otherParticipantRole: userRecord?.role || "MEMBER",
           };
         }
       }
-      return conv;
+
+      // Group or fallback
+      const groupTitle = conv.title || conv.name || "Team Group";
+      const groupIcon =
+        conv.metadata?.iconUrl ||
+        conv.metadata?.avatarUrl ||
+        conv.icon_url ||
+        conv.avatar_url ||
+        null;
+
+      return {
+        ...conv,
+        name: groupTitle,
+        title: groupTitle,
+        avatarUrl: groupIcon,
+      };
     })
   );
 
@@ -78,7 +143,17 @@ export async function POST(req: NextRequest) {
       // Check communication permission
       const recipient = await prisma.user.findUnique({
         where: { id: targetUserId },
-        select: { id: true, role: true, fullName: true, username: true, isActive: true },
+        select: {
+          id: true,
+          role: true,
+          fullName: true,
+          username: true,
+          isActive: true,
+          profileMediaUrl: true,
+          profile: {
+            select: { displayName: true, mediaUrl: true }
+          }
+        },
       });
 
       if (!recipient) {
@@ -116,21 +191,53 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, error }, { status: 500 });
       }
 
+      const displayName =
+        recipient.fullName ||
+        recipient.profile?.displayName ||
+        recipient.username ||
+        "CodeXa Colleague";
+
+      const avatarUrl =
+        recipient.profileMediaUrl ||
+        recipient.profile?.mediaUrl ||
+        null;
+
+      const recipientDTO = {
+        id: recipient.id,
+        fullName: displayName,
+        displayName,
+        name: displayName,
+        username: recipient.username,
+        role: recipient.role,
+        profileMediaUrl: avatarUrl,
+        avatarUrl,
+      };
+
       return NextResponse.json({
         ok: true,
         conversation: {
           ...conversation,
           type: "DIRECT",
-          recipientUser: recipient,
+          name: displayName,
+          title: displayName,
+          avatarUrl,
+          recipientUser: recipientDTO,
+          peer: recipientDTO,
+          otherParticipantCoreUserId: recipient.id,
+          otherParticipantDisplayName: displayName,
+          otherParticipantUsername: recipient.username,
+          otherParticipantAvatar: avatarUrl,
+          otherParticipantRole: recipient.role,
         },
       });
     } else {
       // Group conversation
+      const groupTitle = title || "New Group";
       const { data: newConv, error: convErr } = await chatSupabaseAdmin
         .from("conversations")
         .insert({
           type: "GROUP",
-          title: title || "New Group",
+          title: groupTitle,
           created_by_core_user_id: user.id,
         })
         .select()
@@ -149,7 +256,14 @@ export async function POST(req: NextRequest) {
 
       await chatSupabaseAdmin.from("conversation_members").insert(memberRows);
 
-      return NextResponse.json({ ok: true, conversation: newConv });
+      return NextResponse.json({
+        ok: true,
+        conversation: {
+          ...newConv,
+          name: groupTitle,
+          title: groupTitle,
+        },
+      });
     }
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });

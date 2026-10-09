@@ -53,13 +53,63 @@ export async function GET(
   const memberCoreIds = (conversation.conversation_members || []).map((m: any) => m.core_user_id);
   const coreUsers = await prisma.user.findMany({
     where: { id: { in: memberCoreIds } },
-    select: { id: true, fullName: true, username: true, role: true, profileMediaUrl: true },
+    select: {
+      id: true,
+      fullName: true,
+      username: true,
+      role: true,
+      profileMediaUrl: true,
+      profile: {
+        select: { displayName: true, mediaUrl: true }
+      }
+    },
   });
+
+  let displayName = conversation.title || conversation.name || (conversation.type === "GROUP" ? "Team Group" : "Chat");
+  let avatarUrl = conversation.metadata?.iconUrl || conversation.metadata?.avatarUrl || null;
+  let recipientUser = null;
+  let otherParticipantRole = "MEMBER";
+
+  if (conversation.type === "DIRECT") {
+    let otherUserId = (conversation.conversation_members || []).find(
+      (m: any) => m.core_user_id !== user.id
+    )?.core_user_id;
+
+    if (!otherUserId && conversation.direct_pair_key) {
+      const parts = String(conversation.direct_pair_key).split("::");
+      otherUserId = parts.find((p: string) => p !== user.id);
+    }
+
+    const otherUser = coreUsers.find(u => u.id === otherUserId);
+    if (otherUser) {
+      displayName = otherUser.fullName || otherUser.profile?.displayName || otherUser.username || "CodeXa Colleague";
+      avatarUrl = otherUser.profileMediaUrl || otherUser.profile?.mediaUrl || null;
+      otherParticipantRole = otherUser.role;
+      recipientUser = {
+        id: otherUser.id,
+        fullName: displayName,
+        displayName,
+        name: displayName,
+        username: otherUser.username,
+        role: otherUser.role,
+        profileMediaUrl: avatarUrl,
+        avatarUrl,
+      };
+    }
+  }
 
   return NextResponse.json({
     ok: true,
     conversation: {
       ...conversation,
+      name: displayName,
+      title: displayName,
+      avatarUrl,
+      recipientUser,
+      peer: recipientUser,
+      otherParticipantDisplayName: displayName,
+      otherParticipantAvatar: avatarUrl,
+      otherParticipantRole,
       members: coreUsers,
     },
   });

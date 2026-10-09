@@ -54,9 +54,24 @@ export async function GET(req: NextRequest) {
           },
         },
         media: true,
+        likes: {
+          select: { userId: true },
+        },
       },
       orderBy: { createdAt: "desc" },
     });
+
+    // Query user's viewed story post IDs from post_views table
+    const storyIds = rawStories.map(s => s.id);
+    let viewedStorySet = new Set<string>();
+    if (storyIds.length > 0) {
+      const views = await db.$queryRawUnsafe<Array<{ post_id: string }>>(
+        `SELECT post_id FROM post_views WHERE user_id = $1 AND post_id = ANY($2)`,
+        user.id,
+        storyIds
+      ).catch(() => []);
+      views.forEach(v => viewedStorySet.add(v.post_id));
+    }
 
     const authorMap = new Map<string, {
       authorId: string;
@@ -73,6 +88,9 @@ export async function GET(req: NextRequest) {
         mediaUrl?: string | null;
         createdAt: string;
         expiresAt: string;
+        isViewed: boolean;
+        isLiked: boolean;
+        likesCount: number;
       }>;
     }>();
 
@@ -99,10 +117,14 @@ export async function GET(req: NextRequest) {
           avatarUrl: formatProfileMediaUrl(author.profileMediaUrl || author.profile?.profileMediaUrl || author.profile?.mediaUrl),
           role: author.role,
           isOwnStory: author.id === user.id,
-          hasUnseen: author.id !== user.id,
+          hasUnseen: false,
           items: [],
         });
       }
+
+      const isViewed = author.id === user.id || viewedStorySet.has(post.id);
+      const isLiked = (post.likes || []).some(l => l.userId === user.id);
+      const likesCount = post.likes?.length || 0;
 
       authorMap.get(author.id)!.items.push({
         id: post.id,
@@ -111,12 +133,26 @@ export async function GET(req: NextRequest) {
         mediaUrl: post.media?.[0]?.mediaUrl || null,
         createdAt: post.createdAt.toISOString(),
         expiresAt: new Date(post.createdAt.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+        isViewed,
+        isLiked,
+        likesCount,
       });
     }
+
+    // Determine hasUnseen per author accurately
+    authorMap.forEach(group => {
+      if (group.isOwnStory) {
+        group.hasUnseen = false;
+      } else {
+        group.hasUnseen = group.items.some(it => !it.isViewed);
+      }
+    });
 
     const stories = Array.from(authorMap.values()).sort((a, b) => {
       if (a.isOwnStory) return -1;
       if (b.isOwnStory) return 1;
+      if (a.hasUnseen && !b.hasUnseen) return -1;
+      if (!a.hasUnseen && b.hasUnseen) return 1;
       return 0;
     });
 
@@ -196,8 +232,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: { code: "BAD_REQUEST", message: "Story content or media is required." } }, { status: 400, headers: NO_CACHE_HEADERS });
     }
 
-    const storyContent = `[CODEXA_STORY:${normalizedType}:${audience}]
-${content.trim()}`;
+    const storyContent = `[CODEXA_STORY:${normalizedType}:${audience}]\n${content.trim()}`;
 
     const post = await db.post.create({
       data: {
@@ -219,6 +254,27 @@ ${content.trim()}`;
       },
     });
 
+    // Notify team members about new story (without spamming)
+    try {
+      const teamUsers = await db.user.findMany({
+        where: { id: { not: user.id }, isActive: true },
+        select: { id: true },
+        take: 30,
+      });
+
+      for (const tUser of teamUsers) {
+        await db.notification.create({
+          data: {
+            userId: tUser.id,
+            type: "SOCIAL",
+            title: `${user.displayName || "A teammate"} posted a new Story`,
+            message: content.trim().slice(0, 80) || "Check out the latest story on CodeXa",
+            link: `/stories?storyId=${post.id}`,
+          },
+        }).catch(() => {});
+      }
+    } catch (_) {}
+
     return NextResponse.json({
       ok: true,
       message: "Story created successfully.",
@@ -229,11 +285,14 @@ ${content.trim()}`;
         mediaUrl: post.media?.[0]?.mediaUrl || mediaUrl || null,
         createdAt: post.createdAt.toISOString(),
         expiresAt: new Date(post.createdAt.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+        isViewed: true,
+        isLiked: false,
+        likesCount: 0,
       },
     }, { headers: NO_CACHE_HEADERS });
 
   } catch (err: any) {
-    console.error(`[POST /api/mobile/stories] [${requestId}]`, err);
+    console.error("[POST /api/mobile/stories] [${requestId}]", err);
     return NextResponse.json({ ok: false, error: { code: "SERVER_ERROR", message: "Failed to publish story." } }, { status: 500, headers: NO_CACHE_HEADERS });
   }
 }

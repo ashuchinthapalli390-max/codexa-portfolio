@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { validateSessionResult, getCurrentSessionResult, generateRequestId } from "@/lib/auth";
+import { validateSessionResult, getCurrentSessionResult } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,11 +59,13 @@ export async function GET(req: NextRequest) {
             },
           },
         },
+        likes: {
+          select: { userId: true },
+        },
       },
       orderBy: { createdAt: "desc" },
     });
 
-    // One active note per author (the latest one)
     const seenAuthors = new Set<string>();
     const notes: any[] = [];
 
@@ -73,6 +75,8 @@ export async function GET(req: NextRequest) {
 
       const text = p.content.replace("[CODEXA_NOTE]\n", "").replace("[CODEXA_NOTE]", "").trim();
       const expiresAt = new Date(p.createdAt.getTime() + 24 * 60 * 60 * 1000).toISOString();
+      const hasLiked = (p.likes || []).some(l => l.userId === user.id);
+      const likesCount = p.likes?.length || 0;
 
       notes.push({
         id: p.id,
@@ -85,6 +89,8 @@ export async function GET(req: NextRequest) {
         createdAt: p.createdAt.toISOString(),
         expiresAt,
         isSelf: p.authorId === user.id,
+        hasLiked,
+        likesCount,
       });
     }
 
@@ -122,7 +128,6 @@ export async function POST(req: NextRequest) {
       text = text.substring(0, 60);
     }
 
-    // Soft-delete any previous active note by this user in last 24h
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     await db.post.updateMany({
       where: {
@@ -134,7 +139,6 @@ export async function POST(req: NextRequest) {
       data: { isDeleted: true },
     });
 
-    // Create new note
     const created = await db.post.create({
       data: {
         authorId: user.id,
@@ -155,6 +159,8 @@ export async function POST(req: NextRequest) {
         createdAt: created.createdAt.toISOString(),
         expiresAt: new Date(created.createdAt.getTime() + 24 * 60 * 60 * 1000).toISOString(),
         isSelf: true,
+        hasLiked: false,
+        likesCount: 0,
       },
     }, { headers: NO_CACHE_HEADERS });
   } catch (err: any) {

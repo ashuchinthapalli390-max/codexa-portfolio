@@ -369,14 +369,42 @@ export async function GET(req: NextRequest) {
       };
     }
 
-    // 9. App Config
+    // 9. App Config & Active Published Release
+    const publishedRelease = await db.mobileAppRelease.findFirst({
+      where: {
+        platform: "ANDROID",
+        releaseChannel: "STABLE",
+        isCurrentPublished: true,
+        status: "PUBLISHED",
+      },
+    });
+
+    const activeVersion = publishedRelease?.versionName || globalConfig.currentVersion || "1.0.0";
+    const activeVersionCode = publishedRelease?.versionCode || globalConfig.buildNumber || 1;
+    const minCode = publishedRelease?.minimumSupportedVersionCode || 1;
+    const apkUrl =
+      publishedRelease?.apkDownloadUrl ||
+      globalConfig.androidApkUrl ||
+      globalConfig.downloadUrl ||
+      "";
+
     const appConfig = {
       appName: globalConfig.appName || "CodeXa",
-      currentVersion: globalConfig.currentVersion || "1.0.0",
+      currentVersion: activeVersion,
+      latestVersion: activeVersion,
+      latestVersionCode: activeVersionCode,
+      buildNumber: activeVersionCode,
       minimumVersion: globalConfig.minVersion || "1.0.0",
-      forceUpdate: Boolean(globalConfig.forceUpdateEnabled),
+      minimumSupportedVersionCode: minCode,
+      forceUpdate: Boolean(globalConfig.forceUpdateEnabled) || publishedRelease?.updateType === "MANDATORY",
+      softUpdate: Boolean(globalConfig.softUpdateEnabled),
       maintenanceMode: Boolean(globalConfig.maintenanceEnabled),
       maintenanceMessage: globalConfig.maintenanceMessage || "",
+      downloadUrl: apkUrl,
+      androidApkUrl: apkUrl,
+      sha256: publishedRelease?.apkSha256 || null,
+      fileSizeBytes: publishedRelease ? Number(publishedRelease.apkFileSize || 0) : null,
+      releaseNotes: publishedRelease?.releaseNotes || globalConfig.releaseNotes || null,
     };
 
     return NextResponse.json({
