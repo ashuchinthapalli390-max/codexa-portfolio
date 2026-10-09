@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { validateSessionResult, getCurrentSessionResult, generateRequestId } from "@/lib/auth";
+import { formatProfileMediaUrl } from "@/lib/profile-media";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -140,7 +141,7 @@ export async function GET(req: NextRequest) {
       role: u.role,
       designation: u.employmentProfile?.designation || u.profile?.primaryRole || u.role,
       department: u.department || u.employmentProfile?.department || "General",
-      profileMediaUrl: u.profileMediaUrl || u.profile?.mediaUrl || null,
+      profileMediaUrl: formatProfileMediaUrl(u.profileMediaUrl || u.profile?.profileMediaUrl || u.profile?.mediaUrl),
     }));
 
     const projects = projectsRaw.map((p) => ({
@@ -157,7 +158,7 @@ export async function GET(req: NextRequest) {
       content: p.content,
       authorName: p.author.fullName || p.author.username,
       authorUsername: p.author.username,
-      authorAvatar: p.author.profileMediaUrl,
+      authorAvatar: formatProfileMediaUrl(p.author.profileMediaUrl),
       createdAt: p.createdAt.toISOString(),
     }));
 

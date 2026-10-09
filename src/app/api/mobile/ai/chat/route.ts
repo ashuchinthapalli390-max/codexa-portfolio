@@ -267,44 +267,62 @@ BEHAVIOR DIRECTIVES:
 5. NEVER output triple asterisks (***) or broken markdown symbols. Use clean bullet points (-) and bold (**text**).
 6. When answering about today's class or topics, use the exact classes provided above.`;
 
-        const geminiModel = process.env.CODEXA_AI_MODEL || "gemini-1.5-flash";
-        const geminiRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [
-                {
-                  role: "user",
-                  parts: [{ text: `${systemPrompt}\n\nUser Question: ${query}` }],
-                },
-              ],
-              generationConfig: {
-                temperature: 0.3,
-                maxOutputTokens: 600,
-              },
-            }),
-          }
-        );
+        const configuredModel = process.env.CODEXA_AI_MODEL || "gemini-flash-latest";
+        const candidateModels = [
+          configuredModel,
+          "gemini-flash-latest",
+          "gemini-3.1-flash-lite",
+          "gemini-3-flash-preview",
+          "gemini-3.8-flash",
+        ].filter((m, i, arr) => Boolean(m) && arr.indexOf(m) === i);
 
-        if (geminiRes.ok) {
-          const geminiData = await geminiRes.json();
-          const rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (rawText) {
-            const cleanReply = sanitizeAiMarkdown(rawText);
-            return NextResponse.json(
+        for (const modelCandidate of candidateModels) {
+          try {
+            const geminiRes = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/${modelCandidate}:generateContent?key=${geminiKey}`,
               {
-                ok: true,
-                reply: cleanReply,
-                suggestions: [
-                  "What class do I have today?",
-                  "Show my internship details",
-                  "Draft a daily standup update",
-                ],
-              },
-              { headers: NO_CACHE_HEADERS }
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  contents: [
+                    {
+                      role: "user",
+                      parts: [{ text: `${systemPrompt}\n\nUser Question: ${query}` }],
+                    },
+                  ],
+                  generationConfig: {
+                    temperature: 0.3,
+                    maxOutputTokens: 600,
+                  },
+                }),
+              }
             );
+
+            if (geminiRes.ok) {
+              const geminiData = await geminiRes.json();
+              const rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+              if (rawText) {
+                const cleanReply = sanitizeAiMarkdown(rawText);
+                return NextResponse.json(
+                  {
+                    ok: true,
+                    reply: cleanReply,
+                    model: modelCandidate,
+                    suggestions: [
+                      "What class do I have today?",
+                      "Show my internship details",
+                      "Draft a daily standup update",
+                    ],
+                  },
+                  { headers: NO_CACHE_HEADERS }
+                );
+              }
+            } else {
+              const errBody = await geminiRes.text().catch(() => "");
+              console.warn(`[Gemini API model ${modelCandidate} failed (${geminiRes.status})]:`, errBody);
+            }
+          } catch (modelErr) {
+            console.warn(`[Gemini API model ${modelCandidate} request error]:`, modelErr);
           }
         }
       } catch (geminiErr) {

@@ -34,7 +34,7 @@ export default function CodeXaAiSettingsPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [enabled, setEnabled] = useState(true);
-  const [model, setModel] = useState("gemini-1.5-flash");
+  const [model, setModel] = useState("gemini-flash-latest");
   const [allowedRoles, setAllowedRoles] = useState<string[]>(ALL_ROLES);
   const [instructions, setInstructions] = useState("");
   const [knowledgeSources, setKnowledgeSources] = useState<string[]>([]);
@@ -51,7 +51,7 @@ export default function CodeXaAiSettingsPage() {
       const data = await res.json();
       if (data.ok && data.config) {
         setEnabled(data.config.enabled ?? true);
-        setModel(data.config.model || "gemini-1.5-flash");
+        setModel(data.config.model || "gemini-flash-latest");
         setAllowedRoles(data.config.allowedRoles || ALL_ROLES);
         setInstructions(data.config.instructions || "");
         setKnowledgeSources(data.config.knowledgeSources || []);
@@ -266,9 +266,10 @@ export default function CodeXaAiSettingsPage() {
                   onChange={(e) => setModel(e.target.value)}
                   className="w-full bg-[#14171d] border border-[#232732] rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-red-500"
                 >
-                  <option value="gemini-1.5-flash">Gemini 1.5 Flash (Ultra Fast & Agency Responsive)</option>
-                  <option value="gemini-1.5-pro">Gemini 1.5 Pro (Deep Context & Complex Code)</option>
-                  <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (Experimental)</option>
+                  <option value="gemini-flash-latest">Gemini Flash Latest (Fast, Reliable & Recommended)</option>
+                  <option value="gemini-3.8-flash">Gemini 3.8 Flash (State-of-the-Art Agency Intelligence)</option>
+                  <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (High Efficiency)</option>
+                  <option value="gemini-3-flash-preview">Gemini 3 Flash Preview</option>
                 </select>
               </div>
 

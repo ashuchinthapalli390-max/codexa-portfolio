@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { dataStore } from "@/lib/data-store";
 import { generateSessionToken, hashToken, SESSION_MAX_AGE_SECONDS, generateRequestId } from "@/lib/auth";
 import { getEffectiveRole } from "@/lib/permissions";
+import { formatProfileMediaUrl } from "@/lib/profile-media";
 import { verifyFirebaseIdToken, DecodedFirebaseUser } from "@/lib/firebase-admin";
 import { APPROVED_ADMIN_EMAILS } from "@/lib/firebase-session";
 
@@ -155,11 +156,16 @@ export async function POST(req: NextRequest) {
         updateData.firebaseUid = decoded.uid;
       }
 
-      if (decoded.picture && user.profile && (!user.profile.mediaUrl || user.profile.mediaUrl === "/assets/images/logo.jpeg")) {
-        await db.teamProfile.update({
-          where: { id: user.profile.id },
-          data: { mediaUrl: decoded.picture },
-        }).catch(() => {});
+      if (decoded.picture) {
+        if (!user.profileMediaUrl || user.profileMediaUrl.includes("logo.jpeg")) {
+          updateData.profileMediaUrl = decoded.picture;
+        }
+        if (user.profile && (!user.profile.mediaUrl || user.profile.mediaUrl.includes("logo.jpeg"))) {
+          await db.teamProfile.update({
+            where: { id: user.profile.id },
+            data: { mediaUrl: decoded.picture, profileMediaUrl: decoded.picture },
+          }).catch(() => {});
+        }
       }
 
       user = await db.user.update({
@@ -246,7 +252,7 @@ export async function POST(req: NextRequest) {
         department: user.department || user.employmentProfile?.department,
         designation: user.employmentProfile?.designation || user.profile?.primaryRole,
         employeeId: user.employmentProfile?.employeeId,
-        profileMediaUrl: user.profileMediaUrl || user.profile?.profileMediaUrl || user.profile?.mediaUrl,
+        profileMediaUrl: formatProfileMediaUrl(user.profileMediaUrl || user.profile?.profileMediaUrl || user.profile?.mediaUrl),
         mustChangePassword: false,
       },
       requestId,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { validateSessionResult, getCurrentSessionResult, generateRequestId } from "@/lib/auth";
+import { formatProfileMediaUrl } from "@/lib/profile-media";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -135,7 +136,7 @@ export async function GET(
       yearOfStudy: emp?.yearOfStudy || null,
       academicBranch: emp?.academicBranch || null,
       referenceNumber: emp?.referenceNumber || null,
-      profileMediaUrl: user.profileMediaUrl || user.profile?.profileMediaUrl || user.profile?.mediaUrl || null,
+      profileMediaUrl: formatProfileMediaUrl(user.profileMediaUrl || user.profile?.profileMediaUrl || user.profile?.mediaUrl),
       headline: user.profile?.headline || null,
       bio: user.profile?.bio || user.profile?.publicBio || null,
       status: emp?.status || (user.isActive ? "ACTIVE" : "INACTIVE"),

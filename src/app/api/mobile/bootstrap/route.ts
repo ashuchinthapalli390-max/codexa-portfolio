@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSessionResult, validateSessionResult, generateRequestId } from "@/lib/auth";
+import { formatProfileMediaUrl } from "@/lib/profile-media";
 import { db } from "@/lib/db";
 import { getEffectiveRole, ROLE_PERMISSIONS } from "@/lib/permissions";
 import {
@@ -390,7 +391,7 @@ export async function GET(req: NextRequest) {
         department: user.department || user.employmentProfile?.department,
         designation: user.employmentProfile?.designation || user.profile?.primaryRole,
         employeeId: user.employmentProfile?.employeeId,
-        profileMediaUrl: user.profileMediaUrl || user.profile?.profileMediaUrl || user.profile?.mediaUrl,
+        profileMediaUrl: formatProfileMediaUrl(user.profileMediaUrl || user.profile?.profileMediaUrl || user.profile?.mediaUrl),
         bio: user.profile?.bio || null,
         githubUrl: null,
         linkedinUrl: null,

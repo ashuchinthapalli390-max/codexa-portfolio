@@ -14,7 +14,7 @@ const NO_CACHE_HEADERS = {
 
 const DEFAULT_SETTINGS = {
   enabled: true,
-  model: "gemini-1.5-flash",
+  model: "gemini-flash-latest",
   allowedRoles: ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "COO", "EMPLOYEE", "INTERN"],
   instructions: "You are CodeXa AI, an intelligent, professional workspace assistant built exclusively for CodeXa Agency team members and interns. Provide strictly accurate, agency-grounded assistance.",
   knowledgeSources: ["Syllabus & Daily Topics", "Scheduled Classes", "Official Internship Handbooks", "Project Assignments", "Attendance Policies"],
@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
       ok: true,
       config,
       hasApiKey,
-      activeProvider: "Google Gemini 1.5 Pro / Flash (Server-Side Secure)",
+      activeProvider: "Google Gemini Flash (Server-Side Secure)",
     }, { headers: NO_CACHE_HEADERS });
 
   } catch (err: any) {
@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
 
     const payload = {
       enabled: enabled !== undefined ? Boolean(enabled) : true,
-      model: model || "gemini-1.5-flash",
+      model: model || "gemini-flash-latest",
       allowedRoles: Array.isArray(allowedRoles) ? allowedRoles : DEFAULT_SETTINGS.allowedRoles,
       instructions: instructions || DEFAULT_SETTINGS.instructions,
       knowledgeSources: Array.isArray(knowledgeSources) ? knowledgeSources : DEFAULT_SETTINGS.knowledgeSources,

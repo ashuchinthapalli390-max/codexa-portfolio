@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { dataStore } from "@/lib/data-store";
 import { generateSessionToken, hashToken, SESSION_MAX_AGE_SECONDS, generateRequestId } from "@/lib/auth";
 import { getEffectiveRole } from "@/lib/permissions";
+import { formatProfileMediaUrl } from "@/lib/profile-media";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -205,7 +206,7 @@ export async function POST(req: NextRequest) {
         department: user.department || user.employmentProfile?.department,
         designation: user.employmentProfile?.designation || user.profile?.primaryRole,
         employeeId: user.employmentProfile?.employeeId,
-        profileMediaUrl: user.profileMediaUrl || user.profile?.profileMediaUrl || user.profile?.mediaUrl,
+        profileMediaUrl: formatProfileMediaUrl(user.profileMediaUrl || user.profile?.profileMediaUrl || user.profile?.mediaUrl),
         mustChangePassword: false,
       },
       requestId,

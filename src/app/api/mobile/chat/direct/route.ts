@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { validateSessionResult, getCurrentSessionResult, generateRequestId } from "@/lib/auth";
 import { getOrCreateDirectConversation } from "@/lib/supabase/chat-admin";
+import { formatProfileMediaUrl } from "@/lib/profile-media";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,7 +50,7 @@ export async function POST(req: NextRequest) {
     // Verify target user exists and is active
     const targetUser = await db.user.findUnique({
       where: { id: targetUserId },
-      select: { id: true, fullName: true, username: true, role: true, profileMediaUrl: true, isActive: true },
+      select: { id: true, fullName: true, username: true, role: true, profileMediaUrl: true, isActive: true, profile: true },
     });
 
     if (!targetUser || !targetUser.isActive) {
@@ -71,7 +72,7 @@ export async function POST(req: NextRequest) {
         type: "DIRECT",
         name: targetUser.fullName || targetUser.username,
         title: targetUser.fullName || targetUser.username,
-        avatarUrl: targetUser.profileMediaUrl,
+        avatarUrl: formatProfileMediaUrl(targetUser.profileMediaUrl || targetUser.profile?.profileMediaUrl || targetUser.profile?.mediaUrl),
         peer: {
           id: targetUser.id,
           name: targetUser.fullName || targetUser.username,

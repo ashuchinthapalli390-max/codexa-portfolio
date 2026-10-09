@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { validateSessionResult, getCurrentSessionResult, generateRequestId } from "@/lib/auth";
 import { saveMediaUpload } from "@/lib/media-storage";
+import { formatProfileMediaUrl } from "@/lib/profile-media";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,6 +50,7 @@ export async function GET(req: NextRequest) {
             username: true,
             role: true,
             profileMediaUrl: true,
+            profile: true,
           },
         },
         media: true,
@@ -94,7 +96,7 @@ export async function GET(req: NextRequest) {
           authorId: author.id,
           authorName: author.fullName || author.username,
           username: author.username,
-          avatarUrl: author.profileMediaUrl,
+          avatarUrl: formatProfileMediaUrl(author.profileMediaUrl || author.profile?.profileMediaUrl || author.profile?.mediaUrl),
           role: author.role,
           isOwnStory: author.id === user.id,
           hasUnseen: author.id !== user.id,

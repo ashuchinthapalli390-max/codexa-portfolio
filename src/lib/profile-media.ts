@@ -1,4 +1,4 @@
-import React from "react";
+﻿import React from "react";
 
 export interface ProfileMediaInfo {
   mediaUrl?: string | null;
@@ -12,6 +12,22 @@ export interface ProfileMediaInfo {
   zoom?: number | null;
   objectPosition?: string | null;
   updatedAt?: string | Date | null;
+}
+
+/**
+ * Normalizes any profile media URL so it's fully qualified, URL-encoded,
+ * and valid for both web and mobile image loaders.
+ */
+export function formatProfileMediaUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
+  }
+  const base = process.env.NEXT_PUBLIC_APP_URL || "https://codxa-agency.online";
+  const cleanPath = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  return `${base}${encodeURI(cleanPath)}`;
 }
 
 /**

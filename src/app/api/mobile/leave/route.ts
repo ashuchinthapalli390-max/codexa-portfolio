@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { validateSessionResult, getCurrentSessionResult } from "@/lib/auth";
 import { getEffectiveRole } from "@/lib/permissions";
+import { formatProfileMediaUrl } from "@/lib/profile-media";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -66,6 +67,7 @@ export async function GET(req: NextRequest) {
               email: true,
               role: true,
               profileMediaUrl: true,
+              profile: true,
               employmentProfile: {
                 select: {
                   employeeId: true,
@@ -80,7 +82,14 @@ export async function GET(req: NextRequest) {
         },
       });
 
-      pendingApprovals = allApprovals.filter((l) => l.status === "PENDING");
+      const formattedApprovals = allApprovals.map((l) => ({
+        ...l,
+        user: l.user ? {
+          ...l.user,
+          profileMediaUrl: formatProfileMediaUrl(l.user.profileMediaUrl || (l.user as any).profile?.profileMediaUrl || (l.user as any).profile?.mediaUrl),
+        } : l.user,
+      }));
+      pendingApprovals = formattedApprovals.filter((l) => l.status === "PENDING");
       leadershipStats = {
         pendingCount: pendingApprovals.length,
         approvedCount: allApprovals.filter((l) => l.status === "APPROVED").length,

@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { validateSessionResult, getCurrentSessionResult } from "@/lib/auth";
 import { getEffectiveRole } from "@/lib/permissions";
 import { resolveAllMobileFeatures } from "@/lib/mobile-features";
+import { formatProfileMediaUrl } from "@/lib/profile-media";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +37,7 @@ export async function GET(req: NextRequest) {
             username: true,
             role: true,
             profileMediaUrl: true,
-            profile: { select: { displayName: true, primaryRole: true, mediaUrl: true } },
+            profile: { select: { displayName: true, primaryRole: true, mediaUrl: true, profileMediaUrl: true } },
           },
         },
         project: { select: { id: true, title: true, slug: true } },
@@ -66,7 +67,7 @@ export async function GET(req: NextRequest) {
           username: p.author.username,
           role: p.author.role,
           primaryRole: p.author.profile?.primaryRole || p.author.role,
-          avatarUrl: p.author.profileMediaUrl || p.author.profile?.mediaUrl,
+          avatarUrl: formatProfileMediaUrl(p.author.profileMediaUrl || p.author.profile?.profileMediaUrl || p.author.profile?.mediaUrl),
         },
         project: p.project ? { id: p.project.id, title: p.project.title, slug: p.project.slug } : null,
         likesCount: p.likes.length,
