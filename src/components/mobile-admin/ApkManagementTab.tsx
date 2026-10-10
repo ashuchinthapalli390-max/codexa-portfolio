@@ -142,6 +142,12 @@ export function ApkManagementTab({ isEditor, effectiveRole }: ApkManagementTabPr
       return;
     }
 
+    if (file.size > 1024 * 1024 * 1024) {
+      setMessage({ type: "error", text: "APK file size exceeds maximum limit of 1 GB." });
+      setSelectedFile(null);
+      return;
+    }
+
     setSelectedFile(file);
     setMessage(null);
 
@@ -615,7 +621,7 @@ export function ApkManagementTab({ isEditor, effectiveRole }: ApkManagementTabPr
                 <p className="text-xs text-neutral-500 font-mono mt-1">
                   {selectedFile
                     ? `Size: ${formatFileSize(selectedFile.size)} • Ready for verification`
-                    : "Accepts compiled, signed Android APKs up to 250 MB"}
+                    : "Accepts compiled, signed Android APKs up to 1 GB"}
                 </p>
               </div>
             </div>
@@ -1040,7 +1046,7 @@ export function ApkManagementTab({ isEditor, effectiveRole }: ApkManagementTabPr
             </div>
             <div className="flex justify-between py-1 border-b border-neutral-800/80">
               <span className="text-neutral-500">Max Package Limit</span>
-              <span className="text-white">250 MB per APK</span>
+              <span className="text-white">1 GB per APK</span>
             </div>
             <div className="flex justify-between py-1">
               <span className="text-neutral-500">Database Safety Rule</span>

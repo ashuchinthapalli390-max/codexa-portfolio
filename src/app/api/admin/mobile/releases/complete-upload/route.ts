@@ -7,6 +7,8 @@ import { validateApkBuffer } from "@/lib/apk-validator";
 import {
   fetchApkBufferFromStorage,
   uploadApkBufferDirect,
+  deleteApkFromStorage,
+  cleanChannelPreviousApks,
   APK_BUCKET_NAME,
 } from "@/lib/apk-storage";
 import { publishMobileRelease, serializeRelease } from "@/lib/apk-releases";
@@ -145,9 +147,46 @@ export async function POST(req: NextRequest) {
           { status: 409 }
         );
       }
-      // If it exists but is a DRAFT or FAILED, remove or overwrite the draft
+      // If it exists but is a DRAFT or FAILED, remove from cloud storage and database
+      if (existingRelease.storageBucket && existingRelease.storageKey && existingRelease.storageKey !== storageKey) {
+        await deleteApkFromStorage(existingRelease.storageBucket, existingRelease.storageKey).catch(() => {});
+      }
       await db.mobileAppRelease.delete({ where: { id: existingRelease.id } });
     }
+
+    // Automatically delete previous un-published DRAFT/FAILED APK binaries in this channel from cloud storage
+    const obsoleteDrafts = await db.mobileAppRelease.findMany({
+      where: {
+        platform: "ANDROID",
+        releaseChannel,
+        status: { in: ["DRAFT", "FAILED"] },
+      },
+      select: { id: true, storageBucket: true, storageKey: true },
+    });
+    for (const draft of obsoleteDrafts) {
+      if (draft.storageBucket && draft.storageKey && draft.storageKey !== storageKey) {
+        await deleteApkFromStorage(draft.storageBucket, draft.storageKey).catch(() => {});
+      }
+      await db.mobileAppRelease.delete({ where: { id: draft.id } }).catch(() => {});
+    }
+
+    // Clean orphaned or superseded storage objects in this channel partition
+    const currentPublished = await db.mobileAppRelease.findFirst({
+      where: {
+        platform: "ANDROID",
+        releaseChannel,
+        isCurrentPublished: true,
+      },
+      select: { storageKey: true },
+    });
+    const preserveKeys = [storageKey];
+    if (!publishImmediately && currentPublished?.storageKey) {
+      preserveKeys.push(currentPublished.storageKey);
+    }
+    await cleanChannelPreviousApks({
+      channel: releaseChannel,
+      preserveStorageKeys: preserveKeys,
+    }).catch(() => {});
 
     const actorName = user.displayName || user.username || "Founder";
 

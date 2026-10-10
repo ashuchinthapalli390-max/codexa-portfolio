@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSessionResult, validateSessionResult } from "@/lib/auth";
 import { canManageMobile } from "@/lib/permissions";
-import { createApkUploadSession } from "@/lib/apk-storage";
+import { createApkUploadSession, MAX_APK_FILE_SIZE_BYTES, MAX_APK_FILE_SIZE_LABEL } from "@/lib/apk-storage";
 import { dataStore } from "@/lib/data-store";
 
 export const runtime = "nodejs";
@@ -51,8 +51,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Only Android APK files (.apk) are accepted." }, { status: 400 });
     }
 
-    if (fileSize && fileSize > 250 * 1024 * 1024) {
-      return NextResponse.json({ error: "APK file size exceeds maximum limit of 250 MB." }, { status: 400 });
+    if (fileSize && fileSize > MAX_APK_FILE_SIZE_BYTES) {
+      return NextResponse.json({ error: `APK file size exceeds maximum limit of ${MAX_APK_FILE_SIZE_LABEL}.` }, { status: 400 });
     }
 
     const session = await createApkUploadSession({

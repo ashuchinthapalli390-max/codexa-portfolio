@@ -26,13 +26,24 @@ export default function AppsPage() {
   const [desktopAccess, setDesktopAccess] = useState<any>(null);
 
   useEffect(() => {
-    // Load public/user app configs
-    fetch("/api/apps/mobile-config")
+    // Load authoritative public mobile release config
+    fetch("/api/mobile/public-config")
       .then((res) => res.json())
-      .then((data) => {
-        if (data.config) setMobileConfig(data.config);
+      .then((pub) => {
+        if (pub && pub.ok && pub.version) {
+          setMobileConfig({
+            currentVersion: pub.version.latest || "1.0.0",
+            downloadUrl: pub.version.downloadUrl || "/downloads/CodeXa.apk",
+            releaseNotes: pub.version.releaseNotes,
+          });
+        }
       })
-      .catch(() => {});
+      .catch(() => {
+        setMobileConfig({
+          currentVersion: "1.0.0",
+          downloadUrl: "/downloads/CodeXa.apk",
+        });
+      });
 
     if (user) {
       fetch("/api/apps/desktop-licenses")

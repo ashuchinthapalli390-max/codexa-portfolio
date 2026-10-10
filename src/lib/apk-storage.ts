@@ -5,6 +5,10 @@ const SUPABASE_SERVICE_KEY =
   process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "";
 export const APK_BUCKET_NAME = process.env.SUPABASE_APK_BUCKET || "mobile-releases";
 
+/** Maximum APK file size: 1 GB (1024 MB) */
+export const MAX_APK_FILE_SIZE_BYTES = 1024 * 1024 * 1024; // 1 GB
+export const MAX_APK_FILE_SIZE_LABEL = "1 GB";
+
 /**
  * Returns an authenticated Supabase admin client with service-role permissions.
  */
@@ -18,7 +22,7 @@ export function getStorageClient() {
 }
 
 /**
- * Ensures the dedicated APK release bucket exists with 250MB limit and public access.
+ * Ensures the dedicated APK release bucket exists with public access.
  */
 export async function ensureApkReleaseBucket(): Promise<boolean> {
   try {
@@ -159,11 +163,102 @@ export async function fetchApkBufferFromStorage(
  * Deletes an APK binary from cloud storage.
  */
 export async function deleteApkFromStorage(bucket: string, storageKey: string): Promise<boolean> {
+  if (!storageKey || !bucket) return false;
   try {
     const supabase = getStorageClient();
-    const { error } = await supabase.storage.from(bucket).remove([storageKey]);
-    return !error;
-  } catch {
+    const { data, error } = await supabase.storage.from(bucket).remove([storageKey]);
+    if (error) {
+      console.warn(`[deleteApkFromStorage] Warning removing ${storageKey}:`, error.message);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.warn(`[deleteApkFromStorage exception] ${storageKey}:`, err?.message);
     return false;
   }
 }
+
+/**
+ * Deletes multiple APK binaries from cloud storage in one request.
+ */
+export async function deleteMultipleApksFromStorage(
+  bucket: string,
+  storageKeys: string[]
+): Promise<number> {
+  const validKeys = storageKeys.filter((k) => Boolean(k && k.trim()));
+  if (validKeys.length === 0) return 0;
+
+  try {
+    const supabase = getStorageClient();
+    const { data, error } = await supabase.storage.from(bucket).remove(validKeys);
+    if (error) {
+      console.warn("[deleteMultipleApksFromStorage warning]", error.message);
+      return 0;
+    }
+    return data?.length || validKeys.length;
+  } catch (err: any) {
+    console.warn("[deleteMultipleApksFromStorage exception]", err?.message);
+    return 0;
+  }
+}
+
+/**
+ * Scans storage partition for a channel and removes any previous or orphaned APK files,
+ * preserving only the specified active storage key (or keys).
+ */
+export async function cleanChannelPreviousApks({
+  channel = "stable",
+  preserveStorageKeys = [],
+}: {
+  channel?: string;
+  preserveStorageKeys?: string[];
+}): Promise<string[]> {
+  try {
+    const supabase = getStorageClient();
+    const cleanChannel = channel.toLowerCase().includes("beta") ? "beta" : "stable";
+    const channelPrefix = `codexa-apk/${cleanChannel}`;
+
+    const { data: subfolders, error: listError } = await supabase.storage
+      .from(APK_BUCKET_NAME)
+      .list(channelPrefix, { limit: 100 });
+
+    if (listError || !subfolders) return [];
+
+    const keysToDelete: string[] = [];
+
+    for (const item of subfolders) {
+      if (!item.id) {
+        // It's a directory (e.g. version folder)
+        const subPath = `${channelPrefix}/${item.name}`;
+        const { data: files } = await supabase.storage
+          .from(APK_BUCKET_NAME)
+          .list(subPath, { limit: 100 });
+
+        if (files) {
+          for (const file of files) {
+            const fullKey = `${subPath}/${file.name}`;
+            if (!preserveStorageKeys.includes(fullKey)) {
+              keysToDelete.push(fullKey);
+            }
+          }
+        }
+      } else {
+        // It's a file at root of channel folder
+        const fullKey = `${channelPrefix}/${item.name}`;
+        if (!preserveStorageKeys.includes(fullKey)) {
+          keysToDelete.push(fullKey);
+        }
+      }
+    }
+
+    if (keysToDelete.length > 0) {
+      await deleteMultipleApksFromStorage(APK_BUCKET_NAME, keysToDelete);
+    }
+
+    return keysToDelete;
+  } catch (err: any) {
+    console.warn("[cleanChannelPreviousApks exception]", err?.message);
+    return [];
+  }
+}
+

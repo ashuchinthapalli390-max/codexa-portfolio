@@ -3,6 +3,7 @@ import { dataStore } from "@/lib/data-store";
 import { getOrCreateGlobalMobileConfig } from "@/lib/mobile-features";
 import { sendFcmPushToUser } from "@/lib/firebase-admin";
 import { sendPushNotification } from "@/lib/push";
+import { deleteApkFromStorage, cleanChannelPreviousApks } from "@/lib/apk-storage";
 
 export interface SerializedMobileAppRelease {
   id: string;
@@ -106,6 +107,40 @@ export async function publishMobileRelease({
       },
     });
   });
+
+  // Automatically delete previous APK binaries from cloud storage to preserve quota
+  try {
+    const previousReleasesToDelete = await db.mobileAppRelease.findMany({
+      where: {
+        platform: release.platform,
+        releaseChannel: release.releaseChannel,
+        id: { not: releaseId },
+      },
+      select: { id: true, storageBucket: true, storageKey: true, status: true, versionName: true },
+    });
+
+    for (const prev of previousReleasesToDelete) {
+      if (prev.storageBucket && prev.storageKey && prev.storageKey !== release.storageKey) {
+        await deleteApkFromStorage(prev.storageBucket, prev.storageKey).catch((delErr) => {
+          console.warn(`[publishMobileRelease] Warning deleting previous APK ${prev.storageKey}:`, delErr);
+        });
+      }
+      // Remove obsolete draft records
+      if (prev.status === "DRAFT" || prev.status === "FAILED") {
+        await db.mobileAppRelease.delete({ where: { id: prev.id } }).catch(() => {});
+      }
+    }
+
+    // Clean any orphaned storage objects in this channel, preserving only the published release key
+    if (release.storageKey) {
+      await cleanChannelPreviousApks({
+        channel: release.releaseChannel,
+        preserveStorageKeys: [release.storageKey],
+      }).catch(() => {});
+    }
+  } catch (cleanErr) {
+    console.warn("[publishMobileRelease] Cleanup error:", cleanErr);
+  }
 
   // 2. Synchronize MobileAppConfig
   const globalConfig = await getOrCreateGlobalMobileConfig();

@@ -391,8 +391,8 @@ class CodeXaAdminApkUploadService {
     if (fileLength < 100 * 1024) {
       throw Exception('File is too small to be a valid Android APK (< 100 KB).');
     }
-    if (fileLength > 250 * 1024 * 1024) {
-      throw Exception('APK file exceeds maximum limit of 250 MB.');
+    if (fileLength > 1024 * 1024 * 1024) {
+      throw Exception('APK file exceeds maximum limit of 1 GB.');
     }
 
     onProgress(0.0, 'Requesting upload authorization...', 0, fileLength);

@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import zlib from "zlib";
+import { MAX_APK_FILE_SIZE_BYTES, MAX_APK_FILE_SIZE_LABEL } from "@/lib/apk-storage";
 
 export interface ApkValidationResult {
   isValid: boolean;
@@ -36,8 +37,8 @@ export function validateApkBuffer(
   if (fileSizeBytes < 100 * 1024) {
     errors.push("File is too small to be a valid Android APK (< 100 KB).");
   }
-  if (fileSizeBytes > 250 * 1024 * 1024) {
-    errors.push("APK file size exceeds maximum permitted limit (250 MB).");
+  if (fileSizeBytes > MAX_APK_FILE_SIZE_BYTES) {
+    errors.push(`APK file size exceeds maximum permitted limit (${MAX_APK_FILE_SIZE_LABEL}).`);
   }
 
   // 2. Compute SHA-256 hash
