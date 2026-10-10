@@ -63,8 +63,27 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Helper to compare semver strings (e.g. "1.0.0" vs "1.0.5")
+    const isSemverOlder = (v1: string, v2: string) => {
+      const p1 = v1.split(".").map((n) => parseInt(n, 10) || 0);
+      const p2 = v2.split(".").map((n) => parseInt(n, 10) || 0);
+      for (let i = 0; i < Math.max(p1.length, p2.length); i++) {
+        const num1 = p1[i] || 0;
+        const num2 = p2[i] || 0;
+        if (num1 < num2) return true;
+        if (num1 > num2) return false;
+      }
+      return false;
+    };
+
     // Determine update availability
-    const updateAvailable = clientVersionCode > 0 ? clientVersionCode < latestVersionCode : false;
+    const updateAvailable =
+      clientVersionCode > 0
+        ? clientVersionCode < latestVersionCode
+        : rawClientVersion
+        ? isSemverOlder(rawClientVersion, latestVersion)
+        : false;
+
     const forceUpdate =
       (clientVersionCode > 0 && clientVersionCode < minVersionCode) ||
       (updateAvailable && isMandatoryConfig);

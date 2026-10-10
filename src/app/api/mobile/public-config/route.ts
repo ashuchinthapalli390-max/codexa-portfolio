@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
           latestVersionCode,
           minimumSupportedVersionCode: minVersionCode,
           forceUpdate: Boolean(globalConfig.forceUpdateEnabled) || publishedRelease?.updateType === "MANDATORY",
-          optionalUpdate: Boolean(globalConfig.softUpdateEnabled),
+          optionalUpdate: Boolean(globalConfig.softUpdateEnabled) || publishedRelease?.updateType !== "MANDATORY",
           updateUrl: downloadUrl,
           downloadUrl,
           sha256: publishedRelease?.apkSha256 || null,
