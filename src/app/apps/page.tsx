@@ -166,7 +166,13 @@ export default function AppsPage() {
               </div>
             </div>
 
-            <div className="pt-8 border-t border-neutral-800/80 mt-6">
+            <div className="pt-6 border-t border-neutral-800/80 mt-6 space-y-3">
+              <Link
+                href="/mobile"
+                className="w-full py-3.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 border border-neutral-700/80 text-white text-xs font-orbitron font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all hover:border-crimson/50"
+              >
+                <Sparkles className="w-4 h-4 text-bright-red" /> View Full Showcase & Screenshots &rarr;
+              </Link>
               {mobileConfig?.downloadUrl ? (
                 <a
                   href={mobileConfig.downloadUrl}

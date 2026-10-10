@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Menu, X, ArrowRight, Cpu, UserCheck } from "lucide-react";
+import { Menu, X, ArrowRight, Cpu, UserCheck, Smartphone } from "lucide-react";
 import Link from "next/link";
 import { siteConfig } from "@/config/site";
 import { useScrollSpy } from "@/hooks/useScrollSpy";
@@ -129,8 +129,16 @@ export function Navbar() {
           {/* Right Action buttons */}
           <div className="flex items-center gap-2.5">
             <Link
-              href="/apps"
+              href="/mobile"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-transparent hover:bg-neutral-900 border border-neutral-800 hover:border-crimson/40 text-[10px] font-orbitron font-bold uppercase tracking-wider text-neutral-300 hover:text-white transition-all"
+            >
+              <Smartphone className="w-3 h-3 text-crimson" />
+              Mobile App
+            </Link>
+
+            <Link
+              href="/apps"
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-transparent hover:bg-neutral-900 border border-neutral-800 hover:border-neutral-700 text-[10px] font-orbitron font-bold uppercase tracking-wider text-neutral-400 hover:text-white transition-all"
             >
               Apps
             </Link>

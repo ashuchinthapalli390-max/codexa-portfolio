@@ -42,9 +42,11 @@ import {
 } from "lucide-react";
 import { canManageMobile, canViewMobile, getEffectiveRole } from "@/lib/permissions";
 import { ApkManagementTab } from "@/components/mobile-admin/ApkManagementTab";
+import { AppShowcaseTab } from "@/components/mobile-admin/AppShowcaseTab";
 
 type TabId =
   | "overview"
+  | "app_showcase"
   | "apk_management"
   | "version"
   | "features"
@@ -71,6 +73,7 @@ interface TabMeta {
 
 const TABS: TabMeta[] = [
   { id: "overview", label: "Overview", icon: Activity },
+  { id: "app_showcase", label: "App Showcase & Media", icon: Eye },
   { id: "apk_management", label: "APK Management", icon: Download },
   { id: "version", label: "App Version", icon: Smartphone },
   { id: "features", label: "Features", icon: Layers },
@@ -843,6 +846,11 @@ export default function MobileAppControlCenterPage() {
                   </div>
                 </div>
               </div>
+            )}
+
+            {/* APP SHOWCASE & MEDIA TAB */}
+            {activeTab === "app_showcase" && (
+              <AppShowcaseTab isEditor={Boolean(isEditor)} />
             )}
 
             {/* APK MANAGEMENT TAB */}

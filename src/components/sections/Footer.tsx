@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { Cpu, Github, MessageCircle, ArrowUp, ArrowRight } from "lucide-react";
 import { siteConfig } from "@/config/site";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
@@ -137,6 +138,11 @@ export function Footer() {
                 <a href={siteConfig.links.privacyPolicy} className="text-xs text-secondary-text hover:text-white transition-colors">
                   Privacy Policy
                 </a>
+              </li>
+              <li>
+                <Link href="/mobile" className="text-xs text-bright-red hover:underline font-orbitron font-semibold uppercase tracking-wider">
+                  Mobile App (Official APK)
+                </Link>
               </li>
               <li>
                 <a href={siteConfig.links.termsOfService} className="text-xs text-secondary-text hover:text-white transition-colors">
