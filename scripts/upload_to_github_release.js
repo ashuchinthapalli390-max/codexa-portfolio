@@ -1,7 +1,16 @@
 const fs = require('fs');
 const crypto = require('crypto');
 
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '';
+const cp = require('child_process');
+
+let GITHUB_TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '';
+if (!GITHUB_TOKEN) {
+  try {
+    const remote = cp.execSync('git remote get-url origin').toString();
+    const match = remote.match(/https:\/\/([^:@]+)@github\.com/);
+    if (match) GITHUB_TOKEN = match[1];
+  } catch (_) {}
+}
 const REPO_OWNER = 'ashuchinthapalli390-max';
 const REPO_NAME = 'codexa-portfolio';
 const TAG_NAME = 'v1.0.5';

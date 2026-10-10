@@ -6,8 +6,8 @@ const prisma = new PrismaClient();
 
 const GITHUB_DOWNLOAD_URL =
   'https://github.com/ashuchinthapalli390-max/codexa-portfolio/releases/download/v1.0.5/CodeXa.apk';
-const APK_FILE_SIZE = 74766256n;
-const APK_SHA256 = '04f413fda7bfd3c383667c13f4945a936e0f914f1783eadc4f91c777f17829e6';
+const APK_FILE_SIZE = 835669361n;
+const APK_SHA256 = '07dc17a6044a4bd85c7d2d8d53f835fe5559a630e77c2bc192b5c006e080fd74';
 
 async function main() {
   console.log('[DB Sync] Syncing GitHub Release APK v1.0.5 into Core Database...');
