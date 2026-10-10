@@ -47,10 +47,14 @@ export async function GET(req: NextRequest) {
         title: v.title || "CodeXa Mobile Demo Video",
         description: v.caption,
         url: v.publicUrl,
-        thumbnailUrl: v.thumbnailUrl || "/appstore/screenshot-1.png",
-        durationSeconds: v.durationSeconds || 120,
+        thumbnailUrl: v.thumbnailUrl || "/appstore/codexa-demo-poster.jpg",
+        durationSeconds: v.durationSeconds || 30.02,
         displayOrder: v.displayOrder,
         isFeatured: v.isFeatured,
+        mimeType: v.mimeType || "video/mp4",
+        width: v.width || 1080,
+        height: v.height || 1920,
+        fileSize: Number(v.fileSize || 0),
       }));
 
     // 3. Fetch showcase content
