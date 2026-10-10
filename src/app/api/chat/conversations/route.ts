@@ -11,7 +11,7 @@ import {
 function canInitiateDirectMessage(senderRole: string, recipientRole: string): boolean {
   if (senderRole === "FOUNDER" || senderRole === "CEO" || senderRole === "CTO") return true;
   if (senderRole === "INTERN" && (recipientRole === "FOUNDER" || recipientRole === "CEO")) {
-    return false; // Direct message to Founder/CEO restricted for interns
+    return false;
   }
   return true;
 }
@@ -31,92 +31,135 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error }, { status: 500 });
   }
 
-  // Populate recipient metadata from Core DB for direct chats
-  const conversationsWithDetails = await Promise.all(
-    (data || []).map(async (conv: any) => {
-      if (conv.type === "DIRECT") {
-        let otherUserId = (conv.conversation_members || []).find(
-          (m: any) => m.core_user_id !== user.id
-        )?.core_user_id;
+  // Batch-collect all member IDs across all conversations to eliminate N+1 queries
+  const allCoreUserIdsSet = new Set<string>();
+  (data || []).forEach((conv: any) => {
+    (conv.conversation_members || []).forEach((m: any) => {
+      if (m.core_user_id) allCoreUserIdsSet.add(String(m.core_user_id));
+    });
+    if (conv.direct_pair_key) {
+      String(conv.direct_pair_key).split("::").forEach((p: string) => {
+        if (p) allCoreUserIdsSet.add(p);
+      });
+    }
+  });
 
-        if (!otherUserId && conv.direct_pair_key) {
-          const parts = String(conv.direct_pair_key).split("::");
-          otherUserId = parts.find((p: string) => p !== user.id);
-        }
+  const coreUserRecords = await prisma.user.findMany({
+    where: { id: { in: Array.from(allCoreUserIdsSet) } },
+    select: {
+      id: true,
+      fullName: true,
+      username: true,
+      role: true,
+      profileMediaUrl: true,
+      profile: {
+        select: {
+          displayName: true,
+          mediaUrl: true,
+        },
+      },
+    },
+  });
 
-        if (otherUserId) {
-          const userRecord = await prisma.user.findUnique({
-            where: { id: otherUserId },
-            select: {
-              id: true,
-              fullName: true,
-              username: true,
-              role: true,
-              profileMediaUrl: true,
-              profile: {
-                select: {
-                  displayName: true,
-                  mediaUrl: true,
-                },
-              },
-            },
-          });
+  const userMap = new Map<string, {
+    id: string;
+    fullName: string;
+    displayName: string;
+    username: string;
+    role: string;
+    avatarUrl: string | null;
+  }>();
 
-          const displayName =
-            userRecord?.fullName ||
-            userRecord?.profile?.displayName ||
-            userRecord?.username ||
-            "CodeXa Colleague";
+  coreUserRecords.forEach((u) => {
+    const dispName = u.fullName || u.profile?.displayName || u.username || "CodeXa Colleague";
+    const avUrl = u.profileMediaUrl || u.profile?.mediaUrl || null;
+    userMap.set(u.id, {
+      id: u.id,
+      fullName: dispName,
+      displayName: dispName,
+      username: u.username || "colleague",
+      role: u.role || "MEMBER",
+      avatarUrl: avUrl,
+    });
+  });
 
-          const avatarUrl =
-            userRecord?.profileMediaUrl ||
-            userRecord?.profile?.mediaUrl ||
-            null;
+  // Populate conversation details with batch-resolved user profiles
+  const conversationsWithDetails = (data || []).map((conv: any) => {
+    const memberDTOs = (conv.conversation_members || []).map((m: any) => {
+      const u = userMap.get(m.core_user_id);
+      return {
+        id: m.core_user_id,
+        memberRole: m.member_role || "MEMBER",
+        fullName: u?.fullName || "Colleague",
+        displayName: u?.displayName || "Colleague",
+        username: u?.username || "colleague",
+        role: u?.role || "MEMBER",
+        avatarUrl: u?.avatarUrl || null,
+        joinedAt: m.joined_at,
+        muted: m.muted || false,
+      };
+    });
 
-          const recipientUser = {
-            id: otherUserId,
-            fullName: displayName,
-            displayName,
-            name: displayName,
-            username: userRecord?.username || "colleague",
-            role: userRecord?.role || "MEMBER",
-            profileMediaUrl: avatarUrl,
-            avatarUrl,
-          };
+    if (conv.type === "DIRECT") {
+      let otherUserId = (conv.conversation_members || []).find(
+        (m: any) => m.core_user_id !== user.id
+      )?.core_user_id;
 
-          return {
-            ...conv,
-            name: displayName,
-            title: displayName,
-            avatarUrl,
-            recipientUser,
-            peer: recipientUser,
-            otherParticipantCoreUserId: otherUserId,
-            otherParticipantDisplayName: displayName,
-            otherParticipantUsername: userRecord?.username || "colleague",
-            otherParticipantAvatar: avatarUrl,
-            otherParticipantRole: userRecord?.role || "MEMBER",
-          };
-        }
+      if (!otherUserId && conv.direct_pair_key) {
+        const parts = String(conv.direct_pair_key).split("::");
+        otherUserId = parts.find((p: string) => p !== user.id);
       }
 
-      // Group or fallback
-      const groupTitle = conv.title || conv.name || "Team Group";
-      const groupIcon =
-        conv.metadata?.iconUrl ||
-        conv.metadata?.avatarUrl ||
-        conv.icon_url ||
-        conv.avatar_url ||
-        null;
+      if (otherUserId) {
+        const otherUser = userMap.get(otherUserId);
+        const displayName = otherUser?.displayName || "CodeXa Colleague";
+        const avatarUrl = otherUser?.avatarUrl || null;
 
-      return {
-        ...conv,
-        name: groupTitle,
-        title: groupTitle,
-        avatarUrl: groupIcon,
-      };
-    })
-  );
+        const recipientUser = {
+          id: otherUserId,
+          fullName: displayName,
+          displayName,
+          name: displayName,
+          username: otherUser?.username || "colleague",
+          role: otherUser?.role || "MEMBER",
+          profileMediaUrl: avatarUrl,
+          avatarUrl,
+        };
+
+        return {
+          ...conv,
+          name: displayName,
+          title: displayName,
+          avatarUrl,
+          recipientUser,
+          peer: recipientUser,
+          otherParticipantCoreUserId: otherUserId,
+          otherParticipantDisplayName: displayName,
+          otherParticipantUsername: otherUser?.username || "colleague",
+          otherParticipantAvatar: avatarUrl,
+          otherParticipantRole: otherUser?.role || "MEMBER",
+          members: memberDTOs,
+        };
+      }
+    }
+
+    // Group conversation
+    const groupTitle = conv.title || conv.name || "Team Group";
+    const groupIcon =
+      conv.metadata?.iconUrl ||
+      conv.metadata?.avatarUrl ||
+      conv.icon_url ||
+      conv.avatar_url ||
+      null;
+
+    return {
+      ...conv,
+      name: groupTitle,
+      title: groupTitle,
+      avatarUrl: groupIcon,
+      members: memberDTOs,
+    };
+  });
 
   return NextResponse.json({ ok: true, conversations: conversationsWithDetails });
 }
@@ -140,7 +183,6 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, error: "targetUserId is required for direct conversation" }, { status: 400 });
       }
 
-      // Check communication permission
       const recipient = await prisma.user.findUnique({
         where: { id: targetUserId },
         select: {
@@ -171,7 +213,6 @@ export async function POST(req: NextRequest) {
         }, { status: 403 });
       }
 
-      // Check block status
       const { data: block } = await chatSupabaseAdmin
         .from("chat_blocks")
         .select("id")
@@ -231,7 +272,6 @@ export async function POST(req: NextRequest) {
         },
       });
     } else {
-      // Group conversation
       const groupTitle = title || "New Group";
       const { data: newConv, error: convErr } = await chatSupabaseAdmin
         .from("conversations")

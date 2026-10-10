@@ -59,10 +59,27 @@ export async function GET(
       username: true,
       role: true,
       profileMediaUrl: true,
+      department: true,
       profile: {
         select: { displayName: true, mediaUrl: true }
       }
     },
+  });
+
+  const hydratedMembers = (conversation.conversation_members || []).map((m: any) => {
+    const u = coreUsers.find((cu) => cu.id === m.core_user_id);
+    return {
+      id: m.core_user_id,
+      memberId: m.id,
+      fullName: u?.fullName || u?.profile?.displayName || u?.username || "CodeXa Member",
+      username: u?.username || "member",
+      role: u?.role || "MEMBER",
+      orgRole: u?.role || "MEMBER",
+      groupRole: m.role || "MEMBER",
+      profileMediaUrl: u?.profileMediaUrl || u?.profile?.mediaUrl || null,
+      department: u?.department || "Crew",
+      joinedAt: m.joined_at,
+    };
   });
 
   let displayName = conversation.title || conversation.name || (conversation.type === "GROUP" ? "Team Group" : "Chat");
@@ -110,7 +127,7 @@ export async function GET(
       otherParticipantDisplayName: displayName,
       otherParticipantAvatar: avatarUrl,
       otherParticipantRole,
-      members: coreUsers,
+      members: hydratedMembers,
     },
   });
 }

@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     if (!user) return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED" } }, { status: 401 });
 
     const posts = await db.post.findMany({
-      where: { isDeleted: false },
+      where: { isDeleted: false, NOT: { content: { startsWith: "[CODEXA_STORY" } } },
       include: {
         author: {
           select: {

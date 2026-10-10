@@ -1035,6 +1035,8 @@ model MobileSession {
   platform    String?   // "ANDROID" | "IOS" | "WEB_PWA"
   appVersion  String?
   lastActive  DateTime  @default(now())
+  activeConversationId  String?
+  activeConversationAt  DateTime?
   isRevoked   Boolean   @default(false)
   revokedAt   DateTime?
   revokedBy   String?

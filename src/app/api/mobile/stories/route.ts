@@ -7,6 +7,21 @@ import { formatProfileMediaUrl } from "@/lib/profile-media";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+
+const CREW_ROLES = [
+  "FOUNDER",
+  "CO_FOUNDER",
+  "CEO",
+  "CTO",
+  "COO",
+  "HR",
+  "CORE_TEAM",
+  "TEAM_MEMBER",
+  "EMPLOYEE",
+  "INTERN",
+  "ADMIN",
+];
+
 const NO_CACHE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
   Pragma: "no-cache",
@@ -34,6 +49,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized." } }, { status: 401, headers: NO_CACHE_HEADERS });
     }
 
+    // Server-authoritative 24-hour expiration filter
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     const rawStories = await db.post.findMany({
@@ -62,15 +78,17 @@ export async function GET(req: NextRequest) {
     });
 
     // Query user's viewed story post IDs from post_views table
-    const storyIds = rawStories.map(s => s.id);
+    const storyIds = rawStories.map((s) => s.id);
     let viewedStorySet = new Set<string>();
     if (storyIds.length > 0) {
-      const views = await db.$queryRawUnsafe<Array<{ post_id: string }>>(
-        `SELECT post_id FROM post_views WHERE user_id = $1 AND post_id = ANY($2)`,
-        user.id,
-        storyIds
-      ).catch(() => []);
-      views.forEach(v => viewedStorySet.add(v.post_id));
+      try {
+        const views = await db.$queryRawUnsafe<Array<{ post_id: string }>>(
+          `SELECT post_id FROM post_views WHERE user_id = $1 AND post_id = ANY($2)`,
+          user.id,
+          storyIds
+        );
+        views.forEach((v) => viewedStorySet.add(v.post_id));
+      } catch (_) {}
     }
 
     const authorMap = new Map<string, {
@@ -91,6 +109,7 @@ export async function GET(req: NextRequest) {
         isViewed: boolean;
         isLiked: boolean;
         likesCount: number;
+        audience: string;
       }>;
     }>();
 
@@ -109,6 +128,21 @@ export async function GET(req: NextRequest) {
         caption = tagMatch[3].trim();
       }
 
+      // Check media type from media relation
+      if (post.media?.[0]?.mediaType?.includes("video") || post.media?.[0]?.mediaUrl?.match(/\.(mp4|mov|webm)$/i)) {
+        storyType = "VIDEO";
+      } else if (post.media?.[0]?.mediaUrl) {
+        if (storyType === "TEXT") storyType = "IMAGE";
+      }
+
+      // Audience check
+      const isAuthor = author.id === user.id;
+      const isLeadership = ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "COO"].includes(user.role);
+      if (!isAuthor && !isLeadership) {
+        if (audience === "LEADERSHIP") continue;
+        if (audience === "EMPLOYEES_ONLY" && user.role === "INTERN") continue;
+      }
+
       if (!authorMap.has(author.id)) {
         authorMap.set(author.id, {
           authorId: author.id,
@@ -123,7 +157,7 @@ export async function GET(req: NextRequest) {
       }
 
       const isViewed = author.id === user.id || viewedStorySet.has(post.id);
-      const isLiked = (post.likes || []).some(l => l.userId === user.id);
+      const isLiked = (post.likes || []).some((l) => l.userId === user.id);
       const likesCount = post.likes?.length || 0;
 
       authorMap.get(author.id)!.items.push({
@@ -136,15 +170,16 @@ export async function GET(req: NextRequest) {
         isViewed,
         isLiked,
         likesCount,
+        audience,
       });
     }
 
     // Determine hasUnseen per author accurately
-    authorMap.forEach(group => {
+    authorMap.forEach((group) => {
       if (group.isOwnStory) {
         group.hasUnseen = false;
       } else {
-        group.hasUnseen = group.items.some(it => !it.isViewed);
+        group.hasUnseen = group.items.some((it) => !it.isViewed);
       }
     });
 
@@ -184,8 +219,11 @@ export async function POST(req: NextRequest) {
 
     const contentType = req.headers.get("content-type") || "";
 
+    let formData: FormData | null = null;
+    let body: any = null;
+
     if (contentType.includes("multipart/form-data")) {
-      const formData = await req.formData();
+      formData = await req.formData();
       type = (formData.get("type") as string) || "TEXT";
       content = (formData.get("content") as string) || "";
       audience = (formData.get("audience") as string) || "EVERYONE";
@@ -194,17 +232,35 @@ export async function POST(req: NextRequest) {
       if (file && file.size > 0) {
         const bytes = await file.arrayBuffer();
         const buffer = Buffer.from(bytes);
+        const isVideo = type.toUpperCase() === "VIDEO" ||
+          (file.type && file.type.startsWith("video/")) ||
+          (file.name && file.name.match(/\.(mp4|mov|webm|mkv|3gp)$/i));
+
+        const ext = isVideo ? ".mp4" : ".jpg";
+        const cleanFilename = file.name && file.name.includes(".") ? file.name : `story_${Date.now()}${ext}`;
+        const detectedMime = isVideo ? "video/mp4" : (file.type || "image/jpeg");
+
+        if (isVideo) type = "VIDEO";
+
         const uploadRes = await saveMediaUpload(
           "stories",
           buffer,
-          file.name || "story.jpg",
-          file.type || (type === "VIDEO" ? "video/mp4" : "image/jpeg"),
+          cleanFilename,
+          detectedMime,
           user.id
         );
+
+        if (!uploadRes.success || !uploadRes.publicUrl) {
+          return NextResponse.json({
+            ok: false,
+            error: { code: "STORY_UPLOAD_FAILED", message: uploadRes.error || "Failed to upload story media to storage." }
+          }, { status: 500, headers: NO_CACHE_HEADERS });
+        }
+
         mediaUrl = uploadRes.publicUrl;
       }
     } else {
-      const body = await req.json().catch(() => ({}));
+      body = await req.json().catch(() => ({}));
       type = body.type || "TEXT";
       content = body.content || "";
       mediaUrl = body.mediaUrl || null;
@@ -221,7 +277,57 @@ export async function POST(req: NextRequest) {
           isVideo ? "video/mp4" : "image/jpeg",
           user.id
         );
-        mediaUrl = uploadRes.publicUrl;
+        if (uploadRes.success && uploadRes.publicUrl) {
+          mediaUrl = uploadRes.publicUrl;
+        }
+      }
+    }
+
+    
+    // Parse mentions (either explicitly passed or extracted from @usernames in content)
+    let mentionedUserIds: string[] = [];
+    if (contentType.includes("multipart/form-data")) {
+      const mentionsRaw = formData ? ((formData.get("mentions") as string) || "") : "";
+      if (mentionsRaw) {
+        try {
+          const parsed = JSON.parse(mentionsRaw);
+          if (Array.isArray(parsed)) mentionedUserIds = parsed;
+        } catch (_) {
+          mentionedUserIds = mentionsRaw.split(",").map(m => m.trim()).filter(Boolean);
+        }
+      }
+    } else {
+      if (body && Array.isArray(body.mentions)) {
+        mentionedUserIds = body.mentions;
+      }
+    }
+
+    // Extract @usernames from text content
+    const usernameMatches = (content.match(/@([a-zA-Z0-9_\.]+)/g) || []).map((m) => m.slice(1).toLowerCase());
+
+    // 15 & 16. Validate mentions - Crew Members Only
+    if (mentionedUserIds.length > 0 || usernameMatches.length > 0) {
+      const usersToCheck = await db.user.findMany({
+        where: {
+          OR: [
+            ...(mentionedUserIds.length > 0 ? [{ id: { in: mentionedUserIds } }] : []),
+            ...(usernameMatches.length > 0 ? [{ username: { in: usernameMatches } }] : []),
+          ],
+        },
+        select: { id: true, username: true, role: true, isActive: true },
+      });
+
+      // Ensure every mentioned user exists and is an active Crew member
+      for (const mUser of usersToCheck) {
+        if (!mUser.isActive || !CREW_ROLES.includes(mUser.role)) {
+          return NextResponse.json({
+            ok: false,
+            error: {
+              code: "STORY_MENTION_NOT_ALLOWED",
+              message: `User @${mUser.username} is not an authorized CodeXa Crew member.`,
+            },
+          }, { status: 400, headers: NO_CACHE_HEADERS });
+        }
       }
     }
 
@@ -254,26 +360,28 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Notify team members about new story (without spamming)
-    try {
-      const teamUsers = await db.user.findMany({
-        where: { id: { not: user.id }, isActive: true },
-        select: { id: true },
-        take: 30,
-      });
+    // Notify team members asynchronously
+    (async () => {
+      try {
+        const teamUsers = await db.user.findMany({
+          where: { id: { not: user.id }, isActive: true },
+          select: { id: true },
+          take: 30,
+        });
 
-      for (const tUser of teamUsers) {
-        await db.notification.create({
-          data: {
-            userId: tUser.id,
-            type: "SOCIAL",
-            title: `${user.displayName || "A teammate"} posted a new Story`,
-            message: content.trim().slice(0, 80) || "Check out the latest story on CodeXa",
-            link: `/stories?storyId=${post.id}`,
-          },
-        }).catch(() => {});
-      }
-    } catch (_) {}
+        for (const tUser of teamUsers) {
+          db.notification.create({
+            data: {
+              userId: tUser.id,
+              type: "SOCIAL",
+              title: `${user.displayName || "A teammate"} posted a new Story`,
+              message: content.trim().slice(0, 80) || "Check out the latest story on CodeXa",
+              link: `/stories?storyId=${post.id}`,
+            },
+          }).catch(() => {});
+        }
+      } catch (_) {}
+    })().catch(console.error);
 
     return NextResponse.json({
       ok: true,
@@ -292,7 +400,7 @@ export async function POST(req: NextRequest) {
     }, { headers: NO_CACHE_HEADERS });
 
   } catch (err: any) {
-    console.error("[POST /api/mobile/stories] [${requestId}]", err);
+    console.error(`[POST /api/mobile/stories] [${requestId}]`, err);
     return NextResponse.json({ ok: false, error: { code: "SERVER_ERROR", message: "Failed to publish story." } }, { status: 500, headers: NO_CACHE_HEADERS });
   }
 }

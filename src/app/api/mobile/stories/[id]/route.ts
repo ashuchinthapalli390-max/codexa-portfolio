@@ -19,7 +19,7 @@ async function resolveRequestUser(req: NextRequest) {
   return null;
 }
 
-export async function POST(
+export async function DELETE(
   req: NextRequest,
   { params }: { params: any }
 ) {
@@ -34,29 +34,28 @@ export async function POST(
   try {
     const post = await db.post.findUnique({
       where: { id: storyId },
-      select: { id: true, authorId: true, isDeleted: true },
+      select: { id: true, authorId: true },
     });
 
-    if (!post || post.isDeleted) {
-      return NextResponse.json({ ok: false, error: "Story not found or expired" }, { status: 404 });
+    if (!post) {
+      return NextResponse.json({ ok: false, error: "Story not found" }, { status: 404 });
     }
 
-    // Story owner preview must not artificially inflate unique viewer counts
-    if (post.authorId === user.id) {
-      return NextResponse.json({ ok: true, storyId, viewed: true, isOwnerPreview: true });
+    const isOwner = post.authorId === user.id;
+    const isLeadership = ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "ADMIN"].includes(user.role);
+
+    if (!isOwner && !isLeadership) {
+      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
     }
 
-    const viewId = `pv_${storyId}_${user.id}`;
-    await db.$executeRawUnsafe(
-      `INSERT INTO post_views (id, post_id, user_id, created_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (post_id, user_id) DO NOTHING`,
-      viewId,
-      storyId,
-      user.id
-    );
+    await db.post.update({
+      where: { id: storyId },
+      data: { isDeleted: true },
+    });
 
-    return NextResponse.json({ ok: true, storyId, viewed: true, isOwnerPreview: false });
+    return NextResponse.json({ ok: true, deleted: true, storyId });
   } catch (err: any) {
-    console.error("[POST /api/mobile/stories/[id]/view]", err);
+    console.error("[DELETE /api/mobile/stories/[id]]", err);
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
   }
 }

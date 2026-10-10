@@ -31,7 +31,6 @@ export async function ensureApkReleaseBucket(): Promise<boolean> {
 
     const { error: createError } = await supabase.storage.createBucket(APK_BUCKET_NAME, {
       public: true,
-      fileSizeLimit: 250 * 1024 * 1024, // 250 MB
       allowedMimeTypes: [
         "application/vnd.android.package-archive",
         "application/octet-stream",

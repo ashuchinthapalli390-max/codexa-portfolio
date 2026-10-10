@@ -8,6 +8,14 @@ import { sendEmail, notificationsFromEmail } from "@/lib/email/client";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function maskEmail(email: string): string {
+  if (!email || !email.includes("@")) return "***@codexa.agency";
+  const [user, domain] = email.split("@");
+  if (!user || !domain) return "***@codexa.agency";
+  const maskedUser = user.length <= 2 ? user[0] + "***" : user[0] + "***" + user[user.length - 1];
+  return `${maskedUser}@${domain}`;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -44,10 +52,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const founderEmail =
-      process.env.OWNER_NOTIFICATION_EMAIL ||
-      process.env.OWNER_EMAIL ||
-      "ashuchinthapalli3900@gmail.com";
+    const targetEmail = user.email ? user.email.trim().toLowerCase() : null;
+    if (!targetEmail) {
+      return NextResponse.json(
+        { ok: false, error: { code: "NO_VERIFIED_EMAIL", message: "Account has no verified email." } },
+        { status: 400 }
+      );
+    }
 
     // Invalidate old OTPs
     await db.authOtp.updateMany({
@@ -66,7 +77,7 @@ export async function POST(req: NextRequest) {
     await db.authOtp.create({
       data: {
         userId: user.id,
-        email: founderEmail,
+        email: targetEmail,
         otpHash,
         purpose: "ADD_MOBILE_ACCOUNT",
         attempts: 0,
@@ -85,18 +96,18 @@ export async function POST(req: NextRequest) {
     const effectiveRole = getEffectiveRole(user);
 
     const emailHtml = `
-      <div style="font-family: Arial, sans-serif; background-color: #070707; color: #f7f7f7; padding: 32px; border-radius: 8px;">
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #070707; color: #f7f7f7; padding: 32px; border-radius: 12px; max-width: 520px; margin: 0 auto; border: 1px solid #222222;">
         <div style="text-align: center; margin-bottom: 24px;">
-          <h2 style="color: #FF1E3C; letter-spacing: 2px; margin: 0;">CODEXA SECURITY</h2>
-          <p style="color: #a5a5a5; font-size: 13px; margin: 4px 0 0 0;">Resent Mobile Verification Code</p>
+          <h2 style="color: #FF1E3C; letter-spacing: 2px; margin: 0; font-size: 22px;">CODEXA SECURITY</h2>
+          <p style="color: #a5a5a5; font-size: 13px; margin: 6px 0 0 0;">Resent Mobile Verification Code</p>
         </div>
-        <div style="background-color: #111111; border: 1px solid rgba(217,4,41,0.3); border-radius: 8px; padding: 24px;">
-          <p style="margin-top: 0; color: #e0e0e0; font-size: 15px;">
-            A new verification code was requested to add @${user.username} to a mobile device.
+        <div style="background-color: #111111; border: 1px solid rgba(217,4,41,0.35); border-radius: 10px; padding: 24px;">
+          <p style="margin-top: 0; color: #e0e0e0; font-size: 14px; line-height: 1.6;">
+            A new verification code was requested for <strong>@${user.username}</strong> on mobile.
           </p>
           <div style="text-align: center; margin: 24px 0;">
-            <p style="color: #888; font-size: 12px; margin-bottom: 8px; letter-spacing: 1px;">NEW CODE (EXPIRES IN 10 MIN)</p>
-            <div style="display: inline-block; background-color: #1a1a1a; border: 2px solid #D90429; border-radius: 8px; padding: 14px 28px; font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #FFFFFF;">
+            <p style="color: #888; font-size: 11px; margin-bottom: 8px; letter-spacing: 1.5px;">NEW 6-DIGIT CODE (EXPIRES IN 10 MIN)</p>
+            <div style="display: inline-block; background-color: #161616; border: 2px solid #D90429; border-radius: 10px; padding: 14px 28px; font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #FFFFFF; box-shadow: 0 4px 20px rgba(217,4,41,0.25);">
               ${rawOtp}
             </div>
           </div>
@@ -106,14 +117,15 @@ export async function POST(req: NextRequest) {
 
     await sendEmail({
       from: process.env.RESEND_SECURITY_FROM_EMAIL || notificationsFromEmail,
-      to: founderEmail,
-      subject: `CodeXa — New Founder Verification Code for @${user.username}`,
+      to: targetEmail,
+      subject: `CodeXa — New Verification Code for @${user.username}`,
       html: emailHtml,
     }).catch(() => {});
 
     return NextResponse.json({
       ok: true,
-      message: "A new verification code has been dispatched to the Founder.",
+      message: `A new verification code has been dispatched to ${maskEmail(targetEmail)}.`,
+      maskedTargetEmail: maskEmail(targetEmail),
     });
   } catch (err: any) {
     console.error("[POST /api/mobile/accounts/resend-otp]", err);

@@ -7,6 +7,9 @@ import {
   isChatConfigured
 } from "@/lib/supabase/chat-admin";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -25,7 +28,7 @@ export async function GET(
   const conversationId = params.id;
   const { searchParams } = new URL(req.url);
   const before = searchParams.get("before");
-  const limit = Math.min(Number(searchParams.get("limit")) || 30, 50);
+  const limit = Math.min(Number(searchParams.get("limit")) || 40, 60);
 
   // Check membership
   const { data: membership } = await chatSupabaseAdmin
@@ -56,9 +59,82 @@ export async function GET(
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 
+  // Collect all user IDs (senders + readers)
+  const allUserIdsSet = new Set<string>();
+  (messages || []).forEach((m: any) => {
+    if (m.sender_core_user_id) allUserIdsSet.add(String(m.sender_core_user_id));
+    (m.message_reads || []).forEach((r: any) => {
+      if (r.core_user_id) allUserIdsSet.add(String(r.core_user_id));
+    });
+  });
+
+  const allUserRecords = await prisma.user.findMany({
+    where: { id: { in: Array.from(allUserIdsSet) } },
+    select: {
+      id: true,
+      fullName: true,
+      username: true,
+      role: true,
+      profileMediaUrl: true,
+      profile: { select: { displayName: true, mediaUrl: true } }
+    },
+  });
+
+  const userProfileMap = new Map<string, {
+    id: string;
+    fullName: string;
+    displayName: string;
+    username: string;
+    role: string;
+    avatarUrl: string | null;
+  }>();
+
+  allUserRecords.forEach((u) => {
+    const dispName = u.fullName || u.profile?.displayName || u.username || "Colleague";
+    const avUrl = u.profileMediaUrl || u.profile?.mediaUrl || null;
+    userProfileMap.set(u.id, {
+      id: u.id,
+      fullName: dispName,
+      displayName: dispName,
+      username: u.username || "colleague",
+      role: u.role || "MEMBER",
+      avatarUrl: avUrl,
+    });
+  });
+
   return NextResponse.json({
     ok: true,
-    messages: (messages || []).reverse(),
+    messages: (messages || []).map((m: any) => {
+      const senderProfile = userProfileMap.get(m.sender_core_user_id);
+      const senderDisplayName = senderProfile?.displayName || "Colleague";
+      const senderAvatarUrl = senderProfile?.avatarUrl || null;
+
+      const enhancedReads = (m.message_reads || []).map((r: any) => {
+        const readerProfile = userProfileMap.get(r.core_user_id);
+        return {
+          id: r.id,
+          message_id: r.message_id,
+          core_user_id: r.core_user_id,
+          userId: r.core_user_id,
+          read_at: r.read_at,
+          readAt: r.read_at,
+          fullName: readerProfile?.fullName || readerProfile?.displayName || "Colleague",
+          displayName: readerProfile?.displayName || readerProfile?.fullName || "Colleague",
+          username: readerProfile?.username || "colleague",
+          avatarUrl: readerProfile?.avatarUrl || null,
+          role: readerProfile?.role || "MEMBER",
+        };
+      });
+
+      return {
+        ...m,
+        senderId: m.sender_core_user_id,
+        senderName: senderDisplayName,
+        senderAvatar: senderAvatarUrl,
+        reads: enhancedReads,
+        message_reads: enhancedReads,
+      };
+    }),
   });
 }
 
@@ -89,8 +165,11 @@ export async function POST(
       return NextResponse.json({ ok: false, error: "Message text cannot be empty" }, { status: 400 });
     }
 
+    const conversationId = params.id;
+
+    // Fast persistence
     const result = await sendChatMessage({
-      conversationId: params.id,
+      conversationId,
       senderCoreUserId: user.id,
       clientMessageId,
       text,
@@ -102,37 +181,88 @@ export async function POST(
       return NextResponse.json({ ok: false, error: result.error }, { status: 400 });
     }
 
-    // Trigger Core notification if this is a newly inserted message (not duplicate retry)
-    if (!result.isDuplicate && result.data) {
-      const { data: members } = await chatSupabaseAdmin
-        .from("conversation_members")
-        .select("core_user_id, muted")
-        .eq("conversation_id", params.id)
-        .neq("core_user_id", user.id)
-        .is("left_at", null);
+    const senderDisplayName = user.displayName || user.username || "Colleague";
+    const senderAvatarUrl = (user as any).profileMediaUrl || (user as any).profile?.mediaUrl || null;
 
-      if (members && members.length > 0) {
-        for (const m of members) {
-          if (!m.muted) {
-            try {
-              await prisma.notification.create({
-                data: {
-                  userId: m.core_user_id,
-                  type: "CHAT",
-                  title: `Message from ${user.displayName || user.username || "Team Member"}`,
-                  message: (text || "Sent an attachment").slice(0, 120),
-                  link: `/messages/${params.id}`,
-                },
-              });
-            } catch (_) {}
+    // Asynchronous background notification
+    if (!result.isDuplicate && result.data) {
+      (async () => {
+        try {
+          const { data: convData } = await chatSupabaseAdmin
+            .from("conversations")
+            .select("id, type, title")
+            .eq("id", conversationId)
+            .single();
+
+          const isGroup = convData?.type === "GROUP";
+          const groupName = convData?.title || "Team Group";
+
+          const { data: members } = await chatSupabaseAdmin
+            .from("conversation_members")
+            .select("core_user_id, muted")
+            .eq("conversation_id", conversationId)
+            .neq("core_user_id", user.id)
+            .is("left_at", null);
+
+          if (!members || members.length === 0) return;
+
+          let pushTitle = senderDisplayName;
+          let pushBody = (text || "Sent an attachment").slice(0, 100);
+
+          if (isGroup) {
+            pushTitle = groupName;
+            pushBody = `${senderDisplayName}: ${pushBody}`;
           }
-        }
-      }
+
+          const { sendFcmPushToUser } = await import("@/lib/firebase-admin");
+
+          for (const m of members) {
+            if (m.muted) continue;
+
+            prisma.notification.create({
+              data: {
+                userId: m.core_user_id,
+                type: "CHAT",
+                title: pushTitle,
+                message: pushBody.slice(0, 120),
+                link: `/messages/${conversationId}`,
+              },
+            }).catch(() => {});
+
+            sendFcmPushToUser(
+              m.core_user_id,
+              {
+                title: pushTitle,
+                body: pushBody,
+                data: {
+                  conversationId,
+                  messageId: String(result.data.id),
+                  senderId: user.id,
+                  senderName: senderDisplayName,
+                  senderAvatar: senderAvatarUrl || "",
+                  type: "CHAT",
+                  messageType,
+                  isGroup: isGroup ? "true" : "false",
+                  groupName: isGroup ? groupName : "",
+                },
+              },
+              { targetConversationId: conversationId }
+            ).catch(() => {});
+          }
+        } catch (_) {}
+      })().catch(console.error);
     }
 
     return NextResponse.json({
       ok: true,
-      message: result.data,
+      message: {
+        ...result.data,
+        senderId: result.data.sender_core_user_id,
+        senderName: senderDisplayName,
+        senderAvatar: senderAvatarUrl,
+        reads: [],
+        message_reads: [],
+      },
       isDuplicate: result.isDuplicate,
     });
   } catch (err: any) {

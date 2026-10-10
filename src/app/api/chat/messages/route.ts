@@ -60,10 +60,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 
-  // Enhance messages with sender profiles for identity resolution
-  const senderIds: string[] = Array.from(new Set((messages || []).map((m: any) => String(m.sender_core_user_id))));
-  const senders = await prisma.user.findMany({
-    where: { id: { in: senderIds } },
+  // Collect ALL user IDs: senders AND readers across messages for full identity hydration
+  const allUserIdsSet = new Set<string>();
+  (messages || []).forEach((m: any) => {
+    if (m.sender_core_user_id) allUserIdsSet.add(String(m.sender_core_user_id));
+    (m.message_reads || []).forEach((r: any) => {
+      if (r.core_user_id) allUserIdsSet.add(String(r.core_user_id));
+    });
+  });
+
+  const allUserRecords = await prisma.user.findMany({
+    where: { id: { in: Array.from(allUserIdsSet) } },
     select: {
       id: true,
       fullName: true,
@@ -73,9 +80,30 @@ export async function GET(req: NextRequest) {
       profile: { select: { displayName: true, mediaUrl: true } }
     },
   });
-  const senderMap = new Map(senders.map((s) => [s.id, s]));
 
-  // Also query view once sessions if any messages are view once
+  const userProfileMap = new Map<string, {
+    id: string;
+    fullName: string;
+    displayName: string;
+    username: string;
+    role: string;
+    avatarUrl: string | null;
+  }>();
+
+  allUserRecords.forEach((u) => {
+    const dispName = u.fullName || u.profile?.displayName || u.username || "Colleague";
+    const avUrl = u.profileMediaUrl || u.profile?.mediaUrl || null;
+    userProfileMap.set(u.id, {
+      id: u.id,
+      fullName: dispName,
+      displayName: dispName,
+      username: u.username || "colleague",
+      role: u.role || "MEMBER",
+      avatarUrl: avUrl,
+    });
+  });
+
+  // Query view once sessions if any messages are view once
   const viewOnceMsgIds = (messages || [])
     .filter((m: any) => m.is_view_once || m.message_type?.startsWith("VIEW_ONCE"))
     .map((m: any) => m.id);
@@ -108,17 +136,32 @@ export async function GET(req: NextRequest) {
         (m.text?.startsWith("data:image") ? m.text : null);
 
       if (isConsumed) {
-        mediaUrl = null; // Don't expose consumed view-once bytes
+        mediaUrl = null;
       }
 
-      const senderProfile = senderMap.get(m.sender_core_user_id);
-      const senderDisplayName =
-        senderProfile?.fullName ||
-        senderProfile?.profile?.displayName ||
-        senderProfile?.username ||
-        "Colleague";
+      const senderProfile = userProfileMap.get(m.sender_core_user_id);
+      const senderDisplayName = senderProfile?.displayName || "Colleague";
+      const senderAvatarUrl = senderProfile?.avatarUrl || null;
 
       const reactionsList = (m.message_reactions || []).map((r: any) => r.reaction || r.emoji || "❤️");
+
+      // Hydrate all member reads with actual Core user identity (avatars and names)
+      const enhancedReads = (m.message_reads || []).map((r: any) => {
+        const readerProfile = userProfileMap.get(r.core_user_id);
+        return {
+          id: r.id,
+          message_id: r.message_id,
+          core_user_id: r.core_user_id,
+          userId: r.core_user_id,
+          read_at: r.read_at,
+          readAt: r.read_at,
+          fullName: readerProfile?.fullName || readerProfile?.displayName || "Colleague",
+          displayName: readerProfile?.displayName || readerProfile?.fullName || "Colleague",
+          username: readerProfile?.username || "colleague",
+          avatarUrl: readerProfile?.avatarUrl || null,
+          role: readerProfile?.role || "MEMBER",
+        };
+      });
 
       return {
         ...m,
@@ -126,12 +169,14 @@ export async function GET(req: NextRequest) {
         text: isConsumed ? "[Photo Opened]" : m.text,
         senderId: m.sender_core_user_id,
         senderName: senderDisplayName,
-        senderAvatar: senderProfile?.profileMediaUrl || senderProfile?.profile?.mediaUrl || null,
+        senderAvatar: senderAvatarUrl,
         mediaUrl: mediaUrl || undefined,
         reactions: reactionsList,
         reactionDetails: m.message_reactions || [],
         isViewOnce: isVO,
         viewOnceConsumed: isConsumed,
+        reads: enhancedReads,
+        message_reads: enhancedReads,
       };
     }),
   });
@@ -154,7 +199,6 @@ export async function POST(req: NextRequest) {
     const clientMessageId = body.clientMessageId || body.clientId;
     let messageType = body.messageType || "TEXT";
     const stickerId = body.stickerId;
-    const catalogVersion = body.catalogVersion;
     const isViewOnce = body.isViewOnce === true;
 
     if (stickerId || messageType === "STICKER") {
@@ -215,6 +259,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Message text cannot be empty" }, { status: 400 });
     }
 
+    // 1. Fast persistence to Chat Supabase
     const result = await sendChatMessage({
       conversationId,
       senderCoreUserId: user.id,
@@ -230,118 +275,142 @@ export async function POST(req: NextRequest) {
 
     // Set view once flags on message row
     if (isViewOnce && result.data?.id) {
-      try {
-        await chatSupabaseAdmin
-          .from("messages")
-          .update({ is_view_once: true })
-          .eq("id", result.data.id);
-      } catch (_) {}
+      chatSupabaseAdmin
+        .from("messages")
+        .update({ is_view_once: true })
+        .eq("id", result.data.id)
+        .then(() => {})
+        .catch(() => {});
     }
 
     // If media was saved, record in message_attachments
     if (savedMediaUrl && result.data?.id) {
-      try {
-        await chatSupabaseAdmin.from("message_attachments").insert({
+      chatSupabaseAdmin
+        .from("message_attachments")
+        .insert({
           message_id: result.data.id,
           file_url: savedMediaUrl,
           file_type: messageType.includes("VIDEO") ? "video" : "image",
-        });
-      } catch (_) {}
+        })
+        .then(() => {})
+        .catch(() => {});
     }
 
-    // Fetch conversation details for group title & members
-    const { data: convData } = await chatSupabaseAdmin
-      .from("conversations")
-      .select("id, type, title")
-      .eq("id", conversationId)
-      .single();
+    // Prepare immediate response
+    const senderDisplayName = user.displayName || user.username || "Colleague";
+    const senderAvatarUrl = (user as any).profileMediaUrl || (user as any).profile?.mediaUrl || null;
 
-    const isGroup = convData?.type === "GROUP";
-    const groupName = convData?.title || "Team Group";
-
-    // Trigger Core notification and FCM Push if newly inserted
-    if (!result.isDuplicate && result.data) {
-      const { data: members } = await chatSupabaseAdmin
-        .from("conversation_members")
-        .select("core_user_id, muted")
-        .eq("conversation_id", conversationId)
-        .neq("core_user_id", user.id)
-        .is("left_at", null);
-
-      if (members && members.length > 0) {
-        for (const m of members) {
-          if (!m.muted) {
-            const senderDisplayName = user.displayName || user.username || "Colleague";
-            let pushTitle = senderDisplayName;
-            let pushBody = text.slice(0, 100);
-
-            if (isViewOnce) {
-              pushBody = "🔒 Sent a View Once photo";
-            } else if (messageType === "STICKER") {
-              pushBody = "🎨 Sent a sticker";
-            } else if (messageType === "IMAGE") {
-              pushBody = "📷 Sent a photo";
-            } else if (messageType === "VIDEO") {
-              pushBody = "🎥 Sent a video";
-            }
-
-            if (isGroup) {
-              pushTitle = groupName;
-              pushBody = `${senderDisplayName}: ${pushBody}`;
-            }
-
-            try {
-              await prisma.notification.create({
-                data: {
-                  userId: m.core_user_id,
-                  type: "CHAT",
-                  title: pushTitle,
-                  message: pushBody.slice(0, 120),
-                  link: `/messages/${conversationId}`,
-                },
-              });
-            } catch (_) {}
-
-            // Send FCM push alert with complete metadata
-            try {
-              const { sendFcmPushToUser } = await import("@/lib/firebase-admin");
-              await sendFcmPushToUser(m.core_user_id, {
-                title: pushTitle,
-                body: pushBody,
-                data: {
-                  conversationId,
-                  messageId: String(result.data.id),
-                  senderId: user.id,
-                  senderName: senderDisplayName,
-                  type: "CHAT",
-                  messageType,
-                  mediaUrl: isViewOnce ? "" : (savedMediaUrl || ""),
-                  stickerId: messageType === "STICKER" ? (stickerId || text) : "",
-                  isGroup: isGroup ? "true" : "false",
-                  groupName: isGroup ? groupName : "",
-                },
-              });
-            } catch (fcmErr) {
-              console.warn("[FCM PUSH ERROR]", fcmErr);
-            }
-          }
-        }
-      }
-    }
-
-    return NextResponse.json({
+    const responsePayload = {
       ok: true,
       success: true,
       message: {
         ...result.data,
         message: result.data.text,
         senderId: result.data.sender_core_user_id,
+        senderName: senderDisplayName,
+        senderAvatar: senderAvatarUrl,
         mediaUrl: savedMediaUrl || (result.data.message_type === "IMAGE" ? result.data.text : null),
         isViewOnce,
         reactions: [],
+        reads: [],
+        message_reads: [],
       },
       isDuplicate: result.isDuplicate,
-    });
+    };
+
+    // 2. DISPATCH NOTIFICATIONS ASYNCHRONOUSLY IN BACKGROUND
+    // Do NOT block message sending on push delivery or avatar queries!
+    if (!result.isDuplicate && result.data) {
+      const messageId = String(result.data.id);
+      const insertedText = text;
+      const sentMessageType = messageType;
+
+      (async () => {
+        try {
+          const { data: convData } = await chatSupabaseAdmin
+            .from("conversations")
+            .select("id, type, title")
+            .eq("id", conversationId)
+            .single();
+
+          const isGroup = convData?.type === "GROUP";
+          const groupName = convData?.title || "Team Group";
+
+          const { data: members } = await chatSupabaseAdmin
+            .from("conversation_members")
+            .select("core_user_id, muted")
+            .eq("conversation_id", conversationId)
+            .neq("core_user_id", user.id)
+            .is("left_at", null);
+
+          if (!members || members.length === 0) return;
+
+          let pushTitle = senderDisplayName;
+          let pushBody = insertedText.slice(0, 100);
+
+          if (isViewOnce) {
+            pushBody = "🔒 Sent a View Once photo";
+          } else if (sentMessageType === "STICKER") {
+            pushBody = "🎨 Sent a sticker";
+          } else if (sentMessageType === "IMAGE") {
+            pushBody = "📷 Sent a photo";
+          } else if (sentMessageType === "VIDEO") {
+            pushBody = "🎥 Sent a video";
+          }
+
+          if (isGroup) {
+            pushTitle = groupName;
+            pushBody = `${senderDisplayName}: ${pushBody}`;
+          }
+
+          const { sendFcmPushToUser } = await import("@/lib/firebase-admin");
+
+          for (const m of members) {
+            if (m.muted) continue;
+
+            // Persist notification event in Core DB
+            prisma.notification.create({
+              data: {
+                userId: m.core_user_id,
+                type: "CHAT",
+                title: pushTitle,
+                message: pushBody.slice(0, 120),
+                link: `/messages/${conversationId}`,
+              },
+            }).catch(() => {});
+
+            // Send FCM push with smart suppression for the active conversation
+            sendFcmPushToUser(
+              m.core_user_id,
+              {
+                title: pushTitle,
+                body: pushBody,
+                data: {
+                  conversationId,
+                  messageId,
+                  senderId: user.id,
+                  senderName: senderDisplayName,
+                  senderAvatar: senderAvatarUrl || "",
+                  type: "CHAT",
+                  messageType: sentMessageType,
+                  mediaUrl: isViewOnce ? "" : (savedMediaUrl || ""),
+                  stickerId: sentMessageType === "STICKER" ? (stickerId || insertedText) : "",
+                  isGroup: isGroup ? "true" : "false",
+                  groupName: isGroup ? groupName : "",
+                },
+              },
+              { targetConversationId: conversationId }
+            ).catch((fcmErr) => {
+              console.warn("[FCM PUSH ERROR]", fcmErr);
+            });
+          }
+        } catch (bgErr) {
+          console.warn("[Background push processing error]", bgErr);
+        }
+      })().catch(console.error);
+    }
+
+    return NextResponse.json(responsePayload);
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
   }
