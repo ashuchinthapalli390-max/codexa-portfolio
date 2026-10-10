@@ -38,10 +38,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (!downloadUrl) {
-      return NextResponse.json(
-        { error: "No published APK download available." },
-        { status: 404 }
-      );
+      downloadUrl = "https://vdpbdveensbnyahjougj.supabase.co/storage/v1/object/public/mobile-releases/codexa-apk/stable/1.0.5/CodeXa.apk";
     }
 
     // Increment download count and track event asynchronously

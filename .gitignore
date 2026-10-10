@@ -58,6 +58,7 @@ scripts/intern-sync-backup-*.json
 
 # Mobile APK builds
 *.apk
+!src/app/**
 public/downloads/*.apk
 
 # Scratch test files
