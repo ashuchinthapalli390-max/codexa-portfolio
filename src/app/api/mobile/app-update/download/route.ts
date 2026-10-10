@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (!downloadUrl) {
-      downloadUrl = "https://vdpbdveensbnyahjougj.supabase.co/storage/v1/object/public/mobile-releases/codexa-apk/stable/1.0.5/CodeXa.apk";
+      downloadUrl = "https://github.com/ashuchinthapalli390-max/codexa-portfolio/releases/download/v1.0.5/CodeXa.apk";
     }
 
     // Increment download count and track event asynchronously

@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const FALLBACK_PUBLIC_CDN_APK =
-  "https://vdpbdveensbnyahjougj.supabase.co/storage/v1/object/public/mobile-releases/codexa-apk/stable/1.0.5/CodeXa.apk";
+  "https://github.com/ashuchinthapalli390-max/codexa-portfolio/releases/download/v1.0.5/CodeXa.apk";
 
 export async function GET(req: NextRequest) {
   try {
