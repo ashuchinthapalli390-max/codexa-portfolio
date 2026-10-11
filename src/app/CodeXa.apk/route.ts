@@ -1,9 +1,15 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { serveDirectApkBinary } from "@/lib/apk-database-streamer";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const url = req.nextUrl.clone();
-  url.pathname = "/downloads/CodeXa.apk";
-  return NextResponse.redirect(url, 301);
+  return await serveDirectApkBinary(req, {
+    fallbackFilename: "CodeXa.apk",
+  });
+}
+
+export async function HEAD(req: NextRequest) {
+  return await serveDirectApkBinary(req);
 }

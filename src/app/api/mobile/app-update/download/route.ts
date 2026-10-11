@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getOrCreateGlobalMobileConfig } from "@/lib/mobile-features";
+import { serveDirectApkBinary } from "@/lib/apk-database-streamer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,17 +30,6 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    let downloadUrl = release?.apkDownloadUrl;
-
-    if (!downloadUrl) {
-      const globalConfig = await getOrCreateGlobalMobileConfig();
-      downloadUrl = globalConfig.androidApkUrl || globalConfig.downloadUrl;
-    }
-
-    if (!downloadUrl) {
-      downloadUrl = "https://github.com/ashuchinthapalli390-max/codexa-portfolio/releases/download/v1.0.5/CodeXa.apk";
-    }
-
     // Increment download count and track event asynchronously
     if (release) {
       Promise.all([
@@ -58,22 +47,23 @@ export async function GET(req: NextRequest) {
             versionCode: release.versionCode,
             metadata: {
               versionName: release.versionName,
-              downloadUrl,
+              source: "official-direct-stream",
             },
           },
         }),
       ]).catch((err) => console.warn("[APK Download Tracking]", err));
     }
 
-    // Redirect directly to high-speed cloud CDN object
-    return NextResponse.redirect(downloadUrl, {
-      status: 302,
-      headers: {
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-      },
+    // Stream APK binary directly from database/disk with zero third-party redirects
+    return await serveDirectApkBinary(req, {
+      fallbackFilename: "CodeXa.apk",
     });
   } catch (err: any) {
     console.error("[GET /api/mobile/app-update/download]", err);
-    return NextResponse.json({ error: "Failed to initiate download." }, { status: 500 });
+    return await serveDirectApkBinary(req);
   }
+}
+
+export async function HEAD(req: NextRequest) {
+  return await serveDirectApkBinary(req);
 }

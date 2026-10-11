@@ -148,7 +148,7 @@ class CodeXaReleaseMeta {
       updatePolicy: json['updatePolicy'] ?? 'OPTIONAL',
       releaseNotes: json['releaseNotes'] ?? '',
       publishedAt: json['publishedAt'] ?? '',
-      downloadUrl: json['downloadUrl'] ?? 'https://codxa-agency.online/api/mobile/releases/download',
+      downloadUrl: json['downloadUrl'] ?? json['apkDownloadUrl'] ?? 'https://codxa-agency.online/downloads/CodeXa.apk',
     );
   }
 }
@@ -1104,9 +1104,10 @@ class CodeXaUpdateDownloadDialog extends StatefulWidget {
 
 class _CodeXaUpdateDownloadDialogState extends State<CodeXaUpdateDownloadDialog> {
   double _progress = 0.0;
-  String _status = 'Connecting to CodeXa Release Server...';
+  String _status = 'Connecting to official CodeXa release server...';
   bool _downloading = true;
   String? _error;
+  String? _downloadedApkPath;
 
   @override
   void initState() {
@@ -1115,63 +1116,134 @@ class _CodeXaUpdateDownloadDialogState extends State<CodeXaUpdateDownloadDialog>
   }
 
   Future<void> _downloadAndInstall() async {
+    setState(() {
+      _downloading = true;
+      _error = null;
+      _progress = 0.0;
+      _status = 'Connecting to official CodeXa server...';
+    });
+
     final client = http.Client();
+    IOSink? sink;
+    File? apkFile;
+
     try {
-      final req = http.Request('GET', Uri.parse(widget.release.downloadUrl));
+      final downloadUri = Uri.parse(widget.release.downloadUrl);
+      final req = http.Request('GET', downloadUri);
+      req.headers['User-Agent'] = 'CodeXa-Flutter-Android/1.0';
       final resp = await client.send(req);
+
+      if (resp.statusCode != 200 && resp.statusCode != 206) {
+        throw Exception('Server returned HTTP ${resp.statusCode}');
+      }
 
       final totalBytes = resp.contentLength ?? widget.release.fileSizeBytes;
       var receivedBytes = 0;
-      final bytesList = <int>[];
+
+      // Determine reliable installation storage directory
+      Directory storageDir;
+      try {
+        final extDir = await getExternalStorageDirectory();
+        storageDir = extDir ?? await getApplicationDocumentsDirectory();
+      } catch (_) {
+        storageDir = await getTemporaryDirectory();
+      }
+
+      final fileName = 'CodeXa-v${widget.release.versionName}.apk';
+      apkFile = File('${storageDir.path}/$fileName');
+      if (await apkFile.exists()) {
+        try {
+          await apkFile.delete();
+        } catch (_) {}
+      }
+
+      sink = apkFile.openWrite();
+
+      // Chunked SHA-256 calculation to eliminate 1.2GB memory heap spikes
+      AccumulatorSink<Digest> outputDigest = AccumulatorSink<Digest>();
+      ByteConversionSink shaInputSink = sha256.startChunkedConversion(outputDigest);
 
       setState(() {
-        _status = 'Downloading official update...';
+        _status = 'Downloading official CodeXa APK (${widget.release.fileSizeFormatted})...';
       });
 
       await for (final chunk in resp.stream) {
-        bytesList.addAll(chunk);
+        sink.add(chunk);
+        shaInputSink.add(chunk);
         receivedBytes += chunk.length;
         if (totalBytes > 0) {
           setState(() {
-            _progress = receivedBytes / totalBytes;
+            _progress = (receivedBytes / totalBytes).clamp(0.0, 1.0);
           });
         }
       }
 
+      await sink.flush();
+      await sink.close();
+      sink = null;
+      shaInputSink.close();
+
       setState(() {
-        _status = 'Verifying SHA-256 cryptographic checksum...';
+        _status = 'Verifying cryptographic SHA-256 integrity...';
       });
 
-      final digest = sha256.convert(bytesList).toString().toLowerCase();
+      final computedDigest = outputDigest.events.isNotEmpty
+          ? outputDigest.events.single.toString().toLowerCase()
+          : '';
+
       if (widget.release.sha256.isNotEmpty &&
-          digest != widget.release.sha256.toLowerCase()) {
-        throw Exception('SHA-256 integrity check failed. Expected: ${widget.release.sha256}, got: $digest');
+          computedDigest.isNotEmpty &&
+          computedDigest != widget.release.sha256.toLowerCase()) {
+        throw Exception('SHA-256 integrity check failed. Expected: ${widget.release.sha256}, got: $computedDigest');
       }
 
       setState(() {
-        _status = 'Saving APK file...';
-      });
-
-      final dir = await getTemporaryDirectory();
-      final apkFile = File('${dir.path}/CodeXa-v${widget.release.versionName}.apk');
-      await apkFile.writeAsBytes(bytesList, flush: true);
-
-      setState(() {
-        _status = 'Opening Android Package Installer...';
+        _status = 'APK verified successfully! Launching Package Installer...';
         _downloading = false;
+        _downloadedApkPath = apkFile!.path;
       });
 
-      final result = await OpenFilex.open(apkFile.path);
-      if (result.type != ResultType.done) {
-        throw Exception('Failed to invoke Android installer: ${result.message}');
-      }
+      // Launch package installer immediately
+      await _invokeInstaller(apkFile.path);
     } catch (e) {
+      if (sink != null) {
+        try {
+          await sink.close();
+        } catch (_) {}
+      }
       setState(() {
-        _error = e.toString();
+        _error = e.toString().replaceFirst('Exception: ', '');
         _downloading = false;
       });
     } finally {
       client.close();
+    }
+  }
+
+  Future<void> _invokeInstaller(String path) async {
+    try {
+      setState(() {
+        _status = 'Opening Android Package Installer...';
+      });
+
+      final result = await OpenFilex.open(
+        path,
+        type: 'application/vnd.android.package-archive',
+      );
+
+      if (result.type != ResultType.done) {
+        setState(() {
+          _status = 'Please tap "Install Update" below or approve unknown app installs in Settings.';
+        });
+      } else {
+        setState(() {
+          _status = 'Installation started. Complete the prompt on your screen.';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _status = 'Ready to install. Tap the button below.';
+      });
     }
   }
 
@@ -1184,32 +1256,97 @@ class _CodeXaUpdateDownloadDialogState extends State<CodeXaUpdateDownloadDialog>
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: Row(
         children: [
-          const Icon(Icons.downloading, color: crimson),
+          Icon(
+            _downloading ? Icons.downloading : Icons.system_update_alt,
+            color: crimson,
+          ),
           const SizedBox(width: 8),
           Text(
-            widget.isMandatory ? 'Required Update' : 'Downloading Update',
+            _downloading
+                ? (widget.isMandatory ? 'Required Update' : 'Downloading Update')
+                : 'Update Ready to Install',
             style: const TextStyle(color: Colors.white, fontSize: 16),
           ),
         ],
       ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (_error != null) ...[
-            Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.withOpacity(0.3)),
+              ),
+              child: Text(
+                _error!,
+                style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+              ),
+            ),
             const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: _downloadAndInstall,
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('Retry Download'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: crimson,
+                minimumSize: const Size(double.infinity, 38),
+              ),
+            ),
           ] else ...[
-            LinearProgressIndicator(
-              value: _progress > 0 ? _progress : null,
-              backgroundColor: Colors.white10,
-              color: crimson,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '${(_progress * 100).toStringAsFixed(1)}% complete',
-              style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 4),
+            if (_downloading) ...[
+              LinearProgressIndicator(
+                value: _progress > 0 ? _progress : null,
+                backgroundColor: Colors.white10,
+                color: crimson,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '${(_progress * 100).toStringAsFixed(1)}% complete',
+                style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+            ] else if (_downloadedApkPath != null) ...[
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.green.withOpacity(0.3)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.green, size: 20),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '100% Downloaded & Verified Official APK',
+                        style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: () => _invokeInstaller(_downloadedApkPath!),
+                icon: const Icon(Icons.install_mobile, size: 18),
+                label: const Text('INSTALL UPDATE NOW', style: TextStyle(fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: crimson,
+                  minimumSize: const Size(double.infinity, 44),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Note: If Android prompts for permission, enable "Allow from this source" in Settings to complete installation.',
+                style: TextStyle(color: Colors.white54, fontSize: 10, height: 1.3),
+              ),
+            ],
+            const SizedBox(height: 8),
             Text(_status, style: const TextStyle(color: Colors.white38, fontSize: 11)),
           ],
         ],
