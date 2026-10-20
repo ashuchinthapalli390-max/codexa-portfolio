@@ -128,6 +128,17 @@ export enum Permission {
   MANAGE_MCP_POLICIES = "MANAGE_MCP_POLICIES",
   APPROVE_MCP_ACTIONS = "APPROVE_MCP_ACTIONS",
   EXECUTE_MCP_JOBS = "EXECUTE_MCP_JOBS",
+
+  // Classes & Scheduling Management
+  CAN_VIEW_CLASSES = "CAN_VIEW_CLASSES",
+  CAN_VIEW_DRAFT_CLASSES = "CAN_VIEW_DRAFT_CLASSES",
+  CAN_CREATE_CLASSES = "CAN_CREATE_CLASSES",
+  CAN_EDIT_CLASSES = "CAN_EDIT_CLASSES",
+  CAN_PUBLISH_CLASSES = "CAN_PUBLISH_CLASSES",
+  CAN_RESCHEDULE_CLASSES = "CAN_RESCHEDULE_CLASSES",
+  CAN_CANCEL_CLASSES = "CAN_CANCEL_CLASSES",
+  CAN_MANAGE_CLASS_AUDIENCE = "CAN_MANAGE_CLASS_AUDIENCE",
+  CAN_MANAGE_MEETING_LINKS = "CAN_MANAGE_MEETING_LINKS",
 }
 
 // ─── 2. ROLES TYPE ────────────────────────────────────────────────────────────
@@ -279,6 +290,7 @@ export const ROLE_PERMISSIONS: Record<string, Set<Permission>> = {
     Permission.VIEW_HR_ANALYTICS,
     Permission.VIEW_REPORTS,
     Permission.VIEW_AUDIT_LOGS,
+    Permission.CAN_VIEW_CLASSES,
   ]),
 
   // CTO: Technical & project authority, intern/employee account creation & management, desktop/AI licensing
@@ -320,6 +332,7 @@ export const ROLE_PERMISSIONS: Record<string, Set<Permission>> = {
     Permission.SEND_EMAIL,
     Permission.VIEW_PROJECT_ANALYTICS,
     Permission.VIEW_REPORTS,
+    Permission.CAN_VIEW_CLASSES,
   ]),
 
   // HR: People & staff operations, intern/employee accounts, attendance, payroll & offer letters
@@ -367,6 +380,7 @@ export const ROLE_PERMISSIONS: Record<string, Set<Permission>> = {
     Permission.SEND_EMAIL,
     Permission.VIEW_HR_ANALYTICS,
     Permission.VIEW_REPORTS,
+    Permission.CAN_VIEW_CLASSES,
   ]),
 
   // COO: Broad read-only operational visibility, operational email (No analytics)
@@ -389,6 +403,7 @@ export const ROLE_PERMISSIONS: Record<string, Set<Permission>> = {
     Permission.VIEW_DOCUMENTS,
     Permission.SEND_EMAIL,
     Permission.VIEW_REPORTS,
+    Permission.CAN_VIEW_CLASSES,
   ]),
 
   // Admin: Legacy elevated permissions
@@ -420,6 +435,7 @@ export const ROLE_PERMISSIONS: Record<string, Set<Permission>> = {
     Permission.SEND_EMAIL,
     Permission.VIEW_ANALYTICS,
     Permission.VIEW_REPORTS,
+    Permission.CAN_VIEW_CLASSES,
   ]),
 
   // Employee: Standard staff access
@@ -434,6 +450,7 @@ export const ROLE_PERMISSIONS: Record<string, Set<Permission>> = {
     Permission.VIEW_OWN_PAYMENTS,
     Permission.SUBMIT_PAYMENT_PROOF,
     Permission.VIEW_DOCUMENTS,
+    Permission.CAN_VIEW_CLASSES,
   ]),
   TEAM_MEMBER: new Set<Permission>([
     Permission.VIEW_DASHBOARD,
@@ -446,6 +463,7 @@ export const ROLE_PERMISSIONS: Record<string, Set<Permission>> = {
     Permission.VIEW_OWN_PAYMENTS,
     Permission.SUBMIT_PAYMENT_PROOF,
     Permission.VIEW_DOCUMENTS,
+    Permission.CAN_VIEW_CLASSES,
   ]),
 
   // Intern: Restricted intern access
@@ -459,6 +477,7 @@ export const ROLE_PERMISSIONS: Record<string, Set<Permission>> = {
     Permission.VIEW_OWN_PAYMENTS,
     Permission.SUBMIT_PAYMENT_PROOF,
     Permission.VIEW_DOCUMENTS,
+    Permission.CAN_VIEW_CLASSES,
   ]),
 };
 

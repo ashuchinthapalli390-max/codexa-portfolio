@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentSessionResult } from "@/lib/auth";
+import { getAuthUserFromRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   chatSupabaseAdmin,
@@ -12,20 +12,19 @@ export const dynamic = "force-dynamic";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: any }
 ) {
-  const sessionResult = await getCurrentSessionResult();
-  if (sessionResult.status !== "authenticated") {
+  const user = await getAuthUserFromRequest(req);
+  if (!user) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
-
-  const user = sessionResult.user;
 
   if (!isChatConfigured() || !chatSupabaseAdmin) {
     return NextResponse.json({ ok: true, messages: [] });
   }
 
-  const conversationId = params.id;
+  const resolvedParams = params instanceof Promise ? await params : params;
+  const conversationId = resolvedParams.id;
   const { searchParams } = new URL(req.url);
   const before = searchParams.get("before");
   const limit = Math.min(Number(searchParams.get("limit")) || 40, 60);
@@ -140,14 +139,12 @@ export async function GET(
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: any }
 ) {
-  const sessionResult = await getCurrentSessionResult();
-  if (sessionResult.status !== "authenticated") {
+  const user = await getAuthUserFromRequest(req);
+  if (!user) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
-
-  const user = sessionResult.user;
 
   if (!isChatConfigured() || !chatSupabaseAdmin) {
     return NextResponse.json({ ok: false, error: "Chat service unavailable" }, { status: 503 });
@@ -165,7 +162,8 @@ export async function POST(
       return NextResponse.json({ ok: false, error: "Message text cannot be empty" }, { status: 400 });
     }
 
-    const conversationId = params.id;
+    const resolvedParams = params instanceof Promise ? await params : params;
+    const conversationId = resolvedParams.id;
 
     // Fast persistence
     const result = await sendChatMessage({

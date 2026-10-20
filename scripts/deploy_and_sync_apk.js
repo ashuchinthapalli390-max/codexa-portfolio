@@ -11,7 +11,7 @@ const prisma = new PrismaClient();
 const REPO_OWNER = 'ashuchinthapalli390-max';
 const REPO_NAME = 'codexa-portfolio';
 const TAG_NAME = 'v1.0.5';
-const APK_PATH = 'G:/AntiGravity IDE/codexa app/build/app/outputs/flutter-apk/app-release.apk';
+const APK_PATH = process.env.APK_PATH || path.resolve(__dirname, '../../../codexa app/build/app/outputs/flutter-apk/app-release.apk');
 
 async function main() {
   console.log('[Deployer] Starting CodeXa APK deployment & database sync...');
@@ -43,57 +43,52 @@ async function main() {
     }
   }
 
-  if (!githubToken) {
-    throw new Error('GitHub token not available');
-  }
+  let downloadUrl = `https://codxa-agency.online/downloads/CodeXa.apk`;
 
-  // 3. Find GitHub Release
-  console.log(`[Deployer] Fetching release tag ${TAG_NAME}...`);
-  const relRes = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/tags/${TAG_NAME}`, {
-    headers: {
-      Authorization: `token ${githubToken}`,
-      'User-Agent': 'CodeXa-Deployer',
-      Accept: 'application/vnd.github.v3+json',
-    },
-  });
+  if (githubToken) {
+    try {
+      console.log(`[Deployer] Fetching release tag ${TAG_NAME}...`);
+      const relRes = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/tags/${TAG_NAME}`, {
+        headers: {
+          Authorization: `token ${githubToken}`,
+          'User-Agent': 'CodeXa-Deployer',
+          Accept: 'application/vnd.github.v3+json',
+        },
+      });
 
-  if (!relRes.ok) {
-    throw new Error(`Failed to find release ${TAG_NAME}: ${relRes.status} ${await relRes.text()}`);
-  }
+      if (relRes.ok) {
+        const release = await relRes.json();
+        const releaseId = release.id;
+        console.log(`[Deployer] Target release ID: ${releaseId}`);
 
-  const release = await relRes.json();
-  const releaseId = release.id;
-  console.log(`[Deployer] Target release ID: ${releaseId}`);
+        if (release.assets && release.assets.length > 0) {
+          for (const asset of release.assets) {
+            if (asset.name === 'CodeXa.apk') {
+              console.log(`[Deployer] Deleting old asset ${asset.id}...`);
+              await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/assets/${asset.id}`, {
+                method: 'DELETE',
+                headers: {
+                  Authorization: `token ${githubToken}`,
+                  'User-Agent': 'CodeXa-Deployer',
+                },
+              });
+            }
+          }
+        }
 
-  // 4. Delete existing asset if any
-  if (release.assets && release.assets.length > 0) {
-    for (const asset of release.assets) {
-      if (asset.name === 'CodeXa.apk') {
-        console.log(`[Deployer] Deleting old asset ${asset.id}...`);
-        await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/assets/${asset.id}`, {
-          method: 'DELETE',
-          headers: {
-            Authorization: `token ${githubToken}`,
-            'User-Agent': 'CodeXa-Deployer',
-          },
-        });
+        console.log(`[Deployer] Uploading CodeXa.apk (${sizeMb} MB) via curl.exe...`);
+        const uploadUrl = `https://uploads.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/${releaseId}/assets?name=CodeXa.apk`;
+        const curlCmd = `curl.exe -f -s -S -X POST -H "Authorization: token ${githubToken}" -H "User-Agent: CodeXa-Deployer" -H "Content-Type: application/vnd.android.package-archive" --data-binary @"${APK_PATH}" "${uploadUrl}"`;
+        const uploadOutput = cp.execSync(curlCmd, { maxBuffer: 10 * 1024 * 1024 }).toString();
+        const uploadedAsset = JSON.parse(uploadOutput);
+        console.log(`[Deployer] Upload successful! Asset ID: ${uploadedAsset.id}`);
+        downloadUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${TAG_NAME}/CodeXa.apk`;
       }
+    } catch (e) {
+      console.warn('[Deployer] GitHub release asset upload warning:', e.message);
     }
-  }
-
-  // 5. Upload asset using curl.exe
-  console.log(`[Deployer] Uploading CodeXa.apk (${sizeMb} MB) via curl.exe...`);
-  const uploadUrl = `https://uploads.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/${releaseId}/assets?name=CodeXa.apk`;
-  
-  const curlCmd = `curl.exe -f -s -S -X POST -H "Authorization: token ${githubToken}" -H "User-Agent: CodeXa-Deployer" -H "Content-Type: application/vnd.android.package-archive" --data-binary @"${APK_PATH}" "${uploadUrl}"`;
-
-  try {
-    const uploadOutput = cp.execSync(curlCmd, { maxBuffer: 10 * 1024 * 1024 }).toString();
-    const uploadedAsset = JSON.parse(uploadOutput);
-    console.log(`[Deployer] Upload successful! Asset ID: ${uploadedAsset.id}, Size: ${(uploadedAsset.size / 1024 / 1024).toFixed(2)} MB`);
-  } catch (curlErr) {
-    console.error('[Deployer] Curl upload failed:', curlErr.message);
-    throw curlErr;
+  } else {
+    console.log('[Deployer] GitHub token not provided. Deploying to website public downloads.');
   }
 
   // 6. Copy to local public directories for direct website downloads
@@ -112,9 +107,7 @@ async function main() {
   console.log(`[Deployer] Copied APK to ${destDownloadApk} and ${destPublicApk}`);
 
   // 7. Sync into Core Database (MobileAppRelease & GlobalMobileConfig)
-  const downloadUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${TAG_NAME}/CodeXa.apk`;
-
-  console.log('[Deployer] Updating database records...');
+  console.log('[Deployer] Updating database records with download URL:', downloadUrl);
   const currentRelease = await prisma.mobileAppRelease.findFirst({
     where: { isCurrentPublished: true },
   });
@@ -127,10 +120,10 @@ async function main() {
     apkDownloadUrl: downloadUrl,
     storageProvider: 'GITHUB_RELEASES',
     storageBucket: 'codexa-portfolio',
-    storageKey: `releases/download/${TAG_NAME}/CodeXa.apk`,
-    minimumSupportedVersionCode: 1,
+    minimumSupportedVersionCode: 105,
+    updateType: 'MANDATORY',
     releaseNotes:
-      'Official CodeXa Mobile Production Release v1.0.5 - Universal multi-ABI build with 34 authentic offline sticker packs (533 stickers), CodeXa Store, Live Classes, Attendance QR Geofencing, Dynamic Projects, Intern Assignments, Team Chat & Media Sync.',
+      'Official CodeXa Mobile Production Release v1.0.5 — 44 MB APK Repair with Google Sign-In fixes, Direct & Group Chat sync, in-app CodeXa Store update flow, and Leadership-Managed Sticker Pack System.',
     publishedAt: new Date(),
     updatedAt: new Date(),
   };
@@ -161,8 +154,11 @@ async function main() {
         where: { id: config.id },
         data: {
           androidApkUrl: downloadUrl,
-          androidLatestVersion: '1.0.5',
-          androidLatestVersionCode: 105,
+          downloadUrl: downloadUrl,
+          currentVersion: '1.0.5',
+          minVersion: '1.0.5',
+          buildNumber: 105,
+          forceUpdateEnabled: true,
           updatedAt: new Date(),
         },
       });

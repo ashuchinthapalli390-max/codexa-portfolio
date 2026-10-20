@@ -1,6 +1,7 @@
 require('dotenv').config({ path: '.env.local' });
 require('dotenv').config({ path: '.env' });
 const fs = require('fs');
+const path = require('path');
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { PrismaClient } = require('@prisma/client');
@@ -12,11 +13,23 @@ const supabase = createClient(
 );
 
 async function main() {
-  const apkPath = 'G:/AntiGravity IDE/codexa app/build/app/outputs/flutter-apk/app-release.apk';
+  const apkPath = process.env.APK_PATH || path.resolve(__dirname, '../../../codexa app/build/app/outputs/flutter-apk/app-release.apk');
   if (!fs.existsSync(apkPath)) {
     console.error('APK file not found at:', apkPath);
     process.exit(1);
   }
+
+  // Copy to local public directories for direct website downloads
+  const publicDir = path.resolve(__dirname, '../public');
+  const publicDownloadsDir = path.resolve(__dirname, '../public/downloads');
+  if (!fs.existsSync(publicDownloadsDir)) {
+    fs.mkdirSync(publicDownloadsDir, { recursive: true });
+  }
+  const destPublicApk = path.join(publicDir, 'CodeXa.apk');
+  const destDownloadApk = path.join(publicDownloadsDir, 'CodeXa.apk');
+  fs.copyFileSync(apkPath, destPublicApk);
+  fs.copyFileSync(apkPath, destDownloadApk);
+  console.log(`[APK Sync] Copied APK to ${destPublicApk} and ${destDownloadApk}`);
 
   const fileBuffer = fs.readFileSync(apkPath);
   const fileSize = fileBuffer.length;
@@ -62,9 +75,9 @@ async function main() {
         apkDownloadUrl: cdnUrl,
         storageKey,
         storageBucket: 'mobile-releases',
-        storageProvider: 'SUPABASE',
-        minimumSupportedVersionCode: 1,
-        releaseNotes: 'Official CodeXa Mobile Production Release v1.0.5 — Built-in CodeXa Store, Live Classes, Attendance QR Geofencing, Dynamic Projects, Intern Assignments, Team Chat & Media Sync.',
+        minimumSupportedVersionCode: 105,
+        updateType: 'MANDATORY',
+        releaseNotes: 'Official CodeXa Mobile Production Release v1.0.5 — 44 MB APK Repair with Google Sign-In fixes, Direct & Group Chat sync, in-app CodeXa Store update flow, and Leadership-Managed Sticker Pack System.',
         publishedAt: new Date(),
         updatedAt: new Date()
       }
@@ -87,11 +100,12 @@ async function main() {
       data: {
         currentVersion: '1.0.5',
         buildNumber: 105,
-        minVersion: '1.0.0',
+        minVersion: '1.0.5',
+        forceUpdateEnabled: true,
         softUpdateEnabled: true,
         downloadUrl: cdnUrl,
         androidApkUrl: cdnUrl,
-        releaseNotes: 'Official CodeXa Mobile Production Release v1.0.5 — Built-in CodeXa Store, Live Classes, Attendance QR Geofencing, Dynamic Projects, Intern Assignments, Team Chat & Media Sync.',
+        releaseNotes: 'Official CodeXa Mobile Production Release v1.0.5 — 44 MB APK Repair with Google Sign-In fixes, Direct & Group Chat sync, in-app CodeXa Store update flow, and Leadership-Managed Sticker Pack System.',
         updatedAt: new Date()
       }
     });

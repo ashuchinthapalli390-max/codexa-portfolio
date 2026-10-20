@@ -103,29 +103,64 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Force Update Check if client specified version header or query param
-    const clientVersion = req.headers.get("x-app-version") || req.nextUrl.searchParams.get("version");
-    if (clientVersion && globalConfig.minVersion && globalConfig.forceUpdateEnabled) {
-      if (clientVersion < globalConfig.minVersion) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: {
-              code: "UPDATE_REQUIRED",
-              message: "A required update for CodeXa is available. Please update to continue.",
-            },
-            version: {
-              minimumSupported: globalConfig.minVersion,
-              latest: globalConfig.currentVersion,
-              forceUpdate: true,
-              updateUrl: globalConfig.androidApkUrl || globalConfig.downloadUrl || "https://codxa-agency.online/downloads/CodeXa.apk",
-              releaseNotes: (globalConfig as any).releaseNotes || "Please update to the latest version of CodeXa.",
-            },
-            requestId,
-          },
-          { status: 426, headers: NO_CACHE_HEADERS }
-        );
+    // App Config & Active Published Release
+    const publishedRelease = await db.mobileAppRelease.findFirst({
+      where: {
+        platform: "ANDROID",
+        releaseChannel: "STABLE",
+        isCurrentPublished: true,
+        status: "PUBLISHED",
+      },
+    });
+
+    const activeVersion = publishedRelease?.versionName || globalConfig.currentVersion || "1.0.0";
+    const activeVersionCode = publishedRelease?.versionCode || globalConfig.buildNumber || 1;
+    const minCode = publishedRelease?.minimumSupportedVersionCode || 1;
+    const isMandatoryUpdate = Boolean(globalConfig.forceUpdateEnabled) || publishedRelease?.updateType === "MANDATORY";
+
+    // Helper to compare semver strings numerically
+    const isSemverOlder = (v1: string, v2: string) => {
+      const p1 = v1.split(".").map((n) => parseInt(n, 10) || 0);
+      const p2 = v2.split(".").map((n) => parseInt(n, 10) || 0);
+      for (let i = 0; i < Math.max(p1.length, p2.length); i++) {
+        const num1 = p1[i] || 0;
+        const num2 = p2[i] || 0;
+        if (num1 < num2) return true;
+        if (num1 > num2) return false;
       }
+      return false;
+    };
+
+    // Force Update Check if client specified version header or query param
+    const rawClientCode = req.headers.get("x-app-version-code") || req.nextUrl.searchParams.get("versionCode") || req.headers.get("x-build-number");
+    const clientCode = rawClientCode ? parseInt(rawClientCode, 10) : 0;
+    const clientVersion = req.headers.get("x-app-version") || req.nextUrl.searchParams.get("version");
+
+    const isOlderByCode = clientCode > 0 && clientCode < activeVersionCode;
+    const isBelowMinCode = clientCode > 0 && clientCode < minCode;
+    const isOlderBySemver = (!clientCode && clientVersion) ? isSemverOlder(clientVersion, activeVersion) : false;
+
+    if (isBelowMinCode || (isMandatoryUpdate && (isOlderByCode || isOlderBySemver))) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: {
+            code: "UPDATE_REQUIRED",
+            message: "A required update for CodeXa is available. Please update to continue.",
+          },
+          version: {
+            minimumSupported: publishedRelease?.versionName || globalConfig.minVersion,
+            minimumSupportedVersionCode: minCode,
+            latest: activeVersion,
+            latestVersionCode: activeVersionCode,
+            forceUpdate: true,
+            updateUrl: publishedRelease?.apkDownloadUrl || globalConfig.androidApkUrl || globalConfig.downloadUrl || "https://codxa-agency.online/downloads/CodeXa.apk",
+            releaseNotes: publishedRelease?.releaseNotes || (globalConfig as any).releaseNotes || "Please update to the latest version of CodeXa.",
+          },
+          requestId,
+        },
+        { status: 426, headers: NO_CACHE_HEADERS }
+      );
     }
 
     // 2. Resolve Role Permissions
@@ -370,18 +405,6 @@ export async function GET(req: NextRequest) {
     }
 
     // 9. App Config & Active Published Release
-    const publishedRelease = await db.mobileAppRelease.findFirst({
-      where: {
-        platform: "ANDROID",
-        releaseChannel: "STABLE",
-        isCurrentPublished: true,
-        status: "PUBLISHED",
-      },
-    });
-
-    const activeVersion = publishedRelease?.versionName || globalConfig.currentVersion || "1.0.0";
-    const activeVersionCode = publishedRelease?.versionCode || globalConfig.buildNumber || 1;
-    const minCode = publishedRelease?.minimumSupportedVersionCode || 1;
     const apkUrl =
       publishedRelease?.apkDownloadUrl ||
       globalConfig.androidApkUrl ||

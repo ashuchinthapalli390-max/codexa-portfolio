@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { validateSessionResult, getCurrentSessionResult, generateRequestId } from "@/lib/auth";
-import { getEffectiveRole } from "@/lib/permissions";
+import { getEffectiveRole, hasPermission, Permission } from "@/lib/permissions";
+import { resolveVisibleClassesForUser } from "@/lib/classes/class-visibility";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,168 +33,127 @@ export async function GET(req: NextRequest) {
   try {
     const user = await resolveRequestUser(req);
     if (!user) {
-      return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized." } }, { status: 401, headers: NO_CACHE_HEADERS });
+      return NextResponse.json(
+        { ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized. Valid session required." }, requestId },
+        { status: 401, headers: NO_CACHE_HEADERS }
+      );
     }
-
-    const role = getEffectiveRole(user);
-    const isTrainerOrAdmin = ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "OWNER", "ADMIN", "INSTRUCTOR"].includes(role);
 
     const { searchParams } = new URL(req.url);
-    const dateParam = searchParams.get("date"); // YYYY-MM-DD
-    const monthParam = searchParams.get("month"); // YYYY-MM
-    const domainParam = searchParams.get("domain");
+    const dateParam = searchParams.get("date")?.trim(); // YYYY-MM-DD
+    const monthParam = searchParams.get("month")?.trim(); // YYYY-MM
+    const domainParam = searchParams.get("domain")?.trim();
+    const includeDrafts = searchParams.get("includeDrafts") === "true";
 
-    let internProfile: any = null;
-    if (!isTrainerOrAdmin) {
-      internProfile = await db.employmentProfile.findFirst({
-        where: { userId: user.id }
-      });
+    // Validate date format if passed
+    if (dateParam && !/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      return NextResponse.json(
+        { ok: false, error: { code: "INVALID_DATE", message: "Date must be in YYYY-MM-DD format." }, requestId },
+        { status: 400, headers: NO_CACHE_HEADERS }
+      );
     }
 
-    const todayStr = new Date().toISOString().split("T")[0];
-
-    // Build Prisma query
-    const whereClause: any = {
-      status: { not: "SUPERSEDED_LEGACY_DRAFT" }
-    };
-
-    if (!isTrainerOrAdmin) {
-      // Mobile interns only see released/upcoming/live/completed classes
-      whereClause.status = { in: ["UPCOMING", "LIVE", "COMPLETED", "RESCHEDULED"] };
+    // Validate month format if passed
+    if (monthParam && !/^\d{4}-\d{2}$/.test(monthParam)) {
+      return NextResponse.json(
+        { ok: false, error: { code: "INVALID_DATE_RANGE", message: "Month must be in YYYY-MM format." }, requestId },
+        { status: 400, headers: NO_CACHE_HEADERS }
+      );
     }
 
-    if (dateParam) {
-      whereClause.classDate = new Date(dateParam + "T00:00:00.000Z");
-    }
-
-    const classes = await db.scheduledClass.findMany({
-      where: whereClause,
-      orderBy: [{ classDate: "asc" }, { startTime: "asc" }],
-      include: {
-        domainLinks: {
-          select: {
-            domainId: true,
-            domain: {
-              select: {
-                id: true,
-                code: true,
-                name: true,
-                displayName: true,
-              }
-            }
-          }
-        },
-        assignments: {
-          where: isTrainerOrAdmin ? undefined : { status: { in: ["PUBLISHED", "ACTIVE"] } },
-          select: {
-            id: true,
-            sourceKey: true,
-            title: true,
-            status: true,
-            releaseAt: true,
-            dueDate: true,
-            evidenceRequired: true,
-          }
-        }
-      }
+    const resolved = await resolveVisibleClassesForUser({
+      user,
+      date: dateParam || null,
+      month: monthParam || null,
+      domain: domainParam || null,
+      includeDrafts,
     });
 
-    // Domain filtering
-    let filtered = classes;
-    if (!isTrainerOrAdmin) {
-      const studentDomainId = internProfile?.domainId;
-      filtered = filtered.filter(c => {
-        const isCommon = c.sequenceNumber !== null && c.sequenceNumber <= 14;
-        if (isCommon) return true;
-        if (studentDomainId && c.domainLinks?.some((l: any) => l.domainId === studentDomainId)) return true;
-        return false;
-      });
-    } else if (domainParam && domainParam !== "ALL" && domainParam !== "All Domains") {
-      filtered = filtered.filter(c => {
-        const isCommon = c.sequenceNumber !== null && c.sequenceNumber <= 14;
-        if (isCommon) return true;
-        return c.domainLinks?.some((l: any) => 
-          l.domainId === domainParam || 
-          l.domain.code === domainParam || 
-          l.domain.name.toLowerCase() === domainParam.toLowerCase()
-        );
-      });
-    }
+    const now = new Date();
+    const istOffset = 5.5 * 60 * 60 * 1000;
+    const nowIST = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + istOffset);
+    const todayStr = nowIST.toISOString().split("T")[0];
 
-    if (monthParam) {
-      filtered = filtered.filter(c => {
-        const dStr = c.classDate.toISOString().split("T")[0];
-        return dStr.startsWith(monthParam);
-      });
-    }
-
-    // Format for mobile client
-    const formatted = filtered.map(c => ({
-      id: c.id,
-      sourceKey: c.sourceKey,
-      sequenceNumber: c.sequenceNumber,
-      title: c.title,
-      domain: c.domain,
-      domains: c.domainLinks.map((l: any) => l.domain),
-      batch: c.batch,
-      topic: c.topic,
-      subtopics: c.subtopics,
-      instructorId: c.instructorId,
-      instructorName: c.instructorName,
-      classDate: c.classDate.toISOString().split("T")[0],
-      startTime: c.startTime,
-      endTime: c.endTime,
-      duration: c.duration,
-      status: c.status,
-      mode: c.mode,
-      meetingLink: c.meetingLink,
-      learningObjectives: c.learningObjectives,
-      learningGoals: c.learningGoals,
-      trainerDemo: c.trainerDemo,
-      isCommon: c.sequenceNumber !== null && c.sequenceNumber <= 14,
-      assignments: c.assignments,
-      recordingUrl: null, // Strictly nullified per 100% live policy
-      createdAt: c.createdAt,
-    }));
-
+    // Single Date Request
     if (dateParam) {
       return NextResponse.json({
         ok: true,
+        date: dateParam,
         selectedDate: dateParam,
-        today: formatted,
-        classes: formatted,
+        timezone: "Asia/Kolkata",
+        classes: resolved.classes,
+        today: resolved.classes,
         upcoming: [],
-        count: formatted.length,
+        count: resolved.classes.length,
+        canManage: resolved.canManageClasses,
+        userRole: resolved.userRole,
+        internDomain: resolved.userDomain,
+        internDomainId: resolved.userDomainId,
+        internYear: resolved.userYear,
+        requestId,
       }, { headers: NO_CACHE_HEADERS });
     }
 
-    const todayClasses = formatted.filter(c => c.classDate === todayStr && c.status !== "CANCELLED");
-    const upcomingClasses = formatted.filter(c => c.classDate > todayStr && c.status !== "CANCELLED");
-    const pastClasses = formatted.filter(c => c.classDate < todayStr || c.status === "COMPLETED");
+    // Month or General Schedule Request
+    const todayClasses = resolved.classes.filter(
+      (c) => c.classDate === todayStr && c.lifecycleStatus !== "CANCELLED"
+    );
+    const upcomingClasses = resolved.classes.filter(
+      (c) => c.classDate > todayStr && c.lifecycleStatus !== "CANCELLED" && c.publicationStatus === "PUBLISHED"
+    );
+    const pastClasses = resolved.classes.filter(
+      (c) => c.classDate < todayStr || c.lifecycleStatus === "COMPLETED"
+    );
 
-    // Scheduled dates indicator
-    const dateCounts: Record<string, number> = {};
-    for (const c of formatted) {
-      dateCounts[c.classDate] = (dateCounts[c.classDate] || 0) + 1;
+    // Compute month date breakdown
+    const dateCounts: Record<string, { count: number; hasLive: boolean; hasUpcoming: boolean }> = {};
+    for (const c of resolved.classes) {
+      if (!dateCounts[c.classDate]) {
+        dateCounts[c.classDate] = { count: 0, hasLive: false, hasUpcoming: false };
+      }
+      dateCounts[c.classDate].count++;
+      if (c.lifecycleStatus === "LIVE") dateCounts[c.classDate].hasLive = true;
+      if (c.lifecycleStatus === "UPCOMING") dateCounts[c.classDate].hasUpcoming = true;
     }
-    const scheduledDates = Object.entries(dateCounts).map(([date, count]) => ({ date, count }));
+
+    const scheduledDates = Object.entries(dateCounts).map(([date, meta]) => ({
+      date,
+      count: meta.count,
+      hasLive: meta.hasLive,
+      hasUpcoming: meta.hasUpcoming,
+    }));
+
+    const currentYear = nowIST.getFullYear();
+    const currentMonthNum = (nowIST.getMonth() + 1).toString().padStart(2, "0");
+    const activeMonth = monthParam || `${currentYear}-${currentMonthNum}`;
 
     return NextResponse.json({
       ok: true,
+      year: parseInt(activeMonth.split("-")[0], 10),
+      month: activeMonth,
+      timezone: "Asia/Kolkata",
+      classes: resolved.classes,
       today: todayClasses,
       upcoming: upcomingClasses,
       past: pastClasses,
       scheduledDates,
       count: todayClasses.length + upcomingClasses.length,
-      totalClasses: formatted.length,
-      internDomain: internProfile?.internshipDomain || null,
-      internDomainId: internProfile?.domainId || null,
+      totalClasses: resolved.classes.length,
+      canManage: resolved.canManageClasses,
+      userRole: resolved.userRole,
+      internDomain: resolved.userDomain,
+      internDomainId: resolved.userDomainId,
+      internYear: resolved.userYear,
       syncStatus: "MOBILE_BACKEND_SYNCED",
+      requestId,
     }, { headers: NO_CACHE_HEADERS });
 
   } catch (err: any) {
     console.error(`[GET /api/mobile/classes] [${requestId}]`, err);
-    return NextResponse.json({ ok: false, error: { code: "SERVER_ERROR", message: "Failed to load scheduled classes." } }, { status: 500, headers: NO_CACHE_HEADERS });
+    return NextResponse.json(
+      { ok: false, error: { code: "SERVER_ERROR", message: "Failed to load scheduled classes: " + err.message }, requestId },
+      { status: 500, headers: NO_CACHE_HEADERS }
+    );
   }
 }
 
@@ -203,76 +163,139 @@ export async function POST(req: NextRequest) {
   try {
     const user = await resolveRequestUser(req);
     if (!user) {
-      return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized." } }, { status: 401, headers: NO_CACHE_HEADERS });
+      return NextResponse.json(
+        { ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized." }, requestId },
+        { status: 401, headers: NO_CACHE_HEADERS }
+      );
     }
 
-    const role = getEffectiveRole(user);
-    const canSchedule = ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "OWNER", "ADMIN"].includes(role);
-    if (!canSchedule) {
-      return NextResponse.json({ ok: false, error: { code: "FORBIDDEN", message: "Only leadership or instructors can schedule classes." } }, { status: 403, headers: NO_CACHE_HEADERS });
+    const canCreate = hasPermission(user, Permission.CAN_CREATE_CLASSES);
+    if (!canCreate) {
+      return NextResponse.json(
+        { ok: false, error: { code: "FORBIDDEN", message: "Only Founder, Co-Founder, or authorized staff may schedule classes." }, requestId },
+        { status: 403, headers: NO_CACHE_HEADERS }
+      );
     }
 
     const body = await req.json().catch(() => ({}));
     const {
       title,
       domain = "All Domains",
+      attendingDomains = [],
       batch = "Batch-2026",
       topic,
       subtopics = [],
       classDate,
-      startTime,
-      endTime,
-      duration = "1h 30m",
+      startTime = "19:30",
+      endTime = "21:30",
+      duration = "2h 00m",
       mode = "ONLINE",
       meetingLink,
       learningObjectives,
       resources = [],
+      learningGoals = [],
+      trainerDemo,
+      instructorNotes,
+      publishImmediately = false,
     } = body;
 
     if (!title || !topic || !classDate || !startTime || !endTime) {
-      return NextResponse.json({ ok: false, error: { code: "BAD_REQUEST", message: "Missing required class fields." } }, { status: 400, headers: NO_CACHE_HEADERS });
+      return NextResponse.json(
+        { ok: false, error: { code: "BAD_REQUEST", message: "Title, topic, classDate, startTime, and endTime are required." }, requestId },
+        { status: 400, headers: NO_CACHE_HEADERS }
+      );
     }
 
-    const id = `class_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const classDateObj = new Date(classDate + "T00:00:00.000Z");
 
-    await db.$executeRawUnsafe(`
-      INSERT INTO scheduled_classes (
-        id, title, domain, batch, topic, subtopics, instructor_id, instructor_name,
-        class_date, start_time, end_time, duration, status, mode, meeting_link,
-        learning_objectives, resources
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6::jsonb, $7, $8,
-        $9::date, $10, $11, $12, 'UPCOMING', $13, $14,
-        $15, $16::jsonb
-      )
-    `,
-      id,
-      title,
-      domain,
-      batch,
-      topic,
-      JSON.stringify(subtopics),
-      user.id,
-      user.displayName || user.username || 'Instructor',
-      classDate,
-      startTime,
-      endTime,
-      duration,
-      mode,
-      meetingLink || null,
-      learningObjectives || null,
-      JSON.stringify(resources)
-    );
+    const id = `class_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const instructorName = user.displayName || user.username || "CodeXa Lead Instructor";
+    const now = new Date();
+
+    const created = await db.scheduledClass.create({
+      data: {
+        id,
+        sourceKey: id,
+        title,
+        domain: Array.isArray(attendingDomains) && attendingDomains.length > 0 ? attendingDomains.join(", ") : domain,
+        batch,
+        topic,
+        subtopics: Array.isArray(subtopics) && subtopics.length > 0 ? subtopics : learningGoals,
+        instructorId: user.id,
+        instructorName,
+        classDate: classDateObj,
+        startTime,
+        endTime,
+        duration,
+        status: publishImmediately ? "UPCOMING" : "DRAFT",
+        mode,
+        meetingLink: meetingLink || null,
+        learningObjectives: learningObjectives || (Array.isArray(learningGoals) ? learningGoals.join("\n") : null),
+        resources: Array.isArray(resources) ? resources : [],
+        attendingDomains: Array.isArray(attendingDomains) ? attendingDomains : [],
+        learningGoals: Array.isArray(learningGoals) ? learningGoals : [],
+        trainerDemo: trainerDemo || null,
+        timeZone: "Asia/Kolkata",
+        instructorNotes: instructorNotes || null,
+        publishedAt: publishImmediately ? now : null,
+      },
+    });
+
+    // Create corresponding assignment
+    const assignId = `assign_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const dueDate = new Date(classDateObj);
+    dueDate.setUTCDate(dueDate.getUTCDate() + 2);
+    dueDate.setUTCHours(18, 29, 0, 0);
+
+    const releaseAt = new Date(classDateObj);
+    releaseAt.setUTCHours(16, 5, 0, 0);
+
+    await db.assignment.create({
+      data: {
+        id: assignId,
+        sourceKey: assignId,
+        title: `Assignment: ${title}`,
+        description: `Practical hands-on exercise for ${title}.`,
+        assignedBy: user.id,
+        assignedByName: instructorName,
+        domain: created.domain,
+        classId: created.id,
+        submissionType: "BOTH",
+        dueDate,
+        status: publishImmediately ? "PUBLISHED" : "DRAFT",
+        evidenceRequired: "Source code repository and test evidence",
+        releaseAt,
+        publishedAt: publishImmediately ? now : null,
+        attendingDomains: created.attendingDomains ?? undefined,
+      },
+    });
+
+    // Audit log
+    await db.trainingChangeAudit.create({
+      data: {
+        actorId: user.id,
+        actorEmail: user.email,
+        action: "CREATE_CLASS",
+        entityType: "CLASS",
+        entityId: created.id,
+        before: undefined,
+        after: { title, classDate, startTime, endTime, status: created.status },
+      },
+    });
 
     return NextResponse.json({
       ok: true,
-      message: "Class scheduled successfully.",
-      classId: id,
+      message: publishImmediately ? "Class published successfully." : "Draft class created successfully.",
+      class: created,
+      requestId,
     }, { headers: NO_CACHE_HEADERS });
 
   } catch (err: any) {
     console.error(`[POST /api/mobile/classes] [${requestId}]`, err);
-    return NextResponse.json({ ok: false, error: { code: "SERVER_ERROR", message: "Failed to schedule class." } }, { status: 500, headers: NO_CACHE_HEADERS });
+    return NextResponse.json(
+      { ok: false, error: { code: "SERVER_ERROR", message: "Failed to create class: " + err.message }, requestId },
+      { status: 500, headers: NO_CACHE_HEADERS }
+    );
   }
 }
 
@@ -282,81 +305,185 @@ export async function PATCH(req: NextRequest) {
   try {
     const user = await resolveRequestUser(req);
     if (!user) {
-      return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized." } }, { status: 401, headers: NO_CACHE_HEADERS });
-    }
-
-    const role = getEffectiveRole(user);
-    const canSchedule = ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "OWNER", "ADMIN"].includes(role);
-    if (!canSchedule) {
-      return NextResponse.json({ ok: false, error: { code: "FORBIDDEN", message: "Leadership permission required." } }, { status: 403, headers: NO_CACHE_HEADERS });
+      return NextResponse.json(
+        { ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized." }, requestId },
+        { status: 401, headers: NO_CACHE_HEADERS }
+      );
     }
 
     const body = await req.json().catch(() => ({}));
-    const { id, title, topic, subtopics, classDate, startTime, endTime, status, meetingLink, resources } = body;
+    const {
+      id,
+      action, // "PUBLISH", "UNPUBLISH", "RESCHEDULE", "CANCEL", "UPDATE"
+      title,
+      topic,
+      subtopics,
+      classDate,
+      startTime,
+      endTime,
+      meetingLink,
+      status,
+      cancellationReason,
+      resources,
+      learningObjectives,
+      attendingDomains,
+    } = body;
 
     if (!id) {
-      return NextResponse.json({ ok: false, error: { code: "BAD_REQUEST", message: "Class ID is required." } }, { status: 400, headers: NO_CACHE_HEADERS });
+      return NextResponse.json(
+        { ok: false, error: { code: "BAD_REQUEST", message: "Class id is required." }, requestId },
+        { status: 400, headers: NO_CACHE_HEADERS }
+      );
     }
 
+    const existing = await db.scheduledClass.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json(
+        { ok: false, error: { code: "CLASS_NOT_FOUND", message: "Class not found." }, requestId },
+        { status: 404, headers: NO_CACHE_HEADERS }
+      );
+    }
+
+    const now = new Date();
     const updateData: any = {};
-    if (title) updateData.title = title;
-    if (topic) updateData.topic = topic;
-    if (subtopics) updateData.subtopics = subtopics;
-    if (status) updateData.status = status;
-    if (meetingLink !== undefined) updateData.meetingLink = meetingLink;
-    if (resources !== undefined) updateData.resources = resources;
-    if (startTime) updateData.startTime = startTime;
-    if (endTime) updateData.endTime = endTime;
-    if (classDate) updateData.classDate = new Date(classDate);
+
+    // 1. Publish Action
+    if (action === "PUBLISH" || (status === "UPCOMING" && existing.status === "DRAFT")) {
+      if (!hasPermission(user, Permission.CAN_PUBLISH_CLASSES)) {
+        return NextResponse.json(
+          { ok: false, error: { code: "FORBIDDEN", message: "Insufficient permissions to publish classes." }, requestId },
+          { status: 403, headers: NO_CACHE_HEADERS }
+        );
+      }
+      updateData.status = "UPCOMING";
+      updateData.publishedAt = now;
+
+      // Also publish linked assignments
+      await db.assignment.updateMany({
+        where: { classId: id, status: "DRAFT" },
+        data: { status: "PUBLISHED", publishedAt: now },
+      });
+    }
+
+    // 2. Unpublish Action
+    else if (action === "UNPUBLISH") {
+      if (!hasPermission(user, Permission.CAN_PUBLISH_CLASSES)) {
+        return NextResponse.json(
+          { ok: false, error: { code: "FORBIDDEN", message: "Insufficient permissions to unpublish classes." }, requestId },
+          { status: 403, headers: NO_CACHE_HEADERS }
+        );
+      }
+      updateData.status = "DRAFT";
+      updateData.publishedAt = null;
+
+      await db.assignment.updateMany({
+        where: { classId: id },
+        data: { status: "DRAFT", publishedAt: null },
+      });
+    }
+
+    // 3. Reschedule Action
+    else if (action === "RESCHEDULE" || (classDate && classDate !== existing.classDate.toISOString().split("T")[0])) {
+      if (!hasPermission(user, Permission.CAN_RESCHEDULE_CLASSES)) {
+        return NextResponse.json(
+          { ok: false, error: { code: "FORBIDDEN", message: "Insufficient permissions to reschedule classes." }, requestId },
+          { status: 403, headers: NO_CACHE_HEADERS }
+        );
+      }
+
+      const targetDateObj = new Date(classDate + "T00:00:00.000Z");
+      updateData.classDate = targetDateObj;
+      updateData.status = "RESCHEDULED";
+
+      if (startTime) updateData.startTime = startTime;
+      if (endTime) updateData.endTime = endTime;
+
+      // Adjust assignment due date
+      const dueDate = new Date(targetDateObj);
+      dueDate.setUTCDate(dueDate.getUTCDate() + 2);
+      dueDate.setUTCHours(18, 29, 0, 0);
+
+      const releaseAt = new Date(targetDateObj);
+      releaseAt.setUTCHours(16, 5, 0, 0);
+
+      await db.assignment.updateMany({
+        where: { classId: id },
+        data: { dueDate, releaseAt },
+      });
+    }
+
+    // 4. Cancel Action
+    else if (action === "CANCEL" || status === "CANCELLED") {
+      if (!hasPermission(user, Permission.CAN_CANCEL_CLASSES)) {
+        return NextResponse.json(
+          { ok: false, error: { code: "FORBIDDEN", message: "Insufficient permissions to cancel classes." }, requestId },
+          { status: 403, headers: NO_CACHE_HEADERS }
+        );
+      }
+
+      updateData.status = "CANCELLED";
+      updateData.cancelledAt = now;
+      if (cancellationReason) {
+        updateData.instructorNotes = cancellationReason;
+      }
+    }
+
+    // 5. General Edit Action
+    else {
+      if (!hasPermission(user, Permission.CAN_EDIT_CLASSES)) {
+        return NextResponse.json(
+          { ok: false, error: { code: "FORBIDDEN", message: "Insufficient permissions to edit classes." }, requestId },
+          { status: 403, headers: NO_CACHE_HEADERS }
+        );
+      }
+
+      if (title !== undefined) updateData.title = title;
+      if (topic !== undefined) updateData.topic = topic;
+      if (subtopics !== undefined) updateData.subtopics = subtopics;
+      if (startTime !== undefined) updateData.startTime = startTime;
+      if (endTime !== undefined) updateData.endTime = endTime;
+      if (meetingLink !== undefined) updateData.meetingLink = meetingLink;
+      if (resources !== undefined) updateData.resources = resources;
+      if (learningObjectives !== undefined) updateData.learningObjectives = learningObjectives;
+      if (attendingDomains !== undefined) updateData.attendingDomains = attendingDomains;
+      if (status !== undefined) updateData.status = status;
+    }
 
     const updated = await db.scheduledClass.update({
       where: { id },
       data: updateData,
     });
 
-    return NextResponse.json({
-      ok: true,
-      message: "Class updated successfully.",
-      class: updated,
-    }, { headers: NO_CACHE_HEADERS });
-  } catch (err: any) {
-    console.error(`[PATCH /api/mobile/classes] [${requestId}]`, err);
-    return NextResponse.json({ ok: false, error: { code: "SERVER_ERROR", message: "Failed to update class: " + err.message } }, { status: 500, headers: NO_CACHE_HEADERS });
-  }
-}
-
-export async function DELETE(req: NextRequest) {
-  const requestId = generateRequestId();
-
-  try {
-    const user = await resolveRequestUser(req);
-    if (!user) {
-      return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized." } }, { status: 401, headers: NO_CACHE_HEADERS });
-    }
-
-    const role = getEffectiveRole(user);
-    const canDelete = ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "OWNER"].includes(role);
-    if (!canDelete) {
-      return NextResponse.json({ ok: false, error: { code: "FORBIDDEN", message: "Leadership permission required to delete class." } }, { status: 403, headers: NO_CACHE_HEADERS });
-    }
-
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get("id");
-
-    if (!id) {
-      return NextResponse.json({ ok: false, error: { code: "BAD_REQUEST", message: "Class ID is required." } }, { status: 400, headers: NO_CACHE_HEADERS });
-    }
-
-    await db.scheduledClass.delete({
-      where: { id },
+    // Record audit
+    await db.trainingChangeAudit.create({
+      data: {
+        actorId: user.id,
+        actorEmail: user.email,
+        action: action || "UPDATE_CLASS",
+        entityType: "CLASS",
+        entityId: id,
+        before: {
+          title: existing.title,
+          classDate: existing.classDate,
+          status: existing.status,
+          publishedAt: existing.publishedAt,
+        },
+        after: updateData,
+      },
     });
 
     return NextResponse.json({
       ok: true,
-      message: "Class removed successfully.",
+      message: "Class updated successfully.",
+      class: updated,
+      requestId,
     }, { headers: NO_CACHE_HEADERS });
+
   } catch (err: any) {
-    console.error(`[DELETE /api/mobile/classes] [${requestId}]`, err);
-    return NextResponse.json({ ok: false, error: { code: "SERVER_ERROR", message: "Failed to delete class: " + err.message } }, { status: 500, headers: NO_CACHE_HEADERS });
+    console.error(`[PATCH /api/mobile/classes] [${requestId}]`, err);
+    return NextResponse.json(
+      { ok: false, error: { code: "SERVER_ERROR", message: "Failed to update class: " + err.message }, requestId },
+      { status: 500, headers: NO_CACHE_HEADERS }
+    );
   }
 }

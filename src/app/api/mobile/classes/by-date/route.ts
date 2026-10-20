@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
 import { validateSessionResult, getCurrentSessionResult, generateRequestId } from "@/lib/auth";
+import { resolveVisibleClassesForUser } from "@/lib/classes/class-visibility";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,32 +31,48 @@ export async function GET(req: NextRequest) {
   try {
     const user = await resolveRequestUser(req);
     if (!user) {
-      return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized." } }, { status: 401, headers: NO_CACHE_HEADERS });
+      return NextResponse.json(
+        { ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized." }, requestId },
+        { status: 401, headers: NO_CACHE_HEADERS }
+      );
     }
 
     const { searchParams } = new URL(req.url);
-    const dateParam = searchParams.get("date") || new Date().toISOString().split("T")[0];
+    const dateParam = searchParams.get("date")?.trim() || new Date().toISOString().split("T")[0];
 
-    const classes = await db.$queryRawUnsafe<any[]>(`
-      SELECT 
-        id, title, domain, batch, topic, subtopics, instructor_id, instructor_name,
-        to_char(class_date, 'YYYY-MM-DD') as class_date,
-        start_time, end_time, duration, status, mode, meeting_link, learning_objectives, resources, recording_url,
-        created_at
-      FROM scheduled_classes
-      WHERE class_date = $1::date
-      ORDER BY start_time ASC
-    `, dateParam);
+    // Validate date format YYYY-MM-DD
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      return NextResponse.json(
+        { ok: false, error: { code: "INVALID_DATE", message: "Date must be formatted as YYYY-MM-DD." }, requestId },
+        { status: 400, headers: NO_CACHE_HEADERS }
+      );
+    }
+
+    // Call canonical shared visibility resolver
+    const resolved = await resolveVisibleClassesForUser({
+      user,
+      date: dateParam,
+      includeDrafts: false,
+    });
 
     return NextResponse.json({
       ok: true,
       date: dateParam,
-      classes,
-      count: classes.length,
+      classes: resolved.classes,
+      count: resolved.classes.length,
+      canManage: resolved.canManageClasses,
+      userRole: resolved.userRole,
+      internDomain: resolved.userDomain,
+      internDomainId: resolved.userDomainId,
+      internYear: resolved.userYear,
+      requestId,
     }, { headers: NO_CACHE_HEADERS });
 
   } catch (err: any) {
     console.error(`[GET /api/mobile/classes/by-date] [${requestId}]`, err);
-    return NextResponse.json({ ok: false, error: { code: "SERVER_ERROR", message: "Failed to load classes for date." } }, { status: 500, headers: NO_CACHE_HEADERS });
+    return NextResponse.json(
+      { ok: false, error: { code: "SERVER_ERROR", message: "Failed to load classes for date: " + err.message }, requestId },
+      { status: 500, headers: NO_CACHE_HEADERS }
+    );
   }
 }

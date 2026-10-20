@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
 import { validateSessionResult, getCurrentSessionResult, generateRequestId } from "@/lib/auth";
+import { resolveVisibleClassesForUser } from "@/lib/classes/class-visibility";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,99 +48,50 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const userRecord = await db.user.findUnique({
-      where: { id: user.id },
-      include: { employmentProfile: true },
+    // Call canonical shared visibility resolver
+    const resolved = await resolveVisibleClassesForUser({
+      user,
+      date: dateParam,
+      includeDrafts: false, // ordinary date view always follows strict publication & audience rules
     });
 
-    const userDomain = userRecord?.employmentProfile?.internshipDomain || userRecord?.department || "All Domains";
-
-    // Query classes for this date
-    const classes = await db.$queryRawUnsafe<any[]>(`
-      SELECT 
-        id, title, domain, batch, topic, subtopics, instructor_id, instructor_name,
-        to_char(class_date, 'YYYY-MM-DD') as class_date,
-        start_time, end_time, duration, status, mode, meeting_link, learning_objectives, resources, recording_url,
-        created_at
-      FROM scheduled_classes
-      WHERE class_date = $1::date
-      AND (
-        domain = 'All Domains' 
-        OR domain ILIKE '%' || $2 || '%' 
-        OR $2 = 'All Domains'
-        OR domain = 'Technical Track'
-        OR domain = 'Full Stack'
-      )
-      ORDER BY start_time ASC
-    `, dateParam, userDomain);
-
-    // Fetch any assignments linked to these classes
-    const classIds = classes.map((c) => c.id);
-    let linkedAssignments: any[] = [];
-    if (classIds.length > 0) {
-      linkedAssignments = await db.assignment.findMany({
-        where: {
-          classId: { in: classIds },
-          status: "ACTIVE",
-        },
-        select: {
-          id: true,
-          title: true,
-          description: true,
-          submissionType: true,
-          dueDate: true,
-          classId: true,
-        },
-      });
-    }
-
-    // Build rich date-wise response
-    const topicsList = classes.map((c) => {
-      let parsedSubtopics = [];
-      try {
-        parsedSubtopics = typeof c.subtopics === "string" ? JSON.parse(c.subtopics) : (c.subtopics || []);
-      } catch (_) {}
-
-      let parsedResources = [];
-      try {
-        parsedResources = typeof c.resources === "string" ? JSON.parse(c.resources) : (c.resources || []);
-      } catch (_) {}
-
-      const assignmentsForClass = linkedAssignments.filter((a) => a.classId === c.id);
-
-      return {
-        classId: c.id,
-        classTitle: c.title,
-        domain: c.domain,
-        instructor: c.instructor_name || "CodeXa Lead Instructor",
-        startTime: c.start_time,
-        endTime: c.end_time,
-        duration: c.duration,
-        status: c.status,
-        mode: c.mode,
-        meetingLink: c.meeting_link,
-        mainTopic: c.topic,
-        subtopics: parsedSubtopics,
-        learningObjectives: c.learning_objectives,
-        resources: parsedResources,
-        recordingUrl: c.recording_url,
-        assignments: assignmentsForClass,
-      };
-    });
+    // Provide legacy topics mapping alongside classes for full backward compatibility
+    const topicsList = resolved.classes.map((c) => ({
+      classId: c.id,
+      classTitle: c.title,
+      domain: c.domain,
+      instructor: c.instructorName,
+      startTime: c.startTime,
+      endTime: c.endTime,
+      duration: c.duration,
+      status: c.status,
+      mode: c.mode,
+      meetingLink: c.meetingLink,
+      mainTopic: c.topic,
+      subtopics: c.subtopics,
+      learningObjectives: c.learningObjectives,
+      resources: c.resources,
+      assignments: c.assignments,
+    }));
 
     return NextResponse.json({
       ok: true,
       date: dateParam,
-      classesCount: classes.length,
-      classes,
+      classesCount: resolved.classes.length,
+      classes: resolved.classes,
       topics: topicsList,
+      canManage: resolved.canManageClasses,
+      userRole: resolved.userRole,
+      internDomain: resolved.userDomain,
+      internDomainId: resolved.userDomainId,
+      internYear: resolved.userYear,
       requestId,
     }, { headers: NO_CACHE_HEADERS });
 
   } catch (err: any) {
     console.error(`[GET /api/mobile/classes/date] [${requestId}]`, err);
     return NextResponse.json(
-      { ok: false, error: { code: "SERVER_ERROR", message: "Failed to retrieve date-wise topics." }, requestId },
+      { ok: false, error: { code: "SERVER_ERROR", message: "Failed to retrieve date-wise topics: " + err.message }, requestId },
       { status: 500, headers: NO_CACHE_HEADERS }
     );
   }

@@ -106,9 +106,25 @@ export async function GET(req: NextRequest) {
       }).catch(() => {});
     }
 
+    const updateDownloadUrl = downloadUrl || `${url.origin}/api/mobile/app-update/download?releaseId=${releaseId || ""}`;
+
     return NextResponse.json(
       {
         ok: true,
+        success: true,
+        updateAvailable,
+        forceUpdate,
+        isForceUpdate: forceUpdate,
+        latestVersion,
+        latestVersionCode,
+        versionName: latestVersion,
+        versionCode: latestVersionCode,
+        downloadUrl: updateDownloadUrl,
+        directDownloadUrl: downloadUrl,
+        apkUrl: downloadUrl,
+        releaseNotes,
+        sha256,
+        fileSizeBytes,
         app: {
           platform: platform.toLowerCase(),
           currentInstalledVersionCode: clientVersionCode,
@@ -118,12 +134,19 @@ export async function GET(req: NextRequest) {
           updateAvailable,
           forceUpdate,
           releaseNotes,
-          downloadUrl: downloadUrl || `${url.origin}/api/mobile/app-update/download?releaseId=${releaseId || ""}`,
+          downloadUrl: updateDownloadUrl,
           directDownloadUrl: downloadUrl,
           sha256,
           fileSizeBytes,
           signingCertificateFingerprint: signingFingerprint,
           publishedAt: publishedRelease?.publishedAt?.toISOString() || null,
+        },
+        data: {
+          updateAvailable,
+          forceUpdate,
+          latestVersion,
+          latestVersionCode,
+          downloadUrl: updateDownloadUrl,
         },
       },
       { headers: NO_CACHE_HEADERS }
