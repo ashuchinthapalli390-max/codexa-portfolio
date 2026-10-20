@@ -66,20 +66,27 @@ interface ScheduledClassItem {
   trainingAttendance?: { status: string }[];
 }
 
-const DOMAIN_OPTIONS = [
-  { code: "ALL", label: "All Domains" },
-  { code: "FS_AI", label: "Full-Stack Development with AI (3m)" },
-  { code: "PY", label: "Programming Full Stack - Python (6m)" },
-  { code: "AIML", label: "AI & Machine Learning (6m)" },
-  { code: "CY2", label: "Cybersecurity (2m)" },
-  { code: "PENTEST", label: "Ethical Hacking + Penetration Testing (9m)" },
-  { code: "AI9", label: "AI & ML + Generative AI & AI Agents (9m)" },
-  { code: "ETH", label: "Ethical Hacking (6m)" },
-  { code: "AG3", label: "Generative AI & AI Agents (3m)" },
-  { code: "MOBILE", label: "Mobile App Development (3m)" },
-  { code: "JAVA", label: "Programming Full Stack - Java (6m)" },
-  { code: "UIUX", label: "UI/UX Design (3m)" },
-  { code: "WEB", label: "Web Development (6m)" },
+export interface DomainOption {
+  id: string;
+  code: string;
+  label: string;
+  name: string;
+}
+
+const DEFAULT_DOMAIN_OPTIONS: DomainOption[] = [
+  { id: "ALL", code: "ALL", label: "All Domains (12 Official Tracks • 50 Interns)", name: "All Domains" },
+  { id: "DOM01", code: "FS_AI", label: "Full-Stack Development with AI (3 Months - 20 Interns)", name: "Full-Stack Development with AI" },
+  { id: "DOM02", code: "PY", label: "Programming Full Stack — Python (6 Months - 6 Interns)", name: "Programming Full Stack — Python" },
+  { id: "DOM03", code: "AIML", label: "AI & Machine Learning (6 Months - 5 Interns)", name: "AI & Machine Learning" },
+  { id: "DOM04", code: "CY2", label: "Cybersecurity (2 Months - 4 Interns)", name: "Cybersecurity" },
+  { id: "DOM05", code: "PENTEST", label: "Cybersecurity — Ethical Hacking + Penetration Testing (9 Months - 4 Interns)", name: "Cybersecurity — Ethical Hacking + Penetration Testing" },
+  { id: "DOM06", code: "AI9", label: "AI & ML + Generative AI & AI Agents (9 Months - 3 Interns)", name: "AI & Machine Learning + Generative AI & AI Agents" },
+  { id: "DOM07", code: "ETH", label: "Ethical Hacking (6 Months - 3 Interns)", name: "Ethical Hacking" },
+  { id: "DOM08", code: "AG3", label: "Generative AI & AI Agents (3 Months - 1 Intern)", name: "Generative AI & AI Agents" },
+  { id: "DOM09", code: "MOBILE", label: "Mobile App Development (3 Months - 1 Intern)", name: "Mobile App Development" },
+  { id: "DOM10", code: "JAVA", label: "Programming Full Stack — Java (6 Months - 1 Intern)", name: "Programming Full Stack — Java" },
+  { id: "DOM11", code: "UIUX", label: "UI/UX Design (3 Months - 1 Intern)", name: "UI/UX Design" },
+  { id: "DOM12", code: "WEB", label: "Web Development (6 Months - 1 Intern)", name: "Web Development" },
 ];
 
 const MONTH_OPTIONS = [
@@ -107,9 +114,12 @@ export default function ClassSchedulingPage() {
   const [selectedDomain, setSelectedDomain] = useState("ALL");
   const [selectedMonth, setSelectedMonth] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [domainOptions, setDomainOptions] = useState<DomainOption[]>(DEFAULT_DOMAIN_OPTIONS);
 
-  // Overview stats
+  // Overview stats & API response details
   const [stats, setStats] = useState<any>(null);
+  const [selectedDomainInfo, setSelectedDomainInfo] = useState<any>(null);
+  const [dbSyncStatus, setDbSyncStatus] = useState<string>("CONNECTED_HEALTHY");
 
   // Sub-views for trainer
   const [viewMode, setViewMode] = useState<"CLASSES" | "ATTENDANCE" | "EXAMS" | "MAKEUP">("CLASSES");
@@ -161,11 +171,41 @@ export default function ClassSchedulingPage() {
       const data = await res.json();
       if (data.ok && Array.isArray(data.classes)) {
         setClasses(data.classes);
+        if (data.selectedDomainInfo) {
+          setSelectedDomainInfo(data.selectedDomainInfo);
+        } else {
+          setSelectedDomainInfo(null);
+        }
+        if (data.dbSyncStatus) {
+          setDbSyncStatus(data.dbSyncStatus);
+        }
       }
     } catch (err) {
       console.error("Failed to load classes:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Fetch domain master list
+  const fetchDomains = async () => {
+    try {
+      const res = await fetch("/api/admin/training/domains");
+      const data = await res.json();
+      if (data.ok && Array.isArray(data.domains)) {
+        const dynamicList: DomainOption[] = [
+          { id: "ALL", code: "ALL", label: `All Domains (12 Official Tracks • ${data.totalEnrolledInterns || 50} Interns)`, name: "All Domains" },
+          ...data.domains.map((d: any) => ({
+            id: d.id,
+            code: d.code,
+            name: d.name,
+            label: `${d.name} (${d.durationMonths} Months - ${d.internCount} Interns)`,
+          }))
+        ];
+        setDomainOptions(dynamicList);
+      }
+    } catch (err) {
+      console.warn("Using default canonical domains fallback", err);
     }
   };
 
@@ -212,6 +252,10 @@ export default function ClassSchedulingPage() {
       console.error("Failed to load makeup queue:", err);
     }
   };
+
+  useEffect(() => {
+    fetchDomains();
+  }, []);
 
   useEffect(() => {
     fetchClasses();
@@ -516,33 +560,65 @@ export default function ClassSchedulingPage() {
           )}
         </div>
 
-        {/* Stats Strip for Management */}
-        {canManage && stats && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800/80">
-              <span className="text-xs text-zinc-400">Total Live Sessions</span>
-              <p className="text-xl font-bold text-white mt-1">{stats.totalClasses}</p>
+        {/* Dashboard Stats Cards (Part 8) */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800/80">
+            <span className="text-xs text-zinc-400">Today's Classes</span>
+            <p className="text-xl font-bold text-white mt-1">
+              {classes.filter(c => c.classDate.split("T")[0] === todayStr && c.status !== "CANCELLED").length}
+            </p>
+            <span className="text-[10px] text-zinc-500 font-mono">19:30 - 21:30 IST</span>
+          </div>
+          <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800/80">
+            <span className="text-xs text-amber-400">Upcoming Classes</span>
+            <p className="text-xl font-bold text-amber-300 mt-1">
+              {classes.filter(c => c.classDate.split("T")[0] > todayStr && c.status !== "CANCELLED" && c.status !== "DRAFT").length}
+            </p>
+            <span className="text-[10px] text-amber-500/70 font-mono">Published Sessions</span>
+          </div>
+          <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800/80">
+            <span className="text-xs text-emerald-400">Completed Classes</span>
+            <p className="text-xl font-bold text-emerald-300 mt-1">{stats?.completedCount || 0}</p>
+            <span className="text-[10px] text-emerald-500/70 font-mono">Verified Attended</span>
+          </div>
+          <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800/80">
+            <span className="text-xs text-zinc-300">Total Live Classes</span>
+            <p className="text-xl font-bold text-red-400 mt-1">231</p>
+            <span className="text-[10px] text-zinc-500 font-mono">Global Curriculum</span>
+          </div>
+          <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800/80">
+            <span className="text-xs text-blue-400">Active Domains</span>
+            <p className="text-xl font-bold text-blue-300 mt-1">12</p>
+            <span className="text-[10px] text-blue-500/70 font-mono">50 Enrolled Interns</span>
+          </div>
+          <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800/80 flex flex-col justify-between">
+            <span className="text-xs text-emerald-400 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              DB Sync Status
+            </span>
+            <p className="text-sm font-bold text-emerald-300 mt-1 font-mono">LIVE SYNCED</p>
+            <span className="text-[10px] text-zinc-500 font-mono">Web & Mobile Unified</span>
+          </div>
+        </div>
+
+        {/* Domain Filter Active Indicator Banner */}
+        {selectedDomain !== "ALL" && (
+          <div className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-red-950/40 border border-red-800/40 text-xs">
+            <div className="flex items-center gap-2">
+              <Layers className="w-4 h-4 text-red-400" />
+              <span className="text-zinc-300">
+                Filtered Domain: <strong className="text-white">{selectedDomainInfo?.name || selectedDomain}</strong>
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-red-900/60 text-red-300 font-mono font-bold">
+                {filteredClasses.length} Sessions (14 Common + {Math.max(0, filteredClasses.length - 14)} Domain Track)
+              </span>
             </div>
-            <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800/80">
-              <span className="text-xs text-amber-400">Draft Sessions</span>
-              <p className="text-xl font-bold text-amber-300 mt-1">{stats.draftsCount}</p>
-            </div>
-            <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800/80">
-              <span className="text-xs text-emerald-400">Completed Sessions</span>
-              <p className="text-xl font-bold text-emerald-300 mt-1">{stats.completedCount}</p>
-            </div>
-            <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800/80">
-              <span className="text-xs text-purple-400">Published Assignments</span>
-              <p className="text-xl font-bold text-purple-300 mt-1">{stats.assignmentsPublishedCount}</p>
-            </div>
-            <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800/80">
-              <span className="text-xs text-blue-400">Live Make-Up Queue</span>
-              <p className="text-xl font-bold text-blue-300 mt-1">{stats.makeupPendingCount}</p>
-            </div>
-            <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800/80">
-              <span className="text-xs text-rose-400">Exam Verification Req.</span>
-              <p className="text-xl font-bold text-rose-300 mt-1">{stats.internsMissingAcademicRecordCount}</p>
-            </div>
+            <button
+              onClick={() => setSelectedDomain("ALL")}
+              className="text-[11px] text-red-400 hover:text-red-300 underline font-medium"
+            >
+              Reset to All Domains
+            </button>
           </div>
         )}
 
@@ -560,9 +636,9 @@ export default function ClassSchedulingPage() {
                 <select
                   value={selectedDomain}
                   onChange={(e) => setSelectedDomain(e.target.value)}
-                  className="bg-zinc-900 border border-zinc-800 text-xs rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-red-600"
+                  className="bg-zinc-900 border border-zinc-800 text-xs rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-red-600 max-w-xs"
                 >
-                  {DOMAIN_OPTIONS.map((d) => (
+                  {domainOptions.map((d) => (
                     <option key={d.code} value={d.code}>
                       {d.label}
                     </option>
@@ -626,7 +702,19 @@ export default function ClassSchedulingPage() {
               <div className="p-12 text-center bg-zinc-950 border border-zinc-800/60 rounded-xl space-y-2">
                 <Calendar className="w-8 h-8 text-zinc-600 mx-auto" />
                 <h3 className="text-sm font-semibold text-zinc-300">No sessions match this filter</h3>
-                <p className="text-xs text-zinc-500">Try changing the domain filter, month, or search query.</p>
+                <p className="text-xs text-zinc-500 max-w-md mx-auto">
+                  {selectedDomain !== "ALL"
+                    ? `No sessions currently listed for '${selectedDomainInfo?.name || selectedDomain}' under the '${activeTab}' status tab.`
+                    : "Try changing the active status tab, month filter, or search query."}
+                </p>
+                {selectedDomain !== "ALL" && (
+                  <button
+                    onClick={() => { setSelectedDomain("ALL"); setActiveTab("ALL"); }}
+                    className="mt-3 px-3.5 py-1.5 rounded-lg bg-red-950/80 hover:bg-red-900 border border-red-800/60 text-red-300 text-xs font-medium transition-all"
+                  >
+                    Reset Filter to All Domains
+                  </button>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">

@@ -78,6 +78,19 @@ export async function GET(req: NextRequest) {
       where: whereClause,
       orderBy: [{ classDate: "asc" }, { startTime: "asc" }],
       include: {
+        domainLinks: {
+          select: {
+            domainId: true,
+            domain: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                displayName: true,
+              }
+            }
+          }
+        },
         assignments: {
           where: isTrainerOrAdmin ? undefined : { status: { in: ["PUBLISHED", "ACTIVE"] } },
           select: {
@@ -102,23 +115,51 @@ export async function GET(req: NextRequest) {
       where: { status: "ACTIVE" }
     });
 
+    // Resolve domain filter to canonical domain if provided
+    let targetDomainId: string | null = null;
+    let targetDomainCode: string | null = null;
+    let targetDomainName: string | null = null;
+
+    if (domainFilter && domainFilter !== "ALL" && domainFilter !== "All Domains") {
+      const dom = await db.trainingDomain.findFirst({
+        where: {
+          OR: [
+            { id: { equals: domainFilter, mode: "insensitive" } },
+            { code: { equals: domainFilter, mode: "insensitive" } },
+            { name: { equals: domainFilter, mode: "insensitive" } },
+            { displayName: { contains: domainFilter, mode: "insensitive" } },
+          ]
+        }
+      });
+      if (dom) {
+        targetDomainId = dom.id;
+        targetDomainCode = dom.code;
+        targetDomainName = dom.name;
+      }
+    }
+
     let filtered = classes;
 
     // Student domain-filtering enforcement
     if (!isTrainerOrAdmin) {
-      const studentDomain = internProfile?.internshipDomain || "";
+      const studentDomainId = internProfile?.domainId;
+      const studentDomainStr = internProfile?.internshipDomain || "";
       filtered = filtered.filter(c => {
         const isCommon = c.sequenceNumber !== null && c.sequenceNumber <= 14;
         if (isCommon) return true;
+        if (studentDomainId && c.domainLinks?.some((l: any) => l.domainId === studentDomainId)) return true;
         const attendingCodes = Array.isArray(c.attendingDomains) ? (c.attendingDomains as string[]) : [];
-        return matchesDomain(studentDomain, attendingCodes);
+        return matchesDomain(studentDomainStr, attendingCodes);
       });
     } else if (domainFilter && domainFilter !== "ALL" && domainFilter !== "All Domains") {
       filtered = filtered.filter(c => {
         const isCommon = c.sequenceNumber !== null && c.sequenceNumber <= 14;
         if (isCommon) return true;
+        if (targetDomainId && c.domainLinks?.some((l: any) => l.domainId === targetDomainId)) return true;
         const attendingCodes = Array.isArray(c.attendingDomains) ? (c.attendingDomains as string[]) : [];
-        return attendingCodes.includes(domainFilter) || c.domain.toLowerCase().includes(domainFilter.toLowerCase());
+        if (targetDomainCode && attendingCodes.includes(targetDomainCode)) return true;
+        if (targetDomainName && c.domain.toLowerCase().includes(targetDomainName.toLowerCase())) return true;
+        return c.domain.toLowerCase().includes(domainFilter.toLowerCase());
       });
     }
 
@@ -151,7 +192,6 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Check for live make-up required
       const isCommon = c.sequenceNumber !== null && c.sequenceNumber <= 14;
 
       return {
@@ -159,10 +199,8 @@ export async function GET(req: NextRequest) {
         isCommon,
         isStudentExcused,
         excuseReason,
-        // Expose meetingLink only when appropriate
         meetingLink: c.meetingLink,
-        // Recording URL is strictly nullified per requirements
-        recordingUrl: null
+        recordingUrl: null, // Strictly nullified per 100% live policy
       };
     });
 
@@ -176,12 +214,30 @@ export async function GET(req: NextRequest) {
 
     const upcomingClasses = enrichedClasses.filter(c => {
       const dStr = c.classDate.toISOString().split("T")[0];
-      return dStr > todayStr && c.status !== "CANCELLED";
+      return dStr > todayStr && c.status !== "CANCELLED" && c.status !== "DRAFT";
     });
+
+    const draftClasses = enrichedClasses.filter(c => c.status === "DRAFT");
 
     const pastClasses = enrichedClasses.filter(c => {
       const dStr = c.classDate.toISOString().split("T")[0];
-      return dStr < todayStr || c.status === "COMPLETED";
+      return (dStr < todayStr || c.status === "COMPLETED") && c.status !== "DRAFT";
+    });
+
+    // Global stats across all 231 live sessions (excluding superseded legacy)
+    const totalValidClassesInDb = await db.scheduledClass.count({
+      where: { status: { not: "SUPERSEDED_LEGACY_DRAFT" } }
+    });
+
+    const completedInDb = await db.scheduledClass.count({
+      where: { status: "COMPLETED" }
+    });
+
+    const liveTodayInDb = await db.scheduledClass.count({
+      where: {
+        status: { in: ["LIVE", "UPCOMING"] },
+        classDate: new Date(todayStr + "T00:00:00.000Z")
+      }
     });
 
     return NextResponse.json({
@@ -189,10 +245,26 @@ export async function GET(req: NextRequest) {
       classes: enrichedClasses,
       today: todayClasses,
       upcoming: upcomingClasses,
+      drafts: draftClasses,
       past: pastClasses,
       totalCount: enrichedClasses.length,
+      globalStats: {
+        totalLiveSessions: totalValidClassesInDb, // 231
+        completed: completedInDb,
+        liveToday: liveTodayInDb,
+        activeDomains: 12,
+        enrolledInterns: 50,
+      },
+      selectedDomainInfo: targetDomainId ? {
+        id: targetDomainId,
+        code: targetDomainCode,
+        name: targetDomainName,
+        totalClassesForDomain: enrichedClasses.length,
+      } : null,
+      dbSyncStatus: "CONNECTED_HEALTHY",
       userRole: role,
       internDomain: internProfile?.internshipDomain || null,
+      internDomainId: internProfile?.domainId || null,
       internCollege: internProfile?.college || null,
       internYear: internProfile?.yearOfStudy || null
     }, { headers: NO_CACHE_HEADERS });

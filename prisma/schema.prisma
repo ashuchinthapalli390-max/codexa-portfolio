@@ -680,14 +680,17 @@ model EmploymentProfile {
   referenceNumber    String?   // Reference number e.g. "CXA/INT/2026/001"
   phone              String?   // Contact phone number
   bankAccountMasked  String?   // e.g. "XXXX XXXX 4832"
+  domainId           String?   @map("domain_id")
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trainingDomain TrainingDomain? @relation(fields: [domainId], references: [id], onDelete: SetNull)
 
   @@index([employeeId])
   @@index([status])
   @@index([department])
+  @@index([domainId])
 }
 
 // ─── PAYROLL RECORDS ──────────────────────────────────────────────────────────
@@ -1758,6 +1761,7 @@ model ScheduledClass {
   trainingAttendance TrainingClassAttendance[]
   makeupQueue        TrainingMakeupQueue[] @relation("OriginalClassMakeup")
   makeupSessions     TrainingMakeupQueue[] @relation("MakeupClassSession")
+  domainLinks        ClassDomainLink[]
 
   @@index([classDate])
   @@index([status])
@@ -2021,4 +2025,38 @@ model MobileShowcaseContent {
   updatedById           String?
   updatedByName         String?
   updatedAt             DateTime @updatedAt
+}
+
+// ─── TRAINING DOMAINS MASTER DIRECTORY ───────────────────────────────────────
+model TrainingDomain {
+  id             String   @id // e.g. "DOM01", "DOM02", ...
+  code           String   @unique // "FS_AI", "PY", "AIML", "CY2", "PENTEST", "AI9", "ETH", "AG3", "MOBILE", "JAVA", "UIUX", "WEB"
+  name           String   @unique // "Full-Stack Development with AI", etc.
+  displayName    String   @map("display_name")
+  durationMonths Int      @map("duration_months")
+  description    String?  @db.Text
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
+
+  classLinks     ClassDomainLink[]
+  internProfiles EmploymentProfile[]
+
+  @@map("training_domains")
+}
+
+// ─── CLASS TO DOMAIN MANY-TO-MANY RELATIONSHIP ──────────────────────────────
+model ClassDomainLink {
+  id         String   @id @default(cuid())
+  classId    String   @map("class_id")
+  domainId   String   @map("domain_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  scheduledClass ScheduledClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  domain         TrainingDomain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, domainId])
+  @@index([classId])
+  @@index([domainId])
+  @@map("class_domains")
 }

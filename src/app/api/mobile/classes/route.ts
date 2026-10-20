@@ -35,85 +35,160 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized." } }, { status: 401, headers: NO_CACHE_HEADERS });
     }
 
+    const role = getEffectiveRole(user);
+    const isTrainerOrAdmin = ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "OWNER", "ADMIN", "INSTRUCTOR"].includes(role);
+
     const { searchParams } = new URL(req.url);
     const dateParam = searchParams.get("date"); // YYYY-MM-DD
     const monthParam = searchParams.get("month"); // YYYY-MM
+    const domainParam = searchParams.get("domain");
+
+    let internProfile: any = null;
+    if (!isTrainerOrAdmin) {
+      internProfile = await db.employmentProfile.findFirst({
+        where: { userId: user.id }
+      });
+    }
 
     const todayStr = new Date().toISOString().split("T")[0];
 
-    // If specific date requested
-    if (dateParam) {
-      const dateClasses = await db.$queryRawUnsafe<any[]>(`
-        SELECT 
-          id, title, domain, batch, topic, subtopics, instructor_id, instructor_name,
-          to_char(class_date, 'YYYY-MM-DD') as class_date,
-          start_time, end_time, duration, status, mode, meeting_link, learning_objectives, resources, recording_url,
-          created_at
-        FROM scheduled_classes
-        WHERE class_date = $1::date
-        ORDER BY start_time ASC
-      `, dateParam);
+    // Build Prisma query
+    const whereClause: any = {
+      status: { not: "SUPERSEDED_LEGACY_DRAFT" }
+    };
 
+    if (!isTrainerOrAdmin) {
+      // Mobile interns only see released/upcoming/live/completed classes
+      whereClause.status = { in: ["UPCOMING", "LIVE", "COMPLETED", "RESCHEDULED"] };
+    }
+
+    if (dateParam) {
+      whereClause.classDate = new Date(dateParam + "T00:00:00.000Z");
+    }
+
+    const classes = await db.scheduledClass.findMany({
+      where: whereClause,
+      orderBy: [{ classDate: "asc" }, { startTime: "asc" }],
+      include: {
+        domainLinks: {
+          select: {
+            domainId: true,
+            domain: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                displayName: true,
+              }
+            }
+          }
+        },
+        assignments: {
+          where: isTrainerOrAdmin ? undefined : { status: { in: ["PUBLISHED", "ACTIVE"] } },
+          select: {
+            id: true,
+            sourceKey: true,
+            title: true,
+            status: true,
+            releaseAt: true,
+            dueDate: true,
+            evidenceRequired: true,
+          }
+        }
+      }
+    });
+
+    // Domain filtering
+    let filtered = classes;
+    if (!isTrainerOrAdmin) {
+      const studentDomainId = internProfile?.domainId;
+      filtered = filtered.filter(c => {
+        const isCommon = c.sequenceNumber !== null && c.sequenceNumber <= 14;
+        if (isCommon) return true;
+        if (studentDomainId && c.domainLinks?.some((l: any) => l.domainId === studentDomainId)) return true;
+        return false;
+      });
+    } else if (domainParam && domainParam !== "ALL" && domainParam !== "All Domains") {
+      filtered = filtered.filter(c => {
+        const isCommon = c.sequenceNumber !== null && c.sequenceNumber <= 14;
+        if (isCommon) return true;
+        return c.domainLinks?.some((l: any) => 
+          l.domainId === domainParam || 
+          l.domain.code === domainParam || 
+          l.domain.name.toLowerCase() === domainParam.toLowerCase()
+        );
+      });
+    }
+
+    if (monthParam) {
+      filtered = filtered.filter(c => {
+        const dStr = c.classDate.toISOString().split("T")[0];
+        return dStr.startsWith(monthParam);
+      });
+    }
+
+    // Format for mobile client
+    const formatted = filtered.map(c => ({
+      id: c.id,
+      sourceKey: c.sourceKey,
+      sequenceNumber: c.sequenceNumber,
+      title: c.title,
+      domain: c.domain,
+      domains: c.domainLinks.map((l: any) => l.domain),
+      batch: c.batch,
+      topic: c.topic,
+      subtopics: c.subtopics,
+      instructorId: c.instructorId,
+      instructorName: c.instructorName,
+      classDate: c.classDate.toISOString().split("T")[0],
+      startTime: c.startTime,
+      endTime: c.endTime,
+      duration: c.duration,
+      status: c.status,
+      mode: c.mode,
+      meetingLink: c.meetingLink,
+      learningObjectives: c.learningObjectives,
+      learningGoals: c.learningGoals,
+      trainerDemo: c.trainerDemo,
+      isCommon: c.sequenceNumber !== null && c.sequenceNumber <= 14,
+      assignments: c.assignments,
+      recordingUrl: null, // Strictly nullified per 100% live policy
+      createdAt: c.createdAt,
+    }));
+
+    if (dateParam) {
       return NextResponse.json({
         ok: true,
         selectedDate: dateParam,
-        today: dateClasses,
-        classes: dateClasses,
+        today: formatted,
+        classes: formatted,
         upcoming: [],
-        count: dateClasses.length,
+        count: formatted.length,
       }, { headers: NO_CACHE_HEADERS });
     }
 
-    const todayClasses = await db.$queryRawUnsafe<any[]>(`
-      SELECT 
-        id, title, domain, batch, topic, subtopics, instructor_id, instructor_name,
-        to_char(class_date, 'YYYY-MM-DD') as class_date,
-        start_time, end_time, duration, status, mode, meeting_link, learning_objectives, resources, recording_url,
-        created_at
-      FROM scheduled_classes
-      WHERE class_date = $1::date
-      ORDER BY start_time ASC
-    `, todayStr);
+    const todayClasses = formatted.filter(c => c.classDate === todayStr && c.status !== "CANCELLED");
+    const upcomingClasses = formatted.filter(c => c.classDate > todayStr && c.status !== "CANCELLED");
+    const pastClasses = formatted.filter(c => c.classDate < todayStr || c.status === "COMPLETED");
 
-    const upcomingClasses = await db.$queryRawUnsafe<any[]>(`
-      SELECT 
-        id, title, domain, batch, topic, subtopics, instructor_id, instructor_name,
-        to_char(class_date, 'YYYY-MM-DD') as class_date,
-        start_time, end_time, duration, status, mode, meeting_link, learning_objectives, resources, recording_url,
-        created_at
-      FROM scheduled_classes
-      WHERE class_date > $1::date
-      ORDER BY class_date ASC, start_time ASC
-      LIMIT 20
-    `, todayStr);
-
-    const pastClasses = await db.$queryRawUnsafe<any[]>(`
-      SELECT 
-        id, title, domain, batch, topic, subtopics, instructor_id, instructor_name,
-        to_char(class_date, 'YYYY-MM-DD') as class_date,
-        start_time, end_time, duration, status, mode, meeting_link, learning_objectives, resources, recording_url,
-        created_at
-      FROM scheduled_classes
-      WHERE class_date < $1::date
-      ORDER BY class_date DESC
-      LIMIT 10
-    `, todayStr);
-
-    // Also get all scheduled dates in current month or next 30 days for calendar indicators
-    const scheduledDates = await db.$queryRawUnsafe<any[]>(`
-      SELECT DISTINCT to_char(class_date, 'YYYY-MM-DD') as class_date, count(*)::int as count
-      FROM scheduled_classes
-      GROUP BY class_date
-      ORDER BY class_date ASC
-    `);
+    // Scheduled dates indicator
+    const dateCounts: Record<string, number> = {};
+    for (const c of formatted) {
+      dateCounts[c.classDate] = (dateCounts[c.classDate] || 0) + 1;
+    }
+    const scheduledDates = Object.entries(dateCounts).map(([date, count]) => ({ date, count }));
 
     return NextResponse.json({
       ok: true,
       today: todayClasses,
       upcoming: upcomingClasses,
       past: pastClasses,
-      scheduledDates: scheduledDates.map((d: any) => ({ date: d.class_date, count: d.count })),
+      scheduledDates,
       count: todayClasses.length + upcomingClasses.length,
+      totalClasses: formatted.length,
+      internDomain: internProfile?.internshipDomain || null,
+      internDomainId: internProfile?.domainId || null,
+      syncStatus: "MOBILE_BACKEND_SYNCED",
     }, { headers: NO_CACHE_HEADERS });
 
   } catch (err: any) {
