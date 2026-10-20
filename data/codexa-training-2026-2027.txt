@@ -1,0 +1,2984 @@
+<USER_REQUEST>
+# CodeXa Agency: Implement the Complete Internship Training System
+
+Work inside my existing CodeXa Agency application and connect the revised internship training schedule to its current database.
+
+**Input files:**
+1. `CodeXa_REBUILT_Complete_Beginner_To_Advanced_Live_Class_Timetable_2026_2027.txt`
+2. `CodeXa_Antigravity_DATABASE_Import_Implementation_MASTER_PROMPT.txt`
+
+Read both files completely. Follow the detailed implementation instructions in the second file and use the first file as the authoritative timetable.
+
+## Mandatory requirements
+
+1. Inspect the existing repository, authentication system, database tables, domain enrollments, admin dashboard and current class-related features before making changes.
+2. Preserve existing intern accounts, payment records, IDs, assigned domains and internship agreements.
+3. Import the 231 proposed live sessions as **draft records first**. Do not publish or notify interns automatically.
+4. Schedule exactly **one live class per day**, from 7:30 PM to 9:30 PM IST, excluding Sundays and approved one-day festival holidays.
+5. Make the first 14 classes common to all 12 domains. Their content must begin with computers, programming, websites, applications, IDEs, Git, GitHub, AI tools and basic project building.
+6. After the common phase, use the timetable's assigned domain groups. When multiple domains share the same topic, store a single class linked to those domains rather than creating duplicate meetings.
+7. Every session must contain its proper beginner-friendly title, date, instructor, attending domains, learning objectives, practical demonstration and after-class assignment.
+8. Build a secure admin calendar where the authorized trainer can publish, edit, reschedule, start and complete classes, enter meeting links and manage attendance.
+9. Build domain-filtered intern class pages. Interns should see only their applicable sessions and assignments.
+10. Publish assignments only after the corresponding live class has actually finished and the instructor marks it completed. Configure the backend release process, submission tracking and trainer feedback.
+11. Apply semester-examination exemptions only to students with verified matching college and academic-year records. Stop their mandatory classes four calendar days before semester exams and keep them excused through the last exam day.
+12. Maintain a live make-up queue for students who miss required topics due to approved exams. Never substitute recorded classes or automatically mark missed sessions completed.
+13. Ensure one trainer cannot be booked into overlapping sessions, even when classes are rescheduled.
+14. Use the existing CodeXa dark red and black visual language. Keep all pages mobile-first and desktop-compatible.
+15. Keep all existing application functionality working.
+
+## Database and security
+
+Reuse the actual existing database provider and tables wherever possible. Add only necessary migrations. Use stable class IDs to prevent duplicate imports. Enforce backend authorization and student-level data access.
+
+Do not expose passwords, API keys, private intern information, payment records or other students' attendance.
+
+## Verification before publishing
+
+Validate all 273 calendar dates, the 231 live sessions, the first 14 common classes, all 12 domain mappings, Sundays, holidays, assignment release conditions and course deadlines.
+
+Run the import twice in a test environment and verify that no duplicate classes or assignments appear.
+
+Provide a dry-run report showing successful mappings, unresolved intern academic-year records, scheduling conflicts and any required database changes.
+
+**First inspect the application and report what you found. Then implement and test the integration in stages. Do not claim database records were saved or deployed until the write operations have actually succeeded.**# CODEXA AGENCY: ANTIGRAVITY MASTER IMPLEMENTATION PROMPT
+# Purpose: Safely integrate the updated ONE-LIVE-CLASS-PER-DAY internship timetable into the EXISTING CodeXa app and database.
+# Date coverage: 2026-10-24 through 2027-07-23.
+# This is a working instruction for Antigravity. It is not evidence that an import has happened.
+
+ROLE
+Act as the senior full-stack engineer, existing-database migration reviewer, LMS architect, QA tester and security reviewer for CodeXa Agency. You are working IN MY CURRENT EXISTING APPLICATION REPOSITORY. Do not build a replacement app, do not redesign our site unnecessarily, and do not assume a new database provider.
+
+MANDATORY INPUT
+Use this exact attached source document, placed in the workspace, as the ONLY authoritative schedule data:
+  CodeXa_REBUILT_Complete_Beginner_To_Advanced_Live_Class_Timetable_2026_2027.txt
+Read the entire document, not just the quick index. Section G gives full daily session details, assigned domains, teaching goals, demo and after-class assignment. Section F includes Sundays and proposed festival closures. Sections A-D give domain names, exceptions and official course target dates. Do not import previous CodeXa CSV files or older timetable drafts. Do not fabricate lesson entries.
+
+IMPORTANT FIXED REQUIREMENTS
+1. ONE live class per calendar day at most; 7:30 PM to 9:30 PM Asia/Kolkata. Absolutely no morning sessions or two-slot evening splits. One sole trainer.
+2. Monday-Saturday only. Sundays off. Normal college holidays do NOT cancel classes. Only one selected main-festival day off after admin confirms the holiday.
+3. First 14 sessions are COMMON BEGINNER CLASSES, ALL 12 domains together. Never split them. Titles must be easy English. Initial subjects include computer/software, websites vs apps, programming basics, how the internet works, frontend/backend/database/API, IDE setup, simple webpage, Git and GitHub, AI prompting, project planning, simple screen design and common assessment.
+4. Subsequent classes rotate by compatible domain clusters exactly as stated in the source TXT. Only named domain enrollments receive required attendance/assignment for that date. A topic may include several domains where they actually share the material.
+5. Full-Stack Development with AI is AI-ASSISTED PRODUCT BUILDING from idea to launched websites/app-like tools. It is not a traditional coding-heavy track. Teach prompting, AI IDEs, project files, understanding generated changes, responsive design, forms, DB/auth, secure AI integrations, debugging, testing and deployment. Do not rewrite it as React/DSA-heavy by default.
+6. Every actual live class has ONE corresponding after-class practical assignment template. No new compulsory assignments on off days. Assignments must publish only AFTER the live class has really completed, not merely because the clock reached its end time. Recommended release time 9:35 PM local, conditional on instructor completing the event.
+7. There are NO recorded classes and NO recording URL requirements. A student excused for semester exams requires a separately scheduled LIVE make-up (or an admin-approved extension); never mark an unseen lesson completed.
+8. A student's semester-end examination blackout is from four calendar days BEFORE their verified exam start through the final exam date (inclusive). Exempt only the applicable verified college/year students. Blackout does not automatically shut down class for other students.
+9. Maintain original intern IDs, domain enrollments, candidate information, payment records, login details, certificates and contractual duration records exactly as found. Do not silently extend or alter agreements when tentative track dates clash with roster details.
+10. Total source expectation: 273 calendar dates, 231 single live sessions, 39 Sundays, 3 PROVISIONAL festival closures, 12 domain tracks, 50 roster interns. Verify numbers from the file before importing. Treat dates for Jan Sankranti and Apr Ugadi as provisional; office and published calendars differ. Do not announce them as final official holidays without review.
+
+PHASE 0 — READ-ONLY AUDIT BEFORE WRITING CODE
+- Identify actual frontend/back-end frameworks, ORM, provider, database schema, auth middleware, admin roles, current student app routes, timetable pages and assignment system.
+- Identify what database the EXISTING app already uses and whether classes/assignments or intern-domain join tables exist. Examples such as Supabase/PostgreSQL/Firebase are NOT instructions to create a new backend. Use the real provider already configured.
+- Read existing migration history and check for pending migrations before any schema change.
+- Verify authenticated admin role sources and current user-to-intern relationship. Identify existing records for all 12 domains by exact business meaning, not fuzzy matching.
+- Detect existing classes and assignments that might conflict. Do not delete or override live production data.
+- Report a small audit first: stack, schema to reuse, unresolved college/year values, proposed new tables/columns, conflicts, permissions, exact plan.
+
+PHASE 1 — SAFE DATA MODEL (REUSE EXISTING TABLES WHEN POSSIBLE)
+If no equivalent structures exist, implement suitable equivalents of:
+  training_domains(id, name, duration_months, active, ...)
+  intern_domain_enrollments(id, intern_id, domain_id, start/end, status, ...)
+  training_class_sessions(id, source_key UNIQUE, title, description, start_at, end_at, time_zone, meeting_url, trainer_user_id, status, sequence_number, group_code, instructor_notes, published_at, completed_at, cancelled_at, created_by, ...)
+  training_class_domain_links(class_id, domain_id, UNIQUE(class_id, domain_id))
+  training_class_learning_goals(class_id, position, text) OR compatible existing JSON field
+  training_assignments(id, source_key UNIQUE, class_id UNIQUE where applicable, title, instructions, evidence_required, release_at, due_at, published_at, status, ...)
+  training_assignment_domain_links(assignment_id, domain_id, ...)
+  training_assignment_submissions(id, assignment_id, intern_id, content/link, submitted_at, status, grade/feedback, ...)
+  training_class_attendance(class_id, intern_id, status, recorded_by, ... UNIQUE(class_id, intern_id))
+  student_exam_blackouts(id, intern_id OR academic-cohort link, college, year_batch, start_date, end_date, verified_by, source, status, ...)
+  training_makeup_sessions(original_class_id, makeup_class_id, affected_student(s), status, ...)
+  training_change_audit(id, actor, action, before/after, timestamp, ...)
+Use the existing database conventions and type system. This list is a conceptual model, NOT mandatory SQL or an instruction to create duplicates. For a NoSQL provider, model equivalent documents/collections and secure access rules.
+
+PHASE 2 — PARSE TXT AND BUILD DETERMINISTIC IMPORT
+- Place the user-supplied TXT in a stable workspace location such as data/codexa-training-2026-2027.txt, keep it versioned with the app, and write a deterministic parser. Use UTF-8.
+- Extract the 12 domain codes from Section A and the class details from Section G. Each class starts with a unique source key in form CXA-LIVE-NNN.
+- Parse date from ISO in Section F/index or robustly from the human date; do not guess ambiguous formats.
+- Read exact audience IDs, title, three learning goals, trainer demonstration, after-class assignment, submission evidence and deadline.
+- For each teaching date create EXACTLY one session. Do not create session rows for Sundays/festival-closure days.
+- Store time zone Asia/Kolkata explicitly. For 19:30 IST persist 14:00 UTC; for 21:30 IST persist 16:00 UTC, or use native timestamptz with correct offset. Assignment planned 21:35 IST = 16:05 UTC.
+- Link all 12 domains to all 14 common sessions; for specialties link only the listed enrolled domains.
+- Use stable source keys to upsert safely. If an existing production session with the same date but a different identity exists, stop and display conflicts; do not silently overwrite it.
+- Apply unique constraint/index preventing more than one scheduled/live class on any local date for this sole trainer (allow cancelled historical versions appropriately). Validate separately that session dates are not Sundays and do not occur after a linked track's agreed end date.
+- Any unpublished imported data begins in DRAFT. Make a dry-run import command, a validate command, and an explicit admin-confirmed commit/publish path.
+- Make import idempotent: running it twice gives the same counts without duplicates. Prefer transactions or checkpointed batches; report partial failures.
+- Print and save preflight results: 273 dates, 231 events, 14 common events, expected off-days, domain link counts, missing domain matches, duplicate keys, conflict list.
+- Do not insert candidate phone numbers or email addresses from roster into public session/assignment records.
+
+PHASE 3 — ADMIN TRAINING DASHBOARD
+Preserve current site look and navigation, including its CodeXa dark red and black branding; mobile first but desktop works well. Avoid gimmicky or generic templated UI.
+Build/update secured training admin screens:
+  A. Training overview: scheduled, today's live class, completed, drafts, upcoming per domain, assignments pending, students on verified exam leave.
+  B. Calendar: date view, weekly, monthly, domain filter, course track end dates; clearly show 'COMMON - ALL DOMAINS' on initial classes.
+  C. Daily class details: simple class name, selected domain badges, three teaching goals, live demonstration, assignment, meeting URL, timetable status, assignment release timing, attendance list.
+  D. Create/edit/reschedule class: ensure one class/day and trainer no conflicts; if rescheduled, update deadline/assignment release consistently and retain audit history.
+  E. Import preview: number of new, unchanged, conflicting, or invalid records; admin must click approval before commit or public visibility.
+  F. Exam exemptions: select college + student year, enter verified exam-start/end, automatically calculate four days before, preview matching affected interns. Require approval before applying.
+  G. Live make-up queue: original class, excused students, missing lesson, planned live makeup date (cannot collide with original sessions), completion evidence.
+  H. Assignments: draft, queued, published, reviewed, late, excused; instructor can update instructions or deadline and review submitted evidence.
+  I. Audit log: who imported/edited/published/rescheduled/marked attendance/completed a class.
+
+PHASE 4 — INTERN DASHBOARD
+- Show only classes tied to intern's actual enrollment(s) and dates in their course duration.
+- During common phase label 'Common Class - All Domains'. Afterwards show plain English class name, date, 7:30 PM to 9:30 PM, live meeting link if the trainer has set it, and what they will learn.
+- Clearly distinguish 'Scheduled', 'Live', 'Completed', 'Excused for semester exams', 'Cancelled', 'Rescheduled', and 'Live makeup required'.
+- Interns from other domains must NOT see required attendance for irrelevant sessions.
+- Do not show an assignment before release. When visible, show task, due date, evidence expected, submission form, current status and trainer feedback.
+- Do not promise availability of a recording or display a 'Watch recording' button.
+- If intern's college/year is missing, display 'Exam schedule verification required' to admin and avoid automatically granting or refusing exemptions.
+
+PHASE 5 — ACTUAL LIVE ATTENDANCE & ASSIGNMENT RELEASE
+- Instructor (admin-authorized user) marks session LIVE and later COMPLETED. Do not use a clock alone to mark classes completed.
+- Attendance can be marked only for students enrolled in that session's linked domain(s). Use an explicit state machine e.g. pending/present/absent/excused/makeup_pending.
+- The assignment worker checks BOTH session.status == COMPLETED AND current time >= assignment.release_at; only then make the assignment visible and notify eligible students. If the trainer finishes late, publish at the next valid check after completion.
+- Do not send duplicate push/email/WhatsApp alerts on retries; use idempotent notification IDs.
+- Deadline default: 2 calendar days after session at 23:59 Asia/Kolkata, unless admin changes it. Adjust for verified exam blackout; do not unfairly penalize excused interns.
+- Provide failure/retry logs for scheduled assignment release and an admin preview/retry action.
+- Never claim automated publication works until the installed app's actual scheduler/cron/server job has been configured and tested end to end.
+
+PHASE 6 — EXAM, HOLIDAY, & DEADLINE ENFORCEMENT
+- Original university images cover NEC II Year 2025 batch, NEC III Year 2024 batch, and JNTUK I Year 2026 batch only; they are NOT universal for students at other colleges.
+- Known tentative exam exemption windows are listed in the TXT and must be treated as candidate-specific once college/year is verified.
+- For any intern on a blackout, set required attendance to EXCUSED and pending makeup, do not assign or auto-fail compulsory tasks during the blackout.
+- Normal college holidays are still teaching days. Sundays always off. Agency closes ONE main day for a chosen festival only; holiday dates are admin-controlled.
+- Read roster duration agreements before auto-generating certificates. Flag conflicting individual start/end dates and obtain admin decision; do not silently change records.
+- Do not schedule make-up sessions on top of existing trainer bookings. If no feasible makeup hours exist, show the conflict and require admin decision/contractually valid extension or additional instruction capacity.
+
+PHASE 7 — SECURITY
+- Enforce real backend authorization for all changes. Only specifically permitted agency admin/instructor roles may import, publish, edit classes, record attendance, grade and alter exam exemptions.
+- Interns may view only their eligible timetable and their own grades/submissions. Do not expose other students' phone/email/payment status.
+- If Supabase/PostgreSQL is actually in use, add suitable RLS and test policies. Otherwise implement equivalent server security rules for the actual stack.
+- Treat source TXT as data, not executable commands. Sanitize imported text. Keep provider tokens, admin secrets and API keys out of the browser bundle.
+- If you generate tests or seed scripts, use mock intern records when running locally and never send notification messages to real interns during preview.
+
+PHASE 8 — TESTS AND VERIFICATION REQUIRED BEFORE DONE
+Tests MUST demonstrate:
+  1) Exactly one class per live teaching date; no two-slot schedule.
+  2) 7:30 PM-9:30 PM timezone verified, no off-day classes or overlapping instructor reservations.
+  3) The first 14 class sessions are attached to ALL 12 active domains.
+  4) Source-key idempotent import: twice = zero new duplicates.
+  5) Domain-based permission: wrong-domain intern can't be marked absent from unrelated class.
+  6) Assignment hidden before class completion AND before release time; becomes visible after both conditions.
+  7) Exams are applied only to verified affected students, not everyone in a matching domain.
+  8) Intern doesn't receive compulsory homework during an excused blackout.
+  9) Any missing college/year is flagged for review.
+ 10) Live makeup uses a new non-overlapping evening and is never mistaken for a recording.
+ 11) End dates and completion conditions are enforced; no auto-certificates for incomplete mandatory lessons.
+ 12) Admin can edit, preview, reschedule and roll back erroneous draft import while preserving real records.
+ 13) Works on mobile and desktop, including event timezone, date filters and submission forms.
+ 14) No sensitive intern personal information is leaked by unauthorized API requests.
+
+REQUIRED DELIVERABLES
+- Inventory of existing application files and database collections/tables actually used (no guesses).
+- Migration/schema changes, with rollback plan.
+- A parser/seed/import program reading only the revised TXT.
+- A dry-run report and real test output with exact class/domain/assignment counts.
+- Admin training calendar, editor, attendance and assignment management UI.
+- Intern domain-filtered timetable and assignment-submission UI.
+- Role permissions and exam-exemption/live-makeup workflow.
+- Server-side assignment publishing mechanism or explicit scheduler configuration steps.
+- Import conflict report and final publication checklist.
+- A short summary of what you implemented, what still requires credentials/approval, and how to deploy safely.
+
+DO THE WORK IN STAGES. FIRST INSPECT AND GIVE A FACTUAL AUDIT; THEN IMPLEMENT IN SMALL VERIFIED CHANGES. NEVER CLAIM A DATABASE SAVE/DEPLOY/PUBLICATION OCCURRED WITHOUT VERIFIED TOOL RESULTS AND AN AUTHORIZED WRITE. ASK ONLY FOR MISSING CRITICAL PERMISSIONS/CONNECTION DETAILS. DO NOT THROW AWAY OUR EXISTING CODEXA SITE OR DATABASE.
+
+================================================================================================================
+CODEXA AGENCY — LIVE TRAINING MASTER PLAN (REBUILT FOR BEGINNERS)
+================================================================================================================
+Single trainer | ONE class per day | 7:30 PM to 9:30 PM IST | Monday-Saturday | No recordings
+Period: 24 October 2026 to 23 July 2027 | Status: DRAFT; not published to app/database
+This is a proposed, scoped curriculum. Classes are not considered completed until they are actually taught.
+
+READ THIS FIRST — WHAT CHANGED
+  1. The first 14 LIVE CLASSES are COMMON FOR ALL 12 DOMAINS. They start from absolute zero.
+  2. Class names are easy English. Each class has THREE learning goals, a live demo and a real assignment.
+  3. From 10 November onwards, the ONE trainer rotates between compatible domain groups.
+  4. There is never more than ONE class on the same day. Domains NOT listed are NOT marked absent.
+  5. Full-Stack Development with AI focuses on AI-assisted building of websites and app-like tools.
+  6. Work stays LIVE. No recorded sessions. A missed mandatory lesson requires a later LIVE make-up.
+  7. The per-day assignment becomes available AFTER that class; it is never published before the class ends.
+  8. The system must verify student college and academic year before exam exemptions can be automated.
+  9. This plan does not promise advanced mastery of every technology within limited teaching hours.
+
+TOTALS (calculated):
+  Calendar dates included: 273
+  One-class evenings: 231
+  Sunday off days: 39
+  Proposed one-day festival closures: 3
+  Daily class time: 19:30–21:30 Asia/Kolkata (120 minutes)
+  Draft assignment release: 21:35 local time, AFTER instructor marks class COMPLETED
+  Default homework due: second calendar day 23:59 local time, flexible for exam restrictions
+
+IMPORTANT: COMMON CLASSES AND UNIVERSITY EXAMS
+  NEC third-year students have semester-exam pause starting 05 Nov, so a fully attended 14-class common
+  course is NOT possible for those students under the requested start date and exam rule.
+  The app must mark them EXCUSED from affected common classes and require LIVE make-up teaching.
+  Never auto-certify completion from just scheduling a class, even if class appears on a calendar.
+
+SECTION A — ALL 12 OFFICIAL TRAINING DOMAINS
+  FS_AI     Full-Stack Development with AI (3 months, 20 interns) | deadline: 2027-01-23
+  PY        Programming Full Stack - Python (6 months, 6 interns) | deadline: 2027-04-23
+  AIML      AI & Machine Learning (6 months, 5 interns) | deadline: 2027-04-23
+  CY2       Cybersecurity (2 months, 4 interns) | deadline: 2026-12-23
+  PENTEST   Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns) | deadline: 2027-07-23
+  AI9       AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns) | deadline: 2027-07-23
+  ETH       Ethical Hacking (6 months, 3 interns) | deadline: 2027-04-23
+  AG3       Generative AI & AI Agents (3 months, 1 intern) | deadline: 2027-01-23
+  MOBILE    Mobile App Development (3 months, 1 intern) | deadline: 2027-01-23
+  JAVA      Programming Full Stack - Java (6 months, 1 intern) | deadline: 2027-04-23
+  UIUX      UI/UX Design (3 months, 1 intern) | deadline: 2027-01-23
+  WEB       Web Development (6 months, 1 intern) | deadline: 2027-04-23
+
+SECTION B — COMMON BEGINNER CLASSES (ALL DOMAINS, SAME LIVE MEETING)
+  CXA-LIVE-001 | Sat 24 Oct 2026 | Welcome to CodeXa and Your Internship
+  CXA-LIVE-002 | Mon 26 Oct 2026 | Computers, Files and Software Explained
+  CXA-LIVE-003 | Tue 27 Oct 2026 | Websites, Mobile Apps and Other Digital Products
+  CXA-LIVE-004 | Wed 28 Oct 2026 | What Is Coding and Why Do Developers Use It?
+  CXA-LIVE-005 | Thu 29 Oct 2026 | How the Internet and Websites Work
+  CXA-LIVE-006 | Fri 30 Oct 2026 | Frontend, Backend, Database and API Basics
+  CXA-LIVE-007 | Sat 31 Oct 2026 | Install Your Developer Tools and Learn Your IDE
+  CXA-LIVE-008 | Mon 02 Nov 2026 | Create Your First Simple Web Page
+  CXA-LIVE-009 | Tue 03 Nov 2026 | Git and GitHub from the Beginning
+  CXA-LIVE-010 | Wed 04 Nov 2026 | Save Changes and Fix Mistakes with GitHub
+  CXA-LIVE-011 | Thu 05 Nov 2026 | Ask AI Better Questions While Learning
+  CXA-LIVE-012 | Fri 06 Nov 2026 | Plan a Website or App Before Building
+  CXA-LIVE-013 | Sat 07 Nov 2026 | Draw Your First App Screen
+  CXA-LIVE-014 | Mon 09 Nov 2026 | Build a Tiny Demo and Check Your Basics
+  You start domain rotation after the common class on 09 Nov 2026.
+
+SECTION C — COLLEGE SEMESTER EXAMS: INDIVIDUAL ATTENDANCE EXEMPTIONS
+  NEC 2024 batch, third year: 2026-11-05 through 2026-11-21 inclusive
+  NEC 2025 batch, second year: 2026-11-19 through 2026-12-05 inclusive
+  JNTUK 2026 batch, first year: 2026-12-27 through 2027-01-13 inclusive
+  NEC second and third years: 2027-04-22 through 2027-05-08 inclusive
+  JNTUK 2026 batch, first year: 2027-05-13 through 2027-05-29 inclusive
+  Rules: apply only when a student has a verified matching college and academic year.
+  Class may still run for other eligible interns; affected student is EXCUSED, not ABSENT.
+  Stop 4 CALENDAR DAYS before semester-end first exam, through last exam, then resume on next assigned live day.
+  For new intern outside NEC/JNTUK, admin must upload their own verified college exam dates.
+  After exam pause, create a NEW conflict-free LIVE make-up class, not a recorded video or false attendance.
+
+SECTION D — FESTIVALS & SUNDAYS
+  Fri 25 Dec 2026: Christmas (one day, proposed)
+  Fri 15 Jan 2027: Sankranti (one day, PROVISIONAL date)
+  Wed 07 Apr 2027: Ugadi (one day, PROVISIONAL date: published calendars conflict 7/8 April)
+  Main festival means ONE day only, not an entire college vacation. Additional festivals need admin approval.
+  NOTE: 2027 lists disagree over Jan 14 vs Jan 15 Sankranti and Apr 7 vs Apr 8 Ugadi.
+  Treat the Jan 15 and Apr 7 choices above as PROVISIONAL, not officially confirmed holidays.
+  Diwali 08 Nov 2026 is Sunday and so already off. Other college holidays are normal class days.
+
+SECTION E — HOW EACH LIVE CLASS WORKS
+  19:30–19:40  Attendance and easy recap
+  19:40–20:15  Explain the topic from basics with real examples
+  20:15–21:05  Live demo / hands-on exercise
+  21:05–21:25  Student questions and practical corrections
+  21:25–21:30  Explain after-class assignment and what to submit
+  21:35        Assignment release (requires completed class and server-side scheduled job)
+  NOT ATTENDING: no compulsory attendance or assignment for non-assigned domains.
+
+SECTION F — DATE + NAME QUICK INDEX (ONE LIVE CLASS OR ONE CLEAR OFF DAY PER DATE)
+2026-10-24 | CXA-LIVE-001 | Welcome to CodeXa and Your Internship | FS_AI,PY,AIML,CY2,PENTEST,AI9,ETH,AG3,MOBILE,JAVA,UIUX,WEB
+2026-10-25 | NO CLASS | Sunday: no class, no new compulsory assignment
+2026-10-26 | CXA-LIVE-002 | Computers, Files and Software Explained | FS_AI,PY,AIML,CY2,PENTEST,AI9,ETH,AG3,MOBILE,JAVA,UIUX,WEB
+2026-10-27 | CXA-LIVE-003 | Websites, Mobile Apps and Other Digital Products | FS_AI,PY,AIML,CY2,PENTEST,AI9,ETH,AG3,MOBILE,JAVA,UIUX,WEB
+2026-10-28 | CXA-LIVE-004 | What Is Coding and Why Do Developers Use It? | FS_AI,PY,AIML,CY2,PENTEST,AI9,ETH,AG3,MOBILE,JAVA,UIUX,WEB
+2026-10-29 | CXA-LIVE-005 | How the Internet and Websites Work | FS_AI,PY,AIML,CY2,PENTEST,AI9,ETH,AG3,MOBILE,JAVA,UIUX,WEB
+2026-10-30 | CXA-LIVE-006 | Frontend, Backend, Database and API Basics | FS_AI,PY,AIML,CY2,PENTEST,AI9,ETH,AG3,MOBILE,JAVA,UIUX,WEB
+2026-10-31 | CXA-LIVE-007 | Install Your Developer Tools and Learn Your IDE | FS_AI,PY,AIML,CY2,PENTEST,AI9,ETH,AG3,MOBILE,JAVA,UIUX,WEB
+2026-11-01 | NO CLASS | Sunday: no class, no new compulsory assignment
+2026-11-02 | CXA-LIVE-008 | Create Your First Simple Web Page | FS_AI,PY,AIML,CY2,PENTEST,AI9,ETH,AG3,MOBILE,JAVA,UIUX,WEB
+2026-11-03 | CXA-LIVE-009 | Git and GitHub from the Beginning | FS_AI,PY,AIML,CY2,PENTEST,AI9,ETH,AG3,MOBILE,JAVA,UIUX,WEB
+2026-11-04 | CXA-LIVE-010 | Save Changes and Fix Mistakes with GitHub | FS_AI,PY,AIML,CY2,PENTEST,AI9,ETH,AG3,MOBILE,JAVA,UIUX,WEB
+2026-11-05 | CXA-LIVE-011 | Ask AI Better Questions While Learning | FS_AI,PY,AIML,CY2,PENTEST,AI9,ETH,AG3,MOBILE,JAVA,UIUX,WEB
+2026-11-06 | CXA-LIVE-012 | Plan a Website or App Before Building | FS_AI,PY,AIML,CY2,PENTEST,AI9,ETH,AG3,MOBILE,JAVA,UIUX,WEB
+2026-11-07 | CXA-LIVE-013 | Draw Your First App Screen | FS_AI,PY,AIML,CY2,PENTEST,AI9,ETH,AG3,MOBILE,JAVA,UIUX,WEB
+2026-11-08 | NO CLASS | Sunday: no class, no new compulsory assignment
+2026-11-09 | CXA-LIVE-014 | Build a Tiny Demo and Check Your Basics | FS_AI,PY,AIML,CY2,PENTEST,AI9,ETH,AG3,MOBILE,JAVA,UIUX,WEB
+2026-11-10 | CXA-LIVE-015 | What Cybersecurity Means in Real Life | CY2,ETH,PENTEST
+2026-11-11 | CXA-LIVE-016 | What Generative AI Can and Cannot Do | AG3,AI9,AIML,FS_AI
+2026-11-12 | CXA-LIVE-017 | Plan an App That Is Easy to Use | UIUX,MOBILE,FS_AI,WEB
+2026-11-13 | CXA-LIVE-018 | Learn Linux Using Simple Commands | CY2,ETH,PENTEST
+2026-11-14 | CXA-LIVE-019 | Learn How Computers Talk to Each Other | CY2,ETH,PENTEST
+2026-11-15 | NO CLASS | Sunday: no class, no new compulsory assignment
+2026-11-16 | CXA-LIVE-020 | Ask AI to Make Your First Working Website | FS_AI,WEB,PY,JAVA
+2026-11-17 | CXA-LIVE-021 | Set Up a Safe Hacking Practice Lab | CY2,ETH,PENTEST
+2026-11-18 | CXA-LIVE-022 | Write Clear Instructions for an AI Assistant | AG3,AI9,AIML,FS_AI
+2026-11-19 | CXA-LIVE-023 | Design Simple and Clear App Screens | UIUX,MOBILE,FS_AI,WEB
+2026-11-20 | CXA-LIVE-024 | Keep Accounts Safe with Passwords and Login Rules | CY2,ETH,PENTEST
+2026-11-21 | CXA-LIVE-025 | Make App Screens Connect in the Right Order | UIUX,MOBILE,FS_AI,WEB
+2026-11-22 | NO CLASS | Sunday: no class, no new compulsory assignment
+2026-11-23 | CXA-LIVE-026 | Make Your Website Look Good on Mobile | FS_AI,WEB,PY,JAVA
+2026-11-24 | CXA-LIVE-027 | Understand What Happens When You Open a Website | CY2,ETH,PENTEST
+2026-11-25 | CXA-LIVE-028 | Make AI Answer in a Useful Format | AG3,AI9,AIML,FS_AI
+2026-11-26 | CXA-LIVE-029 | Build and Test Reusable App Buttons | UIUX,MOBILE,FS_AI,WEB
+2026-11-27 | CXA-LIVE-030 | Learn Basic Network Troubleshooting | CY2,ETH,PENTEST
+2026-11-28 | CXA-LIVE-031 | Recognize Fake Links and Online Scams | CY2,ETH,PENTEST
+2026-11-29 | NO CLASS | Sunday: no class, no new compulsory assignment
+2026-11-30 | CXA-LIVE-032 | Change Colours, Fonts and Sections without Breaking Things | FS_AI,WEB,PY,JAVA
+2026-12-01 | CXA-LIVE-033 | Understand Common Website Security Mistakes | CY2,ETH,PENTEST
+2026-12-02 | CXA-LIVE-034 | Connect an AI Feature to a Simple App | AG3,AI9,AIML,FS_AI
+2026-12-03 | CXA-LIVE-035 | Improve an App Using Real Feedback | UIUX,MOBILE,FS_AI,WEB
+2026-12-04 | CXA-LIVE-036 | Protect Files, Devices and Networks | CY2,ETH,PENTEST
+2026-12-05 | CXA-LIVE-037 | Build the Next Part of Your Final Project (Workshop 1) | UIUX,MOBILE,FS_AI,WEB
+2026-12-06 | NO CLASS | Sunday: no class, no new compulsory assignment
+2026-12-07 | CXA-LIVE-038 | Find and Fix Mistakes in AI-Built Websites | FS_AI,WEB,PY,JAVA
+2026-12-08 | CXA-LIVE-039 | Read Logs and Spot Unusual Activity | CY2,ETH,PENTEST
+2026-12-09 | CXA-LIVE-040 | Give Your AI Assistant Documents to Read | AG3,AI9,AIML,FS_AI
+2026-12-10 | CXA-LIVE-041 | Fix Problems Found in Project Testing (Workshop 2) | UIUX,MOBILE,FS_AI,WEB
+2026-12-11 | CXA-LIVE-042 | Learn the Steps of a Security Check | CY2,ETH,PENTEST
+2026-12-12 | CXA-LIVE-043 | Explain a Security Problem Clearly | CY2,ETH,PENTEST
+2026-12-13 | NO CLASS | Sunday: no class, no new compulsory assignment
+2026-12-14 | CXA-LIVE-044 | Create More Pages and Link Them Together | FS_AI,WEB,PY,JAVA
+2026-12-15 | CXA-LIVE-045 | Build Your Beginner Cybersecurity Project | CY2,ETH,PENTEST
+2026-12-16 | CXA-LIVE-046 | Let Your AI Assistant Use a Simple Tool | AG3,AI9,AIML,FS_AI
+2026-12-17 | CXA-LIVE-047 | Show Your Project Progress and Get Feedback (Workshop 3) | UIUX,MOBILE,FS_AI,WEB
+2026-12-18 | CXA-LIVE-048 | Practice Your Cybersecurity Final Test | CY2,ETH,PENTEST
+2026-12-19 | CXA-LIVE-049 | Improve Your Project Documentation (Workshop 4) | UIUX,MOBILE,FS_AI,WEB
+2026-12-20 | NO CLASS | Sunday: no class, no new compulsory assignment
+2026-12-21 | CXA-LIVE-050 | Use GitHub to Keep Your AI Project Safe | FS_AI,WEB,PY,JAVA
+2026-12-22 | CXA-LIVE-051 | Build the Next Part of Your Final Project (Workshop 1) | CY2,ETH,PENTEST
+2026-12-23 | CXA-LIVE-052 | Cybersecurity Final Class and Project Review | CY2,ETH,PENTEST
+2026-12-24 | CXA-LIVE-053 | Get Started with Flutter and Dart | MOBILE
+2026-12-25 | NO CLASS | Christmas (one day, proposed)
+2026-12-26 | CXA-LIVE-054 | Learn the Basics of Figma | UIUX
+2026-12-27 | NO CLASS | Sunday: no class, no new compulsory assignment
+2026-12-28 | CXA-LIVE-055 | Build a Form that Actually Works | FS_AI,WEB,PY,JAVA
+2026-12-29 | CXA-LIVE-056 | Make an AI Agent Follow Steps Safely | AG3,AI9,AIML,FS_AI
+2026-12-30 | CXA-LIVE-057 | Save User Data in a Real Database | FS_AI,WEB,PY,JAVA
+2026-12-31 | CXA-LIVE-058 | Build a Flutter Screen with Buttons | MOBILE
+2027-01-01 | CXA-LIVE-059 | Add Login and Keep User Accounts Safe | FS_AI,WEB,PY,JAVA
+2027-01-02 | CXA-LIVE-060 | Make Your App Design Look Consistent | UIUX
+2027-01-03 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-01-04 | CXA-LIVE-061 | Connect Your Website to an API | FS_AI,WEB,PY,JAVA
+2027-01-05 | CXA-LIVE-062 | Check Whether Your AI Assistant Works Properly | AG3,AI9,AIML,FS_AI
+2027-01-06 | CXA-LIVE-063 | Turn Your Website into a Useful Tool | FS_AI,WEB,PY,JAVA
+2027-01-07 | CXA-LIVE-064 | Add More Pages to Your Flutter App | MOBILE
+2027-01-08 | CXA-LIVE-065 | Add a Helpful AI Feature to Your Project | FS_AI,WEB,PY,JAVA
+2027-01-09 | CXA-LIVE-066 | Design a Full User Journey | UIUX
+2027-01-10 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-01-11 | CXA-LIVE-067 | Make an App-Like Experience from Your Website | FS_AI,WEB,PY,JAVA
+2027-01-12 | CXA-LIVE-068 | Build and Improve Your First AI Agent | AG3,AI9,AIML,FS_AI
+2027-01-13 | CXA-LIVE-069 | Test What AI Built Instead of Just Trusting It | FS_AI,WEB,PY,JAVA
+2027-01-14 | CXA-LIVE-070 | Connect Your App to Online Data | MOBILE
+2027-01-15 | NO CLASS | Sankranti (one day, PROVISIONAL date)
+2027-01-16 | CXA-LIVE-071 | Test Your Design with Other Students | UIUX
+2027-01-17 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-01-18 | CXA-LIVE-072 | Put Your Website Online with a Link | FS_AI,WEB,PY,JAVA
+2027-01-19 | CXA-LIVE-073 | Present Your Generative AI Project | AG3,AI9,AIML,FS_AI
+2027-01-20 | CXA-LIVE-074 | Give Your Project a Professional Finishing Touch | FS_AI,WEB,PY,JAVA
+2027-01-21 | CXA-LIVE-075 | Build, Test and Present Your Android App | MOBILE
+2027-01-22 | CXA-LIVE-076 | Show Your Finished AI-Built Project | FS_AI,WEB,PY,JAVA
+2027-01-23 | CXA-LIVE-077 | Final Projects: Websites, Mobile Apps, UI/UX and AI Assistants | FS_AI,MOBILE,UIUX,AG3
+2027-01-24 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-01-25 | CXA-LIVE-078 | Start Python for Real Website Projects | PY,WEB
+2027-01-26 | CXA-LIVE-079 | What Machine Learning Really Does | AIML,AI9
+2027-01-27 | CXA-LIVE-080 | Ethical Hacking Means Working with Permission | ETH,PENTEST
+2027-01-28 | CXA-LIVE-081 | Java from Zero: Write Your First Program | JAVA
+2027-01-29 | CXA-LIVE-082 | Understand AI Systems with Real Examples | AI9
+2027-01-30 | CXA-LIVE-083 | Use Python Variables and Decisions | PY,WEB
+2027-01-31 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-02-01 | CXA-LIVE-084 | Repeat Work with Python Loops and Lists | PY,WEB
+2027-02-02 | CXA-LIVE-085 | Learn Python Tools for Working with Data | AIML,AI9
+2027-02-03 | CXA-LIVE-086 | Learn Security Tools in a Practice Lab | ETH,PENTEST
+2027-02-04 | CXA-LIVE-087 | Understand Java Variables and Conditions | JAVA
+2027-02-05 | CXA-LIVE-088 | Learn How Language Models Use Context | AI9
+2027-02-06 | CXA-LIVE-089 | Understand the Basics of Website Attacks | ETH,PENTEST
+2027-02-07 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-02-08 | CXA-LIVE-090 | Write Reusable Python Functions | PY,WEB
+2027-02-09 | CXA-LIVE-091 | Clean Data Before Training a Model | AIML,AI9
+2027-02-10 | CXA-LIVE-092 | Check Website Login and Permissions | ETH,PENTEST
+2027-02-11 | CXA-LIVE-093 | Use Loops and Methods in Java | JAVA
+2027-02-12 | CXA-LIVE-094 | Build Reliable Responses from AI | AI9
+2027-02-13 | CXA-LIVE-095 | Learn Java Classes and Objects | JAVA
+2027-02-14 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-02-15 | CXA-LIVE-096 | Read and Save Data with Python | PY,WEB
+2027-02-16 | CXA-LIVE-097 | Make Charts That Explain Your Data | AIML,AI9
+2027-02-17 | CXA-LIVE-098 | Understand SQL Injection and Safe Queries | ETH,PENTEST
+2027-02-18 | CXA-LIVE-099 | Organize Data Using Lists and Maps | JAVA
+2027-02-19 | CXA-LIVE-100 | Let an AI App Read Approved Documents | AI9
+2027-02-20 | CXA-LIVE-101 | Build a Useful AI Tool Connection | AI9
+2027-02-21 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-02-22 | CXA-LIVE-102 | How a Python Backend Works | PY,WEB
+2027-02-23 | CXA-LIVE-103 | Teach a Model to Predict Numbers | AIML,AI9
+2027-02-24 | CXA-LIVE-104 | Understand Script Injection in a Safe Demo | ETH,PENTEST
+2027-02-25 | CXA-LIVE-105 | Handle Errors and Read Files | JAVA
+2027-02-26 | CXA-LIVE-106 | Make an AI Assistant Complete Several Steps | AI9
+2027-02-27 | CXA-LIVE-107 | Build a Real API with Python | PY,WEB
+2027-02-28 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-03-01 | CXA-LIVE-108 | Save App Data in a Database | PY,WEB
+2027-03-02 | CXA-LIVE-109 | Teach a Model to Choose a Category | AIML,AI9
+2027-03-03 | CXA-LIVE-110 | Learn Basic Network Security Checks | ETH,PENTEST
+2027-03-04 | CXA-LIVE-111 | Create Your First Spring Boot Project | JAVA
+2027-03-05 | CXA-LIVE-112 | Add Human Approval to AI Actions | AI9
+2027-03-06 | CXA-LIVE-113 | Create and Edit Data Through a Java API | JAVA
+2027-03-07 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-03-08 | CXA-LIVE-114 | Add Login to Your Python App | PY,WEB
+2027-03-09 | CXA-LIVE-115 | Improve a Model by Choosing Better Inputs | AIML,AI9
+2027-03-10 | CXA-LIVE-116 | Find and Explain Security Risks | ETH,PENTEST
+2027-03-11 | CXA-LIVE-117 | Store Java App Data in a Database | JAVA
+2027-03-12 | CXA-LIVE-118 | Check AI Answers with a Test Set | AI9
+2027-03-13 | CXA-LIVE-119 | Make an AI Application Faster and Cheaper | AI9
+2027-03-14 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-03-15 | CXA-LIVE-120 | Make a Web Page Talk to Your Python API | PY,WEB
+2027-03-16 | CXA-LIVE-121 | Try Different Learning Models | AIML,AI9
+2027-03-17 | CXA-LIVE-122 | Improve the Security of a Linux Server | ETH,PENTEST
+2027-03-18 | CXA-LIVE-123 | Make User Login Work Correctly | JAVA
+2027-03-19 | CXA-LIVE-124 | Use AI with Data Analysis | AI9
+2027-03-20 | CXA-LIVE-125 | Make a Clean, Responsive Website | PY,WEB
+2027-03-21 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-03-22 | CXA-LIVE-126 | Handle Files and Images Safely | PY,WEB
+2027-03-23 | CXA-LIVE-127 | Understand How Neural Networks Learn | AIML,AI9
+2027-03-24 | CXA-LIVE-128 | Investigate a Possible Security Incident | ETH,PENTEST
+2027-03-25 | CXA-LIVE-129 | Connect the Website to Your Java Backend | JAVA
+2027-03-26 | CXA-LIVE-130 | Learn the Basics of Machine Learning | AI9
+2027-03-27 | CXA-LIVE-131 | Work with Text Data | AIML,AI9
+2027-03-28 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-03-29 | CXA-LIVE-132 | Find Bugs and Write Small Tests | PY,WEB
+2027-03-30 | CXA-LIVE-133 | Let People Use Your Model in an App | AIML,AI9
+2027-03-31 | CXA-LIVE-134 | Check the Security of an API | ETH,PENTEST
+2027-04-01 | CXA-LIVE-135 | Test and Deploy Your Java Project | JAVA
+2027-04-02 | CXA-LIVE-136 | Build a Search-Based AI Helper | AI9
+2027-04-03 | CXA-LIVE-137 | Make Agents Remember Only What They Need | AI9
+2027-04-04 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-04-05 | CXA-LIVE-138 | Deploy a Python Web Project | PY,WEB
+2027-04-06 | CXA-LIVE-139 | Test Your Model on New Data | AIML,AI9
+2027-04-07 | NO CLASS | Ugadi (one day, PROVISIONAL date: published calendars conflict 7/8 April)
+2027-04-08 | CXA-LIVE-140 | Present Your Java Full-Stack Project | JAVA
+2027-04-09 | CXA-LIVE-141 | Make Multiple AI Tools Work Together | AI9
+2027-04-10 | CXA-LIVE-142 | Finish and Present Your Python Website | PY,WEB
+2027-04-11 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-04-12 | CXA-LIVE-143 | Build the Next Part of Your Final Project (Workshop 1) | PY,WEB
+2027-04-13 | CXA-LIVE-144 | Deploy and Explain Your AI Project | AIML,AI9
+2027-04-14 | CXA-LIVE-145 | Plan and Complete an Ethical Hacking Project | ETH,PENTEST
+2027-04-15 | CXA-LIVE-146 | Java Full-Stack Final Project Review | JAVA
+2027-04-16 | CXA-LIVE-147 | Test an AI Agent Against Unexpected Inputs | AI9
+2027-04-17 | CXA-LIVE-148 | Six-Month Project Practice and Final Questions | PY,WEB,AIML,ETH,JAVA
+2027-04-18 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-04-19 | CXA-LIVE-149 | Python and Web Development Final Project Review | PY,WEB
+2027-04-20 | CXA-LIVE-150 | AI and Machine Learning Final Model Presentation | AIML,AI9
+2027-04-21 | CXA-LIVE-151 | Ethical Hacking Final Practical and Report | ETH,PENTEST
+2027-04-22 | CXA-LIVE-152 | Build the Next Part of Your Final Project (Workshop 1) | JAVA
+2027-04-23 | CXA-LIVE-153 | Deploy a Simple AI Agent | AI9
+2027-04-24 | CXA-LIVE-154 | Choose an Advanced AI Project You Can Finish | AI9
+2027-04-25 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-04-26 | CXA-LIVE-155 | Organise Training Data Properly | AI9
+2027-04-27 | CXA-LIVE-156 | Build a Reliable Prediction Model | AI9
+2027-04-28 | CXA-LIVE-157 | Explain Why Your Model Was Wrong | AI9
+2027-04-29 | CXA-LIVE-158 | Improve a Model Without Guessing | AI9
+2027-04-30 | CXA-LIVE-159 | Connect Your Model to a Website | AI9
+2027-05-01 | CXA-LIVE-160 | Build a Helpful AI Chat Feature | AI9
+2027-05-02 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-05-03 | CXA-LIVE-161 | Let an Assistant Answer from Documents | AI9
+2027-05-04 | CXA-LIVE-162 | Make Document Answers More Accurate | AI9
+2027-05-05 | CXA-LIVE-163 | Help Your AI Assistant Use Tools | AI9
+2027-05-06 | CXA-LIVE-164 | Require Approval Before Important Actions | AI9
+2027-05-07 | CXA-LIVE-165 | Make Your Assistant Remember a Task | AI9
+2027-05-08 | CXA-LIVE-166 | Make an Assistant Handle Complex Work | AI9
+2027-05-09 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-05-10 | CXA-LIVE-167 | Set Up the Advanced Security Lab Correctly | PENTEST
+2027-05-11 | CXA-LIVE-168 | Connect Several AI Services Carefully | AI9
+2027-05-12 | CXA-LIVE-169 | Learn to Record Reliable Evidence | PENTEST
+2027-05-13 | CXA-LIVE-170 | Run Automatic Tests for AI Answers | AI9
+2027-05-14 | CXA-LIVE-171 | Understand How Attackers Map a Network | PENTEST
+2027-05-15 | CXA-LIVE-172 | Stop Unwanted Instructions from Users | AI9
+2027-05-16 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-05-17 | CXA-LIVE-173 | Find Common Problems in Web Apps | PENTEST
+2027-05-18 | CXA-LIVE-174 | Improve Speed and Cost of AI Requests | AI9
+2027-05-19 | CXA-LIVE-175 | Test Login and Role Permissions in a Lab | PENTEST
+2027-05-20 | CXA-LIVE-176 | Make an AI Feature Work for Multiple Users | AI9
+2027-05-21 | CXA-LIVE-177 | Check APIs for Missing Security Rules | PENTEST
+2027-05-22 | CXA-LIVE-178 | Handle Errors in AI Products Clearly | AI9
+2027-05-23 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-05-24 | CXA-LIVE-179 | Learn Secure Database Usage | PENTEST
+2027-05-25 | CXA-LIVE-180 | Prepare an AI Product for Deployment | AI9
+2027-05-26 | CXA-LIVE-181 | Understand Browser Security Problems | PENTEST
+2027-05-27 | CXA-LIVE-182 | Monitor Your AI App After Launch | AI9
+2027-05-28 | CXA-LIVE-183 | Practice Basic Linux Hardening | PENTEST
+2027-05-29 | CXA-LIVE-184 | Document Model Limitations Honestly | AI9
+2027-05-30 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-05-31 | CXA-LIVE-185 | Understand Cloud Security Basics | PENTEST
+2027-06-01 | CXA-LIVE-186 | Make Your Final AI Project Easy to Use | AI9
+2027-06-02 | CXA-LIVE-187 | Learn Container and Deployment Safety | PENTEST
+2027-06-03 | CXA-LIVE-188 | Practice Explaining Your AI Project | AI9
+2027-06-04 | CXA-LIVE-189 | Check Wi-Fi and Network Protection | PENTEST
+2027-06-05 | CXA-LIVE-190 | Improve the AI App's Welcome and Help Screens | AI9
+2027-06-06 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-06-07 | CXA-LIVE-191 | Understand Mobile Application Security | PENTEST
+2027-06-08 | CXA-LIVE-192 | Try a Smaller Model for a Simple Task | AI9
+2027-06-09 | CXA-LIVE-193 | Respond to a Security Alert | PENTEST
+2027-06-10 | CXA-LIVE-194 | Keep AI Project Data Organised | AI9
+2027-06-11 | CXA-LIVE-195 | Write Reports a Client Can Understand | PENTEST
+2027-06-12 | CXA-LIVE-196 | Create a Fair Test for Two AI Prompts | AI9
+2027-06-13 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-06-14 | CXA-LIVE-197 | Retest a Security Fix | PENTEST
+2027-06-15 | CXA-LIVE-198 | Build a Simple Tool-Using Study Assistant | AI9
+2027-06-16 | CXA-LIVE-199 | Plan Your Final Security Assessment | PENTEST
+2027-06-17 | CXA-LIVE-200 | Teach Your AI App to Say When It Doesn't Know | AI9
+2027-06-18 | CXA-LIVE-201 | Run the First Round of Your Security Assessment | PENTEST
+2027-06-19 | CXA-LIVE-202 | Make Long Tasks Easier for an AI Agent | AI9
+2027-06-20 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-06-21 | CXA-LIVE-203 | Find and Document a Second Security Risk | PENTEST
+2027-06-22 | CXA-LIVE-204 | Give Users a Way to Correct AI Results | AI9
+2027-06-23 | CXA-LIVE-205 | Review the Risks and Fixes with the Trainer | PENTEST
+2027-06-24 | CXA-LIVE-206 | Build a Safe Document Upload for an AI App | AI9
+2027-06-25 | CXA-LIVE-207 | Build a Better Security Dashboard or Report | PENTEST
+2027-06-26 | CXA-LIVE-208 | Let Your AI Tool Find Information in a Table | AI9
+2027-06-27 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-06-28 | CXA-LIVE-209 | Practice a Security Audit Presentation | PENTEST
+2027-06-29 | CXA-LIVE-210 | Try a Small Model Improvement Experiment | AI9
+2027-06-30 | CXA-LIVE-211 | Review a Security Report for Missing Evidence | PENTEST
+2027-07-01 | CXA-LIVE-212 | Design a Good AI Search Experience | AI9
+2027-07-02 | CXA-LIVE-213 | Create a Clear Fixing Plan for a Client | PENTEST
+2027-07-03 | CXA-LIVE-214 | Add Helpful Progress Messages to AI Tasks | AI9
+2027-07-04 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-07-05 | CXA-LIVE-215 | Test Whether Users Can Access Each Other's Data | PENTEST
+2027-07-06 | CXA-LIVE-216 | Review the Permissions of Every AI Tool | AI9
+2027-07-07 | CXA-LIVE-217 | Check a Deployed App before Public Launch | PENTEST
+2027-07-08 | CXA-LIVE-218 | Find and Fix Confusing AI Agent Failures | AI9
+2027-07-09 | CXA-LIVE-219 | Practice Reviewing a Team's Code Changes | PENTEST
+2027-07-10 | CXA-LIVE-220 | Test the AI App with Several Example Users | AI9
+2027-07-11 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-07-12 | CXA-LIVE-221 | Make a Basic Security Testing Checklist for Apps | PENTEST
+2027-07-13 | CXA-LIVE-222 | Prepare a Realistic Maintenance Plan for Your AI App | AI9
+2027-07-14 | CXA-LIVE-223 | Explain Security Results to a Nontechnical Client | PENTEST
+2027-07-15 | CXA-LIVE-224 | Make Your AI App Easier to Demonstrate | AI9
+2027-07-16 | CXA-LIVE-225 | Perform Your Final Security Recheck | PENTEST
+2027-07-17 | CXA-LIVE-226 | Check Your Final AI Project's Safety | AI9
+2027-07-18 | NO CLASS | Sunday: no class, no new compulsory assignment
+2027-07-19 | CXA-LIVE-227 | Complete the Cybersecurity Handover | PENTEST
+2027-07-20 | CXA-LIVE-228 | Complete Your Final AI Product Handover | AI9
+2027-07-21 | CXA-LIVE-229 | Complete Your Advanced Security Project | PENTEST
+2027-07-22 | CXA-LIVE-230 | Deliver Your Final AI and Agents Capstone | AI9
+2027-07-23 | CXA-LIVE-231 | Final Project Presentations and Internship Review | PENTEST,AI9
+
+================================================================================================================
+SECTION G — COMPLETE DATE-WISE CLASS DETAILS + ASSIGNMENTS
+================================================================================================================
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-001 | Sat 24 Oct 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Welcome to CodeXa and Your Internship
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Cybersecurity (2 months, 4 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Programming Full Stack - Java (6 months, 1 intern)
+  - UI/UX Design (3 months, 1 intern)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What CodeXa teaches and how your track is chosen.
+  2. How live classes and assignments work.
+  3. How to use your student dashboard.
+LIVE TRAINER DEMONSTRATION: Walk through the student app, timetable and submission screen.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Confirm profile, domain, college, academic year and learning goal.
+WHAT TO SUBMIT: Updated profile and one-paragraph goal.
+SUGGESTED DEADLINE: 2026-10-26 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 25 Oct 2026 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-002 | Mon 26 Oct 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Computers, Files and Software Explained
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Cybersecurity (2 months, 4 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Programming Full Stack - Java (6 months, 1 intern)
+  - UI/UX Design (3 months, 1 intern)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What hardware and software are.
+  2. What Windows, Linux and Android do.
+  3. Where projects, files and folders are kept.
+LIVE TRAINER DEMONSTRATION: Open folders, see file extensions and arrange a project folder.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Create a neatly named learning folder and explain five common computer terms.
+WHAT TO SUBMIT: Folder screenshot and five definitions.
+SUGGESTED DEADLINE: 2026-10-28 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-003 | Tue 27 Oct 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Websites, Mobile Apps and Other Digital Products
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Cybersecurity (2 months, 4 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Programming Full Stack - Java (6 months, 1 intern)
+  - UI/UX Design (3 months, 1 intern)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. How a normal website differs from a web application.
+  2. How Android and iOS apps differ from desktop tools.
+  3. Examples of chat apps, games, AI tools and dashboards.
+LIVE TRAINER DEMONSTRATION: Compare real sites and apps by what they do and where they run.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Pick three products and explain whether each is a website, web app or mobile app.
+WHAT TO SUBMIT: Short comparison table.
+SUGGESTED DEADLINE: 2026-10-29 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-004 | Wed 28 Oct 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: What Is Coding and Why Do Developers Use It?
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Cybersecurity (2 months, 4 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Programming Full Stack - Java (6 months, 1 intern)
+  - UI/UX Design (3 months, 1 intern)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What a program and instructions are.
+  2. How inputs, conditions and repeated steps work.
+  3. Why AI-generated code still needs checking.
+LIVE TRAINER DEMONSTRATION: Turn a daily routine into a simple flowchart and pseudocode.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Draw two flowcharts for a login and a calculator.
+WHAT TO SUBMIT: Two photographed or digital flowcharts.
+SUGGESTED DEADLINE: 2026-10-30 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-005 | Thu 29 Oct 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: How the Internet and Websites Work
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Cybersecurity (2 months, 4 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Programming Full Stack - Java (6 months, 1 intern)
+  - UI/UX Design (3 months, 1 intern)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What a browser asks a server for.
+  2. What a domain and hosting mean.
+  3. Why HTTPS helps protect connections.
+LIVE TRAINER DEMONSTRATION: Follow a website request from typed URL to a displayed page.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Draw how a visitor opens a website and label browser, server and domain.
+WHAT TO SUBMIT: One labelled diagram.
+SUGGESTED DEADLINE: 2026-10-31 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-006 | Fri 30 Oct 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Frontend, Backend, Database and API Basics
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Cybersecurity (2 months, 4 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Programming Full Stack - Java (6 months, 1 intern)
+  - UI/UX Design (3 months, 1 intern)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What users see on a screen.
+  2. How a server handles actions and saves data.
+  3. How an API connects different parts.
+LIVE TRAINER DEMONSTRATION: Trace a registration form from button click to database.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Draw a simple signup system and explain the job of each part.
+WHAT TO SUBMIT: App architecture sketch.
+SUGGESTED DEADLINE: 2026-11-01 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-007 | Sat 31 Oct 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Install Your Developer Tools and Learn Your IDE
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Cybersecurity (2 months, 4 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Programming Full Stack - Java (6 months, 1 intern)
+  - UI/UX Design (3 months, 1 intern)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What an IDE is and why it helps.
+  2. How to install VS Code and useful extensions.
+  3. How to find the terminal and open project folders.
+LIVE TRAINER DEMONSTRATION: Install VS Code, open terminal and make a folder.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Install the selected IDE, open a folder and capture the terminal output.
+WHAT TO SUBMIT: Setup checklist and screenshot.
+SUGGESTED DEADLINE: 2026-11-02 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 01 Nov 2026 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-008 | Mon 02 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Create Your First Simple Web Page
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Cybersecurity (2 months, 4 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Programming Full Stack - Java (6 months, 1 intern)
+  - UI/UX Design (3 months, 1 intern)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What HTML and CSS do.
+  2. How headings, paragraphs and buttons are made.
+  3. How to open a page on your own computer.
+LIVE TRAINER DEMONSTRATION: Write a beginner Hello CodeXa HTML page and style a button.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Create an About Me page with a heading, list and button.
+WHAT TO SUBMIT: HTML file and browser screenshot.
+SUGGESTED DEADLINE: 2026-11-04 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-009 | Tue 03 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Git and GitHub from the Beginning
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Cybersecurity (2 months, 4 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Programming Full Stack - Java (6 months, 1 intern)
+  - UI/UX Design (3 months, 1 intern)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Why we keep different versions of work.
+  2. What a repository, commit and push mean.
+  3. How GitHub shows your project history.
+LIVE TRAINER DEMONSTRATION: Create a repository, make a first commit and push it.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Create a public practice repository without personal secrets.
+WHAT TO SUBMIT: Repository URL and screenshot of first commit.
+SUGGESTED DEADLINE: 2026-11-05 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-010 | Wed 04 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Save Changes and Fix Mistakes with GitHub
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Cybersecurity (2 months, 4 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Programming Full Stack - Java (6 months, 1 intern)
+  - UI/UX Design (3 months, 1 intern)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. How to read changes before saving.
+  2. Why branches and README files matter.
+  3. How to recover from an unwanted change.
+LIVE TRAINER DEMONSTRATION: Make a second commit, add a README and inspect history.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Add README and one improvement to yesterday's project.
+WHAT TO SUBMIT: Repo link with two commits.
+SUGGESTED DEADLINE: 2026-11-06 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-011 | Thu 05 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Ask AI Better Questions While Learning
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Cybersecurity (2 months, 4 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Programming Full Stack - Java (6 months, 1 intern)
+  - UI/UX Design (3 months, 1 intern)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Difference between AI explanation and reliable proof.
+  2. How to give context and clear instructions.
+  3. Why generated code must be tested.
+LIVE TRAINER DEMONSTRATION: Ask an AI assistant to explain simple code and check the result.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Write a clear prompt and list two mistakes or limitations you checked.
+WHAT TO SUBMIT: Prompt, AI output and fact-check notes.
+SUGGESTED DEADLINE: 2026-11-07 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2024 batch, third year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-012 | Fri 06 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Plan a Website or App Before Building
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Cybersecurity (2 months, 4 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Programming Full Stack - Java (6 months, 1 intern)
+  - UI/UX Design (3 months, 1 intern)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. How to choose a real user problem.
+  2. What pages and features a small project needs.
+  3. How to separate essential features from extras.
+LIVE TRAINER DEMONSTRATION: Write requirements for a simple attendance or notes app.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Make a one-page project idea with users, pages and five essential features.
+WHAT TO SUBMIT: Project idea document.
+SUGGESTED DEADLINE: 2026-11-08 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2024 batch, third year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-013 | Sat 07 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Draw Your First App Screen
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Cybersecurity (2 months, 4 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Programming Full Stack - Java (6 months, 1 intern)
+  - UI/UX Design (3 months, 1 intern)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. How a user moves between pages.
+  2. Why screen layout and buttons matter.
+  3. How to sketch without advanced design software.
+LIVE TRAINER DEMONSTRATION: Draw login, home and profile screens and explain navigation.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Sketch three connected screens for your chosen project.
+WHAT TO SUBMIT: Screen sketches with arrows.
+SUGGESTED DEADLINE: 2026-11-09 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2024 batch, third year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 08 Nov 2026 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-014 | Mon 09 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Build a Tiny Demo and Check Your Basics
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Cybersecurity (2 months, 4 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Programming Full Stack - Java (6 months, 1 intern)
+  - UI/UX Design (3 months, 1 intern)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. How to present what you made.
+  2. How to find broken links and buttons.
+  3. How to receive feedback and improve.
+LIVE TRAINER DEMONSTRATION: Show a simple page or clickable drawing and run a short oral test.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Submit a small demo, GitHub link and three things you learned.
+WHAT TO SUBMIT: Demo URL/screenshot and short learning report.
+SUGGESTED DEADLINE: 2026-11-11 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2024 batch, third year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-015 | Tue 10 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: What Cybersecurity Means in Real Life
+ATTENDING DOMAINS:
+  - Cybersecurity (2 months, 4 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. What security teams protect.
+  2. Difference between a threat and a weakness.
+  3. How attackers and defenders think.
+LIVE TRAINER DEMONSTRATION: Identify common security mistakes in an example website.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): List ten practical ways to keep accounts and devices safe.
+WHAT TO SUBMIT: Safety checklist.
+SUGGESTED DEADLINE: 2026-11-12 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2024 batch, third year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-016 | Wed 11 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: What Generative AI Can and Cannot Do
+ATTENDING DOMAINS:
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Full-Stack Development with AI (3 months, 20 interns)
+YOU WILL LEARN:
+  1. How text-generating AI differs from search.
+  2. Why answers sometimes sound right but are wrong.
+  3. What tasks need verification.
+LIVE TRAINER DEMONSTRATION: Compare two AI answers with source checks.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Write five good and bad uses of AI.
+WHAT TO SUBMIT: Comparison notes.
+SUGGESTED DEADLINE: 2026-11-13 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2024 batch, third year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-017 | Thu 12 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Plan an App That Is Easy to Use
+ATTENDING DOMAINS:
+  - UI/UX Design (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What users want from the app.
+  2. How to choose only the essential screens.
+  3. How mobile-first design differs from desktop.
+LIVE TRAINER DEMONSTRATION: Walk through a user journey from opening app to completing a task.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Draw the main user journey for your project.
+WHAT TO SUBMIT: User flow drawing.
+SUGGESTED DEADLINE: 2026-11-14 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2024 batch, third year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-018 | Fri 13 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Learn Linux Using Simple Commands
+ATTENDING DOMAINS:
+  - Cybersecurity (2 months, 4 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. How Linux differs from Windows.
+  2. Files, folders and navigation commands.
+  3. Why permissions matter.
+LIVE TRAINER DEMONSTRATION: Run pwd, ls, cd and mkdir in an approved lab.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Complete ten basic Linux commands and explain each.
+WHAT TO SUBMIT: Command log with screenshots.
+SUGGESTED DEADLINE: 2026-11-15 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2024 batch, third year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-019 | Sat 14 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Learn How Computers Talk to Each Other
+ATTENDING DOMAINS:
+  - Cybersecurity (2 months, 4 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. What an IP address is.
+  2. What a router and network do.
+  3. What DNS, ports and protocols mean.
+LIVE TRAINER DEMONSTRATION: Inspect IP settings and test connectivity in a practice network.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Draw a small home network and label five components.
+WHAT TO SUBMIT: Labelled diagram.
+SUGGESTED DEADLINE: 2026-11-16 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2024 batch, third year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 15 Nov 2026 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-020 | Mon 16 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Ask AI to Make Your First Working Website
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Give AI a design brief with real requirements.
+  2. Run the generated site locally.
+  3. Identify what is missing.
+LIVE TRAINER DEMONSTRATION: Generate a home page and open it in the browser.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Make a working homepage and capture desktop/mobile results.
+WHAT TO SUBMIT: Working link or screenshots.
+SUGGESTED DEADLINE: 2026-11-18 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2024 batch, third year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-021 | Tue 17 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Set Up a Safe Hacking Practice Lab
+ATTENDING DOMAINS:
+  - Cybersecurity (2 months, 4 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. Why permission is required before testing.
+  2. What a virtual machine is.
+  3. How to keep labs separate from public systems.
+LIVE TRAINER DEMONSTRATION: Set up a local lab or guided browser-based sandbox.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Create a lab setup checklist and rules of use.
+WHAT TO SUBMIT: Lab configuration screenshot and checklist.
+SUGGESTED DEADLINE: 2026-11-19 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2024 batch, third year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-022 | Wed 18 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Write Clear Instructions for an AI Assistant
+ATTENDING DOMAINS:
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Full-Stack Development with AI (3 months, 20 interns)
+YOU WILL LEARN:
+  1. How role, context, task and output format improve results.
+  2. Why examples help.
+  3. How to avoid vague prompts.
+LIVE TRAINER DEMONSTRATION: Rewrite a poor prompt into a helpful one.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Test three prompts on one task and compare.
+WHAT TO SUBMIT: Prompt comparison.
+SUGGESTED DEADLINE: 2026-11-20 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2024 batch, third year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-023 | Thu 19 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Design Simple and Clear App Screens
+ATTENDING DOMAINS:
+  - UI/UX Design (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. How layout guides attention.
+  2. How labels and buttons reduce confusion.
+  3. How to use spacing and readable text.
+LIVE TRAINER DEMONSTRATION: Design a login and home screen in Figma or a sketch tool.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Create two screens with clear buttons and labels.
+WHAT TO SUBMIT: Screen design link/images.
+SUGGESTED DEADLINE: 2026-11-21 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2024 batch, third year; NEC 2025 batch, second year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-024 | Fri 20 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Keep Accounts Safe with Passwords and Login Rules
+ATTENDING DOMAINS:
+  - Cybersecurity (2 months, 4 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. How passwords and MFA work.
+  2. What common account attacks look like.
+  3. Why least privilege reduces risk.
+LIVE TRAINER DEMONSTRATION: Compare weak and strong authentication policies.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Review a mock app login checklist and recommend improvements.
+WHAT TO SUBMIT: Account security review.
+SUGGESTED DEADLINE: 2026-11-22 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2024 batch, third year; NEC 2025 batch, second year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-025 | Sat 21 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Make App Screens Connect in the Right Order
+ATTENDING DOMAINS:
+  - UI/UX Design (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What navigation means.
+  2. How a user returns and moves forward.
+  3. How to avoid dead-end pages.
+LIVE TRAINER DEMONSTRATION: Link three screens in a clickable prototype.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Create a three-screen clickable app flow.
+WHAT TO SUBMIT: Prototype link.
+SUGGESTED DEADLINE: 2026-11-23 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2024 batch, third year; NEC 2025 batch, second year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 22 Nov 2026 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-026 | Mon 23 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Make Your Website Look Good on Mobile
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What responsive layouts are.
+  2. How spacing and text sizing affect readability.
+  3. How to test phone and laptop widths.
+LIVE TRAINER DEMONSTRATION: Fix a broken mobile layout by giving precise instructions.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Improve one mobile layout and record before/after.
+WHAT TO SUBMIT: Before/after screenshots.
+SUGGESTED DEADLINE: 2026-11-25 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2025 batch, second year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-027 | Tue 24 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Understand What Happens When You Open a Website
+ATTENDING DOMAINS:
+  - Cybersecurity (2 months, 4 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. How a browser makes requests.
+  2. What HTTP response codes show.
+  3. Where cookies and sessions are used.
+LIVE TRAINER DEMONSTRATION: Inspect browser developer tools on a safe practice page.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Record three request/response examples and explain them.
+WHAT TO SUBMIT: Screenshots and explanation.
+SUGGESTED DEADLINE: 2026-11-26 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2025 batch, second year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-028 | Wed 25 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Make AI Answer in a Useful Format
+ATTENDING DOMAINS:
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Full-Stack Development with AI (3 months, 20 interns)
+YOU WILL LEARN:
+  1. What structured responses look like.
+  2. How to ask for simple lists and tables.
+  3. How to check incomplete answers.
+LIVE TRAINER DEMONSTRATION: Create a study-plan generator with a repeatable format.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Build five sample outputs and score them.
+WHAT TO SUBMIT: Output samples.
+SUGGESTED DEADLINE: 2026-11-27 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2025 batch, second year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-029 | Thu 26 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Build and Test Reusable App Buttons
+ATTENDING DOMAINS:
+  - UI/UX Design (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Why consistent buttons matter.
+  2. How to show loading and errors.
+  3. How different screen sizes affect taps.
+LIVE TRAINER DEMONSTRATION: Build a reusable button in Flutter and the matching Figma design.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Make one reusable button with disabled/loading states.
+WHAT TO SUBMIT: Component screenshot or code link.
+SUGGESTED DEADLINE: 2026-11-28 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2025 batch, second year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-030 | Fri 27 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Learn Basic Network Troubleshooting
+ATTENDING DOMAINS:
+  - Cybersecurity (2 months, 4 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. What ping and traceroute help diagnose.
+  2. How to read ports on a local computer.
+  3. How to document findings without attacking others.
+LIVE TRAINER DEMONSTRATION: Use safe network diagnostic tools on own lab.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Investigate a deliberately broken local connection.
+WHAT TO SUBMIT: Troubleshooting note.
+SUGGESTED DEADLINE: 2026-11-29 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2025 batch, second year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-031 | Sat 28 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Recognize Fake Links and Online Scams
+ATTENDING DOMAINS:
+  - Cybersecurity (2 months, 4 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. How phishing and social engineering work.
+  2. How to spot misleading links.
+  3. How to report suspicious messages safely.
+LIVE TRAINER DEMONSTRATION: Compare real and fake sample messages without opening bad links.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Create a five-point phishing awareness poster.
+WHAT TO SUBMIT: Poster image or PDF.
+SUGGESTED DEADLINE: 2026-11-30 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2025 batch, second year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 29 Nov 2026 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-032 | Mon 30 Nov 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Change Colours, Fonts and Sections without Breaking Things
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Why design consistency matters.
+  2. How to request small changes one by one.
+  3. How to compare before and after changes.
+LIVE TRAINER DEMONSTRATION: Ask AI to update navigation and a theme safely.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Apply one controlled UI redesign.
+WHAT TO SUBMIT: Change summary and screenshots.
+SUGGESTED DEADLINE: 2026-12-02 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2025 batch, second year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-033 | Tue 01 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Understand Common Website Security Mistakes
+ATTENDING DOMAINS:
+  - Cybersecurity (2 months, 4 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. Why bad passwords and unsafe inputs are dangerous.
+  2. What cross-site scripting means in simple language.
+  3. How security fixes reduce risk.
+LIVE TRAINER DEMONSTRATION: Show harmless unsafe-input examples in a local demo.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Find weaknesses in a provided mock checklist.
+WHAT TO SUBMIT: Completed worksheet.
+SUGGESTED DEADLINE: 2026-12-03 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2025 batch, second year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-034 | Wed 02 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Connect an AI Feature to a Simple App
+ATTENDING DOMAINS:
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Full-Stack Development with AI (3 months, 20 interns)
+YOU WILL LEARN:
+  1. Why AI apps use server-side requests.
+  2. How to send user text.
+  3. Why public code must not expose API keys.
+LIVE TRAINER DEMONSTRATION: Demonstrate a safe backend endpoint calling an AI provider.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Draw and explain an AI request flow.
+WHAT TO SUBMIT: Architecture sketch.
+SUGGESTED DEADLINE: 2026-12-04 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2025 batch, second year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-035 | Thu 03 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Improve an App Using Real Feedback
+ATTENDING DOMAINS:
+  - UI/UX Design (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. How to ask someone to try a task.
+  2. How to note where they become confused.
+  3. How to prioritize fixes.
+LIVE TRAINER DEMONSTRATION: Run a short usability test of a sample app.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Ask two people to try your prototype and note improvements.
+WHAT TO SUBMIT: Feedback notes.
+SUGGESTED DEADLINE: 2026-12-05 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2025 batch, second year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-036 | Fri 04 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Protect Files, Devices and Networks
+ATTENDING DOMAINS:
+  - Cybersecurity (2 months, 4 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. What updates and backups prevent.
+  2. What antivirus and firewalls do.
+  3. How access settings protect shared files.
+LIVE TRAINER DEMONSTRATION: Check security settings in a demonstration device.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Create a personal device safety checklist.
+WHAT TO SUBMIT: Annotated checklist.
+SUGGESTED DEADLINE: 2026-12-06 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2025 batch, second year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-037 | Sat 05 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Build the Next Part of Your Final Project (Workshop 1)
+ATTENDING DOMAINS:
+  - UI/UX Design (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Set one measurable goal for the current project milestone.
+  2. Work on that goal live with the instructor checking each stage.
+  3. Run a simple test and record what succeeded or failed.
+LIVE TRAINER DEMONSTRATION: Instructor reviews one learner project live and helps troubleshoot the current milestone.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Finish the demonstrated improvement and record two test results.
+WHAT TO SUBMIT: Updated project link, short progress note and two test results.
+SUGGESTED DEADLINE: 2026-12-07 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: NEC 2025 batch, second year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 06 Dec 2026 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-038 | Mon 07 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Find and Fix Mistakes in AI-Built Websites
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What browser errors look like.
+  2. How to reproduce a broken button.
+  3. How to ask AI for a limited, testable fix.
+LIVE TRAINER DEMONSTRATION: Debug a deliberately broken contact button.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Fix two real issues and explain how you tested them.
+WHAT TO SUBMIT: Bug report and fixed commit.
+SUGGESTED DEADLINE: 2026-12-09 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-039 | Tue 08 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Read Logs and Spot Unusual Activity
+ATTENDING DOMAINS:
+  - Cybersecurity (2 months, 4 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. What logs contain.
+  2. How failed logins can reveal problems.
+  3. Why timing and context are important.
+LIVE TRAINER DEMONSTRATION: Read a prepared sample security log.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Identify five interesting events in mock logs.
+WHAT TO SUBMIT: Log interpretation worksheet.
+SUGGESTED DEADLINE: 2026-12-10 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-040 | Wed 09 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Give Your AI Assistant Documents to Read
+ATTENDING DOMAINS:
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Full-Stack Development with AI (3 months, 20 interns)
+YOU WILL LEARN:
+  1. Why AI needs correct reference material.
+  2. How short documents can be searched.
+  3. Why sources should be shown.
+LIVE TRAINER DEMONSTRATION: Build a tiny approved-document question-answer demo.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Prepare three small files and ten grounded questions.
+WHAT TO SUBMIT: Document list and test questions.
+SUGGESTED DEADLINE: 2026-12-11 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-041 | Thu 10 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Fix Problems Found in Project Testing (Workshop 2)
+ATTENDING DOMAINS:
+  - UI/UX Design (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Set one measurable goal for the current project milestone.
+  2. Work on that goal live with the instructor checking each stage.
+  3. Run a simple test and record what succeeded or failed.
+LIVE TRAINER DEMONSTRATION: Instructor reviews one learner project live and helps troubleshoot the current milestone.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Finish the demonstrated improvement and record two test results.
+WHAT TO SUBMIT: Updated project link, short progress note and two test results.
+SUGGESTED DEADLINE: 2026-12-12 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-042 | Fri 11 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Learn the Steps of a Security Check
+ATTENDING DOMAINS:
+  - Cybersecurity (2 months, 4 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. Scope, permission and rules.
+  2. How to observe and record findings.
+  3. How to avoid changing other people's systems.
+LIVE TRAINER DEMONSTRATION: Review a sample approved assessment plan.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Write a simple one-page legal testing plan for a lab.
+WHAT TO SUBMIT: Signed-off sample scope plan.
+SUGGESTED DEADLINE: 2026-12-13 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-043 | Sat 12 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Explain a Security Problem Clearly
+ATTENDING DOMAINS:
+  - Cybersecurity (2 months, 4 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. How to describe impact without exaggeration.
+  2. How to reproduce safely.
+  3. How to suggest a practical fix.
+LIVE TRAINER DEMONSTRATION: Build a finding from a supplied safe-lab scenario.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Write one clear finding with screenshot and fix advice.
+WHAT TO SUBMIT: Draft security finding.
+SUGGESTED DEADLINE: 2026-12-14 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 13 Dec 2026 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-044 | Mon 14 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Create More Pages and Link Them Together
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What routing and page navigation mean.
+  2. How to keep menus consistent.
+  3. What a broken link looks like.
+LIVE TRAINER DEMONSTRATION: Add About, Projects and Contact pages to a demo.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Build three working pages with navigation.
+WHAT TO SUBMIT: Deployed or local demo evidence.
+SUGGESTED DEADLINE: 2026-12-16 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-045 | Tue 15 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Build Your Beginner Cybersecurity Project
+ATTENDING DOMAINS:
+  - Cybersecurity (2 months, 4 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. Pick one legal lab target.
+  2. Combine account, device and network checks.
+  3. Prepare a student-friendly report.
+LIVE TRAINER DEMONSTRATION: Work through a simple prebuilt assessment template.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Complete your cybersecurity mini-project.
+WHAT TO SUBMIT: Screenshots and report draft.
+SUGGESTED DEADLINE: 2026-12-17 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-046 | Wed 16 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Let Your AI Assistant Use a Simple Tool
+ATTENDING DOMAINS:
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Full-Stack Development with AI (3 months, 20 interns)
+YOU WILL LEARN:
+  1. Difference between answering and taking an action.
+  2. How tool permissions work.
+  3. Why users should confirm risky actions.
+LIVE TRAINER DEMONSTRATION: Demo an assistant that calls a safe calculator tool.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Design an agent tool with input and output rules.
+WHAT TO SUBMIT: Tool specification.
+SUGGESTED DEADLINE: 2026-12-18 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-047 | Thu 17 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Show Your Project Progress and Get Feedback (Workshop 3)
+ATTENDING DOMAINS:
+  - UI/UX Design (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Set one measurable goal for the current project milestone.
+  2. Work on that goal live with the instructor checking each stage.
+  3. Run a simple test and record what succeeded or failed.
+LIVE TRAINER DEMONSTRATION: Instructor reviews one learner project live and helps troubleshoot the current milestone.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Finish the demonstrated improvement and record two test results.
+WHAT TO SUBMIT: Updated project link, short progress note and two test results.
+SUGGESTED DEADLINE: 2026-12-19 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-048 | Fri 18 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Practice Your Cybersecurity Final Test
+ATTENDING DOMAINS:
+  - Cybersecurity (2 months, 4 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. Review Linux and networking basics.
+  2. Practice identifying risks.
+  3. Explain your mini-project decisions.
+LIVE TRAINER DEMONSTRATION: Run mock questions and a small lab task.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Fix feedback from the mock practical and rehearse explanation.
+WHAT TO SUBMIT: Corrected report and answer notes.
+SUGGESTED DEADLINE: 2026-12-20 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-049 | Sat 19 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Improve Your Project Documentation (Workshop 4)
+ATTENDING DOMAINS:
+  - UI/UX Design (3 months, 1 intern)
+  - Mobile App Development (3 months, 1 intern)
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Set one measurable goal for the current project milestone.
+  2. Work on that goal live with the instructor checking each stage.
+  3. Run a simple test and record what succeeded or failed.
+LIVE TRAINER DEMONSTRATION: Instructor reviews one learner project live and helps troubleshoot the current milestone.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Finish the demonstrated improvement and record two test results.
+WHAT TO SUBMIT: Updated project link, short progress note and two test results.
+SUGGESTED DEADLINE: 2026-12-21 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 20 Dec 2026 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-050 | Mon 21 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Use GitHub to Keep Your AI Project Safe
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Why each important change needs a checkpoint.
+  2. How to inspect a diff.
+  3. How to undo a bad AI edit.
+LIVE TRAINER DEMONSTRATION: Demonstrate rollback after a poor generated change.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Make three meaningful commits and recover one test edit.
+WHAT TO SUBMIT: Commit history screenshot.
+SUGGESTED DEADLINE: 2026-12-23 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-051 | Tue 22 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Build the Next Part of Your Final Project (Workshop 1)
+ATTENDING DOMAINS:
+  - Cybersecurity (2 months, 4 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. Set one measurable goal for the current project milestone.
+  2. Work on that goal live with the instructor checking each stage.
+  3. Run a simple test and record what succeeded or failed.
+LIVE TRAINER DEMONSTRATION: Instructor reviews one learner project live and helps troubleshoot the current milestone.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Finish the demonstrated improvement and record two test results.
+WHAT TO SUBMIT: Updated project link, short progress note and two test results.
+SUGGESTED DEADLINE: 2026-12-24 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-052 | Wed 23 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Cybersecurity Final Class and Project Review
+ATTENDING DOMAINS:
+  - Cybersecurity (2 months, 4 interns)
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. Demonstrate core skills.
+  2. Explain safe testing and permissions.
+  3. Submit the final beginner report.
+LIVE TRAINER DEMONSTRATION: Evaluate presentations and simple safe-lab demonstrations.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Submit final report, lab evidence and short reflections.
+WHAT TO SUBMIT: Final report and practical rubric.
+SUGGESTED DEADLINE: 2026-12-25 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-053 | Thu 24 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Get Started with Flutter and Dart
+ATTENDING DOMAINS:
+  - Mobile App Development (3 months, 1 intern)
+YOU WILL LEARN:
+  1. What Flutter and Dart are.
+  2. How an app project is structured.
+  3. How to run an emulator or connected phone.
+LIVE TRAINER DEMONSTRATION: Run a starter Flutter app and locate its main screen.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Launch a Flutter starter app.
+WHAT TO SUBMIT: App screenshot and repo.
+SUGGESTED DEADLINE: 2026-12-26 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Fri 25 Dec 2026 — NO CLASS: Christmas (one day, proposed)
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-054 | Sat 26 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Learn the Basics of Figma
+ATTENDING DOMAINS:
+  - UI/UX Design (3 months, 1 intern)
+YOU WILL LEARN:
+  1. What frames, shapes and text styles are.
+  2. How to create screen sizes.
+  3. How to organise design pages.
+LIVE TRAINER DEMONSTRATION: Make a Figma file with two mobile frames.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Create a profile and home screen.
+WHAT TO SUBMIT: Figma link.
+SUGGESTED DEADLINE: 2026-12-28 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 27 Dec 2026 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-055 | Mon 28 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Build a Form that Actually Works
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Difference between appearance and functionality.
+  2. How validation checks bad input.
+  3. Where form responses should go.
+LIVE TRAINER DEMONSTRATION: Create a contact form and verify success/error states.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Add one usable form with validation.
+WHAT TO SUBMIT: Form test screenshots.
+SUGGESTED DEADLINE: 2026-12-30 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: JNTUK 2026 batch, first year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-056 | Tue 29 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Make an AI Agent Follow Steps Safely
+ATTENDING DOMAINS:
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Full-Stack Development with AI (3 months, 20 interns)
+YOU WILL LEARN:
+  1. How to break tasks into checkpoints.
+  2. How to handle a failed step.
+  3. Why human review is needed.
+LIVE TRAINER DEMONSTRATION: Demo a plan-then-execute assistant in a safe sandbox.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Design a five-step workflow with stop conditions.
+WHAT TO SUBMIT: Workflow diagram.
+SUGGESTED DEADLINE: 2026-12-31 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: JNTUK 2026 batch, first year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-057 | Wed 30 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Save User Data in a Real Database
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Why an app needs persistent data.
+  2. How to model a simple record.
+  3. Why secrets must not appear in frontend code.
+LIVE TRAINER DEMONSTRATION: Connect a demo app to a test database.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Save and show a test record in your app.
+WHAT TO SUBMIT: Video-free screenshots and test record.
+SUGGESTED DEADLINE: 2027-01-01 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: JNTUK 2026 batch, first year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-058 | Thu 31 Dec 2026 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Build a Flutter Screen with Buttons
+ATTENDING DOMAINS:
+  - Mobile App Development (3 months, 1 intern)
+YOU WILL LEARN:
+  1. How widgets form a screen.
+  2. What rows and columns do.
+  3. How buttons respond to taps.
+LIVE TRAINER DEMONSTRATION: Build a home screen with a clickable button.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Create a simple two-section screen.
+WHAT TO SUBMIT: Screenshot and source link.
+SUGGESTED DEADLINE: 2027-01-02 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: JNTUK 2026 batch, first year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-059 | Fri 01 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Add Login and Keep User Accounts Safe
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What authentication does.
+  2. How protected pages work.
+  3. Why users must never access others' records.
+LIVE TRAINER DEMONSTRATION: Add a test login using an approved authentication service.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Make login, logout and one protected page work.
+WHAT TO SUBMIT: Test screenshots and code link.
+SUGGESTED DEADLINE: 2027-01-03 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: JNTUK 2026 batch, first year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-060 | Sat 02 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Make Your App Design Look Consistent
+ATTENDING DOMAINS:
+  - UI/UX Design (3 months, 1 intern)
+YOU WILL LEARN:
+  1. How to choose colours and fonts.
+  2. Why spacing systems matter.
+  3. How reusable components save time.
+LIVE TRAINER DEMONSTRATION: Build a small button and input component set.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Make a mini style guide.
+WHAT TO SUBMIT: Figma component page.
+SUGGESTED DEADLINE: 2027-01-04 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: JNTUK 2026 batch, first year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 03 Jan 2027 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-061 | Mon 04 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Connect Your Website to an API
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What an API request sends and returns.
+  2. How to read JSON results.
+  3. How to handle loading and errors.
+LIVE TRAINER DEMONSTRATION: Display data from a safe public or mock API.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Add one data-driven section with error message.
+WHAT TO SUBMIT: Screenshot and short explanation.
+SUGGESTED DEADLINE: 2027-01-06 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: JNTUK 2026 batch, first year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-062 | Tue 05 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Check Whether Your AI Assistant Works Properly
+ATTENDING DOMAINS:
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Full-Stack Development with AI (3 months, 20 interns)
+YOU WILL LEARN:
+  1. How to create normal and tricky test cases.
+  2. How to spot wrong facts.
+  3. How to handle user data carefully.
+LIVE TRAINER DEMONSTRATION: Test a demo chatbot against a prepared checklist.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Run ten queries and grade the outcomes.
+WHAT TO SUBMIT: AI test log.
+SUGGESTED DEADLINE: 2027-01-07 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: JNTUK 2026 batch, first year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-063 | Wed 06 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Turn Your Website into a Useful Tool
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Difference between a landing page and a working web app.
+  2. How to define a simple workflow.
+  3. How to test start-to-finish use.
+LIVE TRAINER DEMONSTRATION: Turn a static page into a small notes or tracker app.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Finish a two-step working feature.
+WHAT TO SUBMIT: Feature demo link.
+SUGGESTED DEADLINE: 2027-01-08 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: JNTUK 2026 batch, first year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-064 | Thu 07 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Add More Pages to Your Flutter App
+ATTENDING DOMAINS:
+  - Mobile App Development (3 months, 1 intern)
+YOU WILL LEARN:
+  1. How navigation works in an app.
+  2. How to pass small data.
+  3. How to provide back navigation.
+LIVE TRAINER DEMONSTRATION: Connect home and details pages.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Create a working two-page flow.
+WHAT TO SUBMIT: Navigation screenshots.
+SUGGESTED DEADLINE: 2027-01-09 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: JNTUK 2026 batch, first year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-065 | Fri 08 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Add a Helpful AI Feature to Your Project
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. How to choose a feature AI can assist with.
+  2. Why secret API keys must stay server-side.
+  3. How to show useful errors.
+LIVE TRAINER DEMONSTRATION: Add a server-side AI text helper with sample inputs.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Add a safe AI helper and test five cases.
+WHAT TO SUBMIT: Test table and feature screenshots.
+SUGGESTED DEADLINE: 2027-01-10 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: JNTUK 2026 batch, first year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-066 | Sat 09 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Design a Full User Journey
+ATTENDING DOMAINS:
+  - UI/UX Design (3 months, 1 intern)
+YOU WILL LEARN:
+  1. Why users need clear steps.
+  2. How to handle errors and empty results.
+  3. How to organise multiple screens.
+LIVE TRAINER DEMONSTRATION: Build a clickable six-screen flow.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Produce six connected screens.
+WHAT TO SUBMIT: Figma prototype link.
+SUGGESTED DEADLINE: 2027-01-11 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: JNTUK 2026 batch, first year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 10 Jan 2027 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-067 | Mon 11 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Make an App-Like Experience from Your Website
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What a progressive web app is.
+  2. How installable web apps differ from native apps.
+  3. How to improve touch controls.
+LIVE TRAINER DEMONSTRATION: Make a simple web experience usable on a phone.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Add basic app-like navigation and clear mobile buttons.
+WHAT TO SUBMIT: Mobile screenshots.
+SUGGESTED DEADLINE: 2027-01-13 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: JNTUK 2026 batch, first year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-068 | Tue 12 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Build and Improve Your First AI Agent
+ATTENDING DOMAINS:
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Full-Stack Development with AI (3 months, 20 interns)
+YOU WILL LEARN:
+  1. How to combine prompts, tools and simple memory.
+  2. How to avoid runaway calls.
+  3. How to document limitations.
+LIVE TRAINER DEMONSTRATION: Build a small study or helpdesk agent with approval for actions.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Complete your minimal AI agent.
+WHAT TO SUBMIT: Prototype and test table.
+SUGGESTED DEADLINE: 2027-01-14 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: JNTUK 2026 batch, first year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-069 | Wed 13 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Test What AI Built Instead of Just Trusting It
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. How to write a test checklist.
+  2. How to check broken screens and permissions.
+  3. Why readable code and dependencies matter.
+LIVE TRAINER DEMONSTRATION: Test a login, form, empty result and network error.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Create and execute a ten-case test sheet.
+WHAT TO SUBMIT: Test results.
+SUGGESTED DEADLINE: 2027-01-15 23:59 IST (extend where academic break conflicts).
+EXAM WARNING — verify college/year before assigning attendance: JNTUK 2026 batch, first year.
+  Matching affected students are EXCUSED; their missed topic requires a future LIVE make-up.
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-070 | Thu 14 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Connect Your App to Online Data
+ATTENDING DOMAINS:
+  - Mobile App Development (3 months, 1 intern)
+YOU WILL LEARN:
+  1. How a mobile app requests data.
+  2. Why loading and error screens matter.
+  3. How to test offline behavior.
+LIVE TRAINER DEMONSTRATION: Load mock API data into a Flutter list.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Display remote data with an error message.
+WHAT TO SUBMIT: Screenshots and test note.
+SUGGESTED DEADLINE: 2027-01-16 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Fri 15 Jan 2027 — NO CLASS: Sankranti (one day, PROVISIONAL date)
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-071 | Sat 16 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Test Your Design with Other Students
+ATTENDING DOMAINS:
+  - UI/UX Design (3 months, 1 intern)
+YOU WILL LEARN:
+  1. How to ask unbiased questions.
+  2. What a usability issue is.
+  3. How to record changes after feedback.
+LIVE TRAINER DEMONSTRATION: Conduct a guided five-minute usability test.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Test with three people and summarize the issues.
+WHAT TO SUBMIT: Test report.
+SUGGESTED DEADLINE: 2027-01-18 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 17 Jan 2027 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-072 | Mon 18 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Put Your Website Online with a Link
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What deployment means.
+  2. How a host builds and serves code.
+  3. How to check public pages and HTTPS.
+LIVE TRAINER DEMONSTRATION: Deploy a safe demo app with environment variables configured properly.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Deploy your project and test it on another device.
+WHAT TO SUBMIT: Live URL and verification checklist.
+SUGGESTED DEADLINE: 2027-01-20 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-073 | Tue 19 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Present Your Generative AI Project
+ATTENDING DOMAINS:
+  - Generative AI & AI Agents (3 months, 1 intern)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+  - AI & Machine Learning (6 months, 5 interns)
+  - Full-Stack Development with AI (3 months, 20 interns)
+YOU WILL LEARN:
+  1. How to explain the problem and workflow.
+  2. How to demonstrate tools safely.
+  3. How to answer limitations and privacy questions.
+LIVE TRAINER DEMONSTRATION: Review a working AI agent and scoring rubric.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Submit final agent demo and reflection.
+WHAT TO SUBMIT: Project links and rubric.
+SUGGESTED DEADLINE: 2027-01-21 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-074 | Wed 20 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Give Your Project a Professional Finishing Touch
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Improve headings, accessibility and contact details.
+  2. Remove fake data and broken links.
+  3. Add README setup and usage notes.
+LIVE TRAINER DEMONSTRATION: Review an AI-generated app against a launch checklist.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Complete launch checklist and documentation.
+WHAT TO SUBMIT: Repository and readiness notes.
+SUGGESTED DEADLINE: 2027-01-22 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-075 | Thu 21 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Build, Test and Present Your Android App
+ATTENDING DOMAINS:
+  - Mobile App Development (3 months, 1 intern)
+YOU WILL LEARN:
+  1. What a debug APK is.
+  2. How to test different phone sizes.
+  3. What needs checking before distribution.
+LIVE TRAINER DEMONSTRATION: Build a development APK and install on a test device.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Submit an installable demo and an app test checklist.
+WHAT TO SUBMIT: APK location, screenshots and repo.
+SUGGESTED DEADLINE: 2027-01-23 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-076 | Fri 22 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Show Your Finished AI-Built Project
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Web Development (6 months, 1 intern)
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Explain the idea and who benefits.
+  2. Demonstrate all real features.
+  3. State clearly what AI created and what you tested.
+LIVE TRAINER DEMONSTRATION: Give guided final project demonstration and questions.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Submit final URL, repo, working features and short reflection.
+WHAT TO SUBMIT: Final project submission.
+SUGGESTED DEADLINE: 2027-01-24 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-077 | Sat 23 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Final Projects: Websites, Mobile Apps, UI/UX and AI Assistants
+ATTENDING DOMAINS:
+  - Full-Stack Development with AI (3 months, 20 interns)
+  - Mobile App Development (3 months, 1 intern)
+  - UI/UX Design (3 months, 1 intern)
+  - Generative AI & AI Agents (3 months, 1 intern)
+YOU WILL LEARN:
+  1. Present only the project belonging to your enrolled domain.
+  2. Demonstrate real working features and explain testing.
+  3. Receive individual improvement and completion feedback.
+LIVE TRAINER DEMONSTRATION: Instructor reviews four domain projects live, with timed presentation slots.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Submit final project link, screenshots, README and list of tests.
+WHAT TO SUBMIT: Domain-specific final project link and evaluation checklist.
+SUGGESTED DEADLINE: 2027-01-25 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 24 Jan 2027 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-078 | Mon 25 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Start Python for Real Website Projects
+ATTENDING DOMAINS:
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What Python can build.
+  2. How to run scripts and packages.
+  3. Why virtual environments keep projects clean.
+LIVE TRAINER DEMONSTRATION: Set up Python and run a tiny script.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Create a project folder and hello script.
+WHAT TO SUBMIT: Repo and terminal screenshot.
+SUGGESTED DEADLINE: 2027-01-27 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-079 | Tue 26 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: What Machine Learning Really Does
+ATTENDING DOMAINS:
+  - AI & Machine Learning (6 months, 5 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+YOU WILL LEARN:
+  1. Difference between fixed rules and learning from examples.
+  2. What training data contains.
+  3. How to choose a realistic prediction task.
+LIVE TRAINER DEMONSTRATION: Compare rule-based and learned decisions on a toy dataset.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Write three suitable and unsuitable ML use cases.
+WHAT TO SUBMIT: Use-case worksheet.
+SUGGESTED DEADLINE: 2027-01-28 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-080 | Wed 27 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Ethical Hacking Means Working with Permission
+ATTENDING DOMAINS:
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. What written scope means.
+  2. What is allowed and forbidden.
+  3. How to document results clearly.
+LIVE TRAINER DEMONSTRATION: Review a sample permission letter and lab scope.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Make an approved test plan for a mock website.
+WHAT TO SUBMIT: Test scope document.
+SUGGESTED DEADLINE: 2027-01-29 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-081 | Thu 28 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Java from Zero: Write Your First Program
+ATTENDING DOMAINS:
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What Java is used for.
+  2. How JDK and IDE work.
+  3. How to run a basic program.
+LIVE TRAINER DEMONSTRATION: Compile and run Hello CodeXa.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Set up Java and run a program.
+WHAT TO SUBMIT: Java file and screenshot.
+SUGGESTED DEADLINE: 2027-01-30 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-082 | Fri 29 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Understand AI Systems with Real Examples
+ATTENDING DOMAINS:
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+YOU WILL LEARN:
+  1. What generative AI does.
+  2. How it differs from predictive models.
+  3. Why outputs need checking.
+LIVE TRAINER DEMONSTRATION: Compare chatbot and prediction-model demos.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Write a one-page comparison with limitations.
+WHAT TO SUBMIT: Worksheet.
+SUGGESTED DEADLINE: 2027-01-31 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-083 | Sat 30 Jan 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Use Python Variables and Decisions
+ATTENDING DOMAINS:
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Numbers, text and boolean values.
+  2. If/else and input validation.
+  3. How to understand errors.
+LIVE TRAINER DEMONSTRATION: Build a simple fee or grade checker.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Make a decision-based calculator.
+WHAT TO SUBMIT: Python file and test examples.
+SUGGESTED DEADLINE: 2027-02-01 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 31 Jan 2027 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-084 | Mon 01 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Repeat Work with Python Loops and Lists
+ATTENDING DOMAINS:
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Lists and dictionaries.
+  2. For/while loops.
+  3. How to search and count data.
+LIVE TRAINER DEMONSTRATION: Process a mock class attendance list.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Make a student-summary script.
+WHAT TO SUBMIT: Repo and sample output.
+SUGGESTED DEADLINE: 2027-02-03 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-085 | Tue 02 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Learn Python Tools for Working with Data
+ATTENDING DOMAINS:
+  - AI & Machine Learning (6 months, 5 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+YOU WILL LEARN:
+  1. Lists, tables and arrays.
+  2. What NumPy and Pandas help with.
+  3. How notebooks are used.
+LIVE TRAINER DEMONSTRATION: Open a small data notebook.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Load one CSV and show a summary.
+WHAT TO SUBMIT: Notebook and screenshot.
+SUGGESTED DEADLINE: 2027-02-04 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-086 | Wed 03 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Learn Security Tools in a Practice Lab
+ATTENDING DOMAINS:
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. Why isolated labs are important.
+  2. How to observe traffic safely.
+  3. How to record tool output.
+LIVE TRAINER DEMONSTRATION: Launch a safe intentionally vulnerable lab.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Prepare a lab diary and screenshots.
+WHAT TO SUBMIT: Lab notes.
+SUGGESTED DEADLINE: 2027-02-05 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-087 | Thu 04 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Understand Java Variables and Conditions
+ATTENDING DOMAINS:
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Types, variables and operators.
+  2. Reading input.
+  3. If/else decisions.
+LIVE TRAINER DEMONSTRATION: Create simple grading app.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Build a small marks calculator.
+WHAT TO SUBMIT: Source code and sample results.
+SUGGESTED DEADLINE: 2027-02-06 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-088 | Fri 05 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Learn How Language Models Use Context
+ATTENDING DOMAINS:
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+YOU WILL LEARN:
+  1. What a prompt and context window are.
+  2. Why long conversations can confuse AI.
+  3. How to write brief instructions.
+LIVE TRAINER DEMONSTRATION: Compare short vs overloaded prompts.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Rewrite an overly long task clearly.
+WHAT TO SUBMIT: Prompt examples.
+SUGGESTED DEADLINE: 2027-02-07 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-089 | Sat 06 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Understand the Basics of Website Attacks
+ATTENDING DOMAINS:
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. Difference between a website bug and a vulnerability.
+  2. What input validation protects.
+  3. Why fixes should be prioritised.
+LIVE TRAINER DEMONSTRATION: Inspect safe demonstrations without attacking public sites.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Make a list of five common risks and fixes.
+WHAT TO SUBMIT: Risk worksheet.
+SUGGESTED DEADLINE: 2027-02-08 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 07 Feb 2027 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-090 | Mon 08 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Write Reusable Python Functions
+ATTENDING DOMAINS:
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Inputs and return values.
+  2. Organise files into modules.
+  3. Write understandable names.
+LIVE TRAINER DEMONSTRATION: Refactor a long script into functions.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Convert three repeated blocks into functions.
+WHAT TO SUBMIT: Source link.
+SUGGESTED DEADLINE: 2027-02-10 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-091 | Tue 09 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Clean Data Before Training a Model
+ATTENDING DOMAINS:
+  - AI & Machine Learning (6 months, 5 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+YOU WILL LEARN:
+  1. Why missing and duplicate values matter.
+  2. Types of columns.
+  3. Why data leakage gives misleading results.
+LIVE TRAINER DEMONSTRATION: Clean sample student marks data.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Clean a small provided dataset.
+WHAT TO SUBMIT: Notebook with before/after.
+SUGGESTED DEADLINE: 2027-02-11 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-092 | Wed 10 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Check Website Login and Permissions
+ATTENDING DOMAINS:
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. Difference between authentication and authorization.
+  2. How sessions work.
+  3. Why users must not view others' data.
+LIVE TRAINER DEMONSTRATION: Test access controls in a toy app with two mock users.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Document one test of a mock access rule.
+WHAT TO SUBMIT: Controlled test note.
+SUGGESTED DEADLINE: 2027-02-12 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-093 | Thu 11 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Use Loops and Methods in Java
+ATTENDING DOMAINS:
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. For and while loops.
+  2. Methods and parameters.
+  3. How to avoid repeated code.
+LIVE TRAINER DEMONSTRATION: Build a student record loop.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Make a simple menu program.
+WHAT TO SUBMIT: Code and output.
+SUGGESTED DEADLINE: 2027-02-13 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-094 | Fri 12 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Build Reliable Responses from AI
+ATTENDING DOMAINS:
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+YOU WILL LEARN:
+  1. How structured output helps apps.
+  2. How to validate missing fields.
+  3. How to handle failed requests.
+LIVE TRAINER DEMONSTRATION: Ask for a simple JSON response then validate.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Create five input/output checks.
+WHAT TO SUBMIT: Test table.
+SUGGESTED DEADLINE: 2027-02-14 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-095 | Sat 13 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Learn Java Classes and Objects
+ATTENDING DOMAINS:
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What classes represent.
+  2. What objects contain.
+  3. Encapsulation basics.
+LIVE TRAINER DEMONSTRATION: Create a Student class.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Build two classes and use them.
+WHAT TO SUBMIT: Repo and output.
+SUGGESTED DEADLINE: 2027-02-15 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 14 Feb 2027 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-096 | Mon 15 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Read and Save Data with Python
+ATTENDING DOMAINS:
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Work with CSV and JSON safely.
+  2. Handle missing fields.
+  3. Separate data from interface.
+LIVE TRAINER DEMONSTRATION: Read a small sample CSV and show a report.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Create a CSV-based simple tracker.
+WHAT TO SUBMIT: Repo and input/output samples.
+SUGGESTED DEADLINE: 2027-02-17 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-097 | Tue 16 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Make Charts That Explain Your Data
+ATTENDING DOMAINS:
+  - AI & Machine Learning (6 months, 5 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+YOU WILL LEARN:
+  1. Histograms, comparisons and patterns.
+  2. Understand averages and outliers.
+  3. Choose a chart for a question.
+LIVE TRAINER DEMONSTRATION: Plot a dataset and explain trends.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Create three useful charts.
+WHAT TO SUBMIT: Charts and observations.
+SUGGESTED DEADLINE: 2027-02-18 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-098 | Wed 17 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Understand SQL Injection and Safe Queries
+ATTENDING DOMAINS:
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. How unsafe database queries happen.
+  2. How parameterized queries help.
+  3. Why user input must be handled safely.
+LIVE TRAINER DEMONSTRATION: Contrast unsafe and safe code in a local sandbox.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Write an explanation and defensive fix.
+WHAT TO SUBMIT: Before/after code note.
+SUGGESTED DEADLINE: 2027-02-19 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-099 | Thu 18 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Organize Data Using Lists and Maps
+ATTENDING DOMAINS:
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. How collections hold data.
+  2. Iteration and lookup.
+  3. Handling missing values.
+LIVE TRAINER DEMONSTRATION: Make a small student directory.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Write searchable in-memory student list.
+WHAT TO SUBMIT: Code and screenshot.
+SUGGESTED DEADLINE: 2027-02-20 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-100 | Fri 19 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Let an AI App Read Approved Documents
+ATTENDING DOMAINS:
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+YOU WILL LEARN:
+  1. How document search supports answers.
+  2. Why citations matter.
+  3. How to filter private information.
+LIVE TRAINER DEMONSTRATION: Build a tiny three-document Q&A demo.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Create a ten-question test set.
+WHAT TO SUBMIT: Question list and screenshots.
+SUGGESTED DEADLINE: 2027-02-21 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-101 | Sat 20 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Build a Useful AI Tool Connection
+ATTENDING DOMAINS:
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+YOU WILL LEARN:
+  1. What calling a tool means.
+  2. Why permissions are needed.
+  3. How to define clean tool inputs.
+LIVE TRAINER DEMONSTRATION: Connect a safe calculator or timetable lookup tool.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Draft tool input/output format.
+WHAT TO SUBMIT: Tool spec.
+SUGGESTED DEADLINE: 2027-02-22 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 21 Feb 2027 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-102 | Mon 22 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: How a Python Backend Works
+ATTENDING DOMAINS:
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What a backend receives and returns.
+  2. What API routes are.
+  3. How to send JSON.
+LIVE TRAINER DEMONSTRATION: Start a tiny FastAPI server.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Make a working hello and list endpoint.
+WHAT TO SUBMIT: API screenshots/repo.
+SUGGESTED DEADLINE: 2027-02-24 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-103 | Tue 23 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Teach a Model to Predict Numbers
+ATTENDING DOMAINS:
+  - AI & Machine Learning (6 months, 5 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+YOU WILL LEARN:
+  1. What regression predicts.
+  2. How training and testing sets work.
+  3. Why error measurements matter.
+LIVE TRAINER DEMONSTRATION: Fit a small price or score predictor.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Train a regression model and report errors.
+WHAT TO SUBMIT: Notebook and outputs.
+SUGGESTED DEADLINE: 2027-02-25 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-104 | Wed 24 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Understand Script Injection in a Safe Demo
+ATTENDING DOMAINS:
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. Why browsers interpret content.
+  2. Why output encoding matters.
+  3. How a safe test reveals the problem.
+LIVE TRAINER DEMONSTRATION: Show harmless simulated XSS in a local playground.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Create a prevention checklist for XSS.
+WHAT TO SUBMIT: Checklist.
+SUGGESTED DEADLINE: 2027-02-26 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-105 | Thu 25 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Handle Errors and Read Files
+ATTENDING DOMAINS:
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Exceptions.
+  2. File input/output.
+  3. Why validation matters.
+LIVE TRAINER DEMONSTRATION: Read a file with proper error messages.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Write a file-based simple notes app.
+WHAT TO SUBMIT: Repo and error tests.
+SUGGESTED DEADLINE: 2027-02-27 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-106 | Fri 26 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Make an AI Assistant Complete Several Steps
+ATTENDING DOMAINS:
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+YOU WILL LEARN:
+  1. How to split a goal into tasks.
+  2. How to store state.
+  3. How to stop after a failure.
+LIVE TRAINER DEMONSTRATION: Demonstrate step checklist.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Make a workflow diagram and recovery step.
+WHAT TO SUBMIT: Flowchart.
+SUGGESTED DEADLINE: 2027-02-28 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-107 | Sat 27 Feb 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Build a Real API with Python
+ATTENDING DOMAINS:
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Routes for creating, reading and editing items.
+  2. Validation and errors.
+  3. Why status codes matter.
+LIVE TRAINER DEMONSTRATION: Build task manager API endpoints.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Add create and list endpoints.
+WHAT TO SUBMIT: Repo and test screenshots.
+SUGGESTED DEADLINE: 2027-03-01 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 28 Feb 2027 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-108 | Mon 01 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Save App Data in a Database
+ATTENDING DOMAINS:
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Tables and records.
+  2. SQL queries.
+  3. How a backend connects to a database.
+LIVE TRAINER DEMONSTRATION: Connect Python API to SQLite/Postgres dev database.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Store and fetch tasks from database.
+WHAT TO SUBMIT: Repo and DB screenshot.
+SUGGESTED DEADLINE: 2027-03-03 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-109 | Tue 02 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Teach a Model to Choose a Category
+ATTENDING DOMAINS:
+  - AI & Machine Learning (6 months, 5 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+YOU WILL LEARN:
+  1. What classification is.
+  2. True/false predictions.
+  3. Why accuracy alone can mislead.
+LIVE TRAINER DEMONSTRATION: Train a basic classification model.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Build classifier and confusion matrix.
+WHAT TO SUBMIT: Notebook and evaluation.
+SUGGESTED DEADLINE: 2027-03-04 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-110 | Wed 03 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Learn Basic Network Security Checks
+ATTENDING DOMAINS:
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. What services listen on ports.
+  2. How to assess a network you own.
+  3. How to document exposed services.
+LIVE TRAINER DEMONSTRATION: Inventory a permitted sandbox network.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Produce a tiny network inventory.
+WHAT TO SUBMIT: Lab report.
+SUGGESTED DEADLINE: 2027-03-05 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-111 | Thu 04 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Create Your First Spring Boot Project
+ATTENDING DOMAINS:
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What Spring Boot solves.
+  2. How controllers work.
+  3. How to run a local server.
+LIVE TRAINER DEMONSTRATION: Make a simple JSON endpoint.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Start working Spring Boot app.
+WHAT TO SUBMIT: Repo and API screenshot.
+SUGGESTED DEADLINE: 2027-03-06 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-112 | Fri 05 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Add Human Approval to AI Actions
+ATTENDING DOMAINS:
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+YOU WILL LEARN:
+  1. Which actions need confirmation.
+  2. How to prevent unintended changes.
+  3. How to record what agent did.
+LIVE TRAINER DEMONSTRATION: Demo approval before writing to a mock database.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Write a safety policy for tool calls.
+WHAT TO SUBMIT: Approval design.
+SUGGESTED DEADLINE: 2027-03-07 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-113 | Sat 06 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Create and Edit Data Through a Java API
+ATTENDING DOMAINS:
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. GET/POST and request bodies.
+  2. Input validation.
+  3. Consistent error messages.
+LIVE TRAINER DEMONSTRATION: Add basic CRUD to an API.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Make task create/list endpoint.
+WHAT TO SUBMIT: Test screenshots.
+SUGGESTED DEADLINE: 2027-03-08 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 07 Mar 2027 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-114 | Mon 08 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Add Login to Your Python App
+ATTENDING DOMAINS:
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. What users and sessions are.
+  2. Password handling basics.
+  3. Why protected pages need server checks.
+LIVE TRAINER DEMONSTRATION: Add safe demo authentication.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Protect a user-only API route.
+WHAT TO SUBMIT: Access test screenshots.
+SUGGESTED DEADLINE: 2027-03-10 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-115 | Tue 09 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Improve a Model by Choosing Better Inputs
+ATTENDING DOMAINS:
+  - AI & Machine Learning (6 months, 5 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+YOU WILL LEARN:
+  1. What a feature is.
+  2. Why irrelevant data hurts.
+  3. How to avoid overfitting.
+LIVE TRAINER DEMONSTRATION: Compare two feature sets.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Record results for two input choices.
+WHAT TO SUBMIT: Comparison table.
+SUGGESTED DEADLINE: 2027-03-11 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-116 | Wed 10 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Find and Explain Security Risks
+ATTENDING DOMAINS:
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. How to estimate likelihood and impact.
+  2. What an observation vs confirmed finding is.
+  3. How to give fix steps.
+LIVE TRAINER DEMONSTRATION: Write one finding from a prepared scenario.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Make a two-page security finding report.
+WHAT TO SUBMIT: Report.
+SUGGESTED DEADLINE: 2027-03-12 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-117 | Thu 11 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Store Java App Data in a Database
+ATTENDING DOMAINS:
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Database tables.
+  2. Java entity and repository concepts.
+  3. Configuring test credentials safely.
+LIVE TRAINER DEMONSTRATION: Connect Spring Boot to a sample database.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Save and retrieve records.
+WHAT TO SUBMIT: Repo and DB screenshot.
+SUGGESTED DEADLINE: 2027-03-13 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-118 | Fri 12 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Check AI Answers with a Test Set
+ATTENDING DOMAINS:
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+YOU WILL LEARN:
+  1. How evaluation examples work.
+  2. How to score usefulness and accuracy.
+  3. What hallucination means.
+LIVE TRAINER DEMONSTRATION: Run a fixed test set against one prompt.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Measure ten responses and report misses.
+WHAT TO SUBMIT: Score table.
+SUGGESTED DEADLINE: 2027-03-14 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-119 | Sat 13 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Make an AI Application Faster and Cheaper
+ATTENDING DOMAINS:
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+YOU WILL LEARN:
+  1. Why repeated calls cost time and money.
+  2. Basic caching and limits.
+  3. When smaller models are enough.
+LIVE TRAINER DEMONSTRATION: Compare two safe demo workflows.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Propose three performance changes.
+WHAT TO SUBMIT: Benchmark notes.
+SUGGESTED DEADLINE: 2027-03-15 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 14 Mar 2027 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-120 | Mon 15 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Make a Web Page Talk to Your Python API
+ATTENDING DOMAINS:
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. How a form sends a request.
+  2. How to show returned data.
+  3. How to display loading and error states.
+LIVE TRAINER DEMONSTRATION: Hook a basic frontend to backend.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Build a small frontend API form.
+WHAT TO SUBMIT: Demo screenshots.
+SUGGESTED DEADLINE: 2027-03-17 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-121 | Tue 16 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Try Different Learning Models
+ATTENDING DOMAINS:
+  - AI & Machine Learning (6 months, 5 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+YOU WILL LEARN:
+  1. Decision trees and random forests.
+  2. When a simple model is enough.
+  3. How to compare models fairly.
+LIVE TRAINER DEMONSTRATION: Train two models on same split.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Compare two models on the same test set.
+WHAT TO SUBMIT: Notebook and comparison.
+SUGGESTED DEADLINE: 2027-03-18 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-122 | Wed 17 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Improve the Security of a Linux Server
+ATTENDING DOMAINS:
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. Why patching matters.
+  2. What minimum permissions mean.
+  3. How backups support recovery.
+LIVE TRAINER DEMONSTRATION: Harden mock users and services on a Linux VM.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Make a server safety checklist.
+WHAT TO SUBMIT: Configuration report.
+SUGGESTED DEADLINE: 2027-03-19 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-123 | Thu 18 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Make User Login Work Correctly
+ATTENDING DOMAINS:
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. Authentication vs access checks.
+  2. Simple user roles.
+  3. Why secure defaults matter.
+LIVE TRAINER DEMONSTRATION: Protect one API route.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Add a simple protected endpoint.
+WHAT TO SUBMIT: Access test screenshots.
+SUGGESTED DEADLINE: 2027-03-20 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-124 | Fri 19 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Use AI with Data Analysis
+ATTENDING DOMAINS:
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+YOU WILL LEARN:
+  1. How a model summarises a dataset.
+  2. Why numerical answers need calculation checks.
+  3. How charts reveal errors.
+LIVE TRAINER DEMONSTRATION: Analyse sample spreadsheet and verify results.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Submit checked dataset summary.
+WHAT TO SUBMIT: Workbook or notebook.
+SUGGESTED DEADLINE: 2027-03-21 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-125 | Sat 20 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Make a Clean, Responsive Website
+ATTENDING DOMAINS:
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. HTML page sections.
+  2. CSS layout and readable fonts.
+  3. How to check phone sizes.
+LIVE TRAINER DEMONSTRATION: Fix a small responsive dashboard.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Improve one frontend screen for mobile.
+WHAT TO SUBMIT: Before/after images.
+SUGGESTED DEADLINE: 2027-03-22 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+Sun 21 Mar 2027 — NO CLASS: Sunday: no class, no new compulsory assignment
+Mandatory attendance: NOT REQUIRED. New assignment: NONE.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-126 | Mon 22 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Handle Files and Images Safely
+ATTENDING DOMAINS:
+  - Programming Full Stack - Python (6 months, 6 interns)
+  - Web Development (6 months, 1 intern)
+YOU WILL LEARN:
+  1. How file upload works.
+  2. Input limits.
+  3. Safe filenames and types.
+LIVE TRAINER DEMONSTRATION: Upload a small test image in a local demo.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Add one limited upload feature.
+WHAT TO SUBMIT: Repo and test log.
+SUGGESTED DEADLINE: 2027-03-24 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-127 | Tue 23 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Understand How Neural Networks Learn
+ATTENDING DOMAINS:
+  - AI & Machine Learning (6 months, 5 interns)
+  - AI & Machine Learning + Generative AI & AI Agents (9 months, 3 interns)
+YOU WILL LEARN:
+  1. What layers and weights mean.
+  2. Why training needs repeated examples.
+  3. Why neural nets aren't always best.
+LIVE TRAINER DEMONSTRATION: Explain a tiny network using an interactive demo.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Draw a small network and describe its inputs/outputs.
+WHAT TO SUBMIT: Diagram and explanation.
+SUGGESTED DEADLINE: 2027-03-25 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-128 | Wed 24 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Investigate a Possible Security Incident
+ATTENDING DOMAINS:
+  - Ethical Hacking (6 months, 3 interns)
+  - Cybersecurity - Ethical Hacking + Penetration Testing (9 months, 4 interns)
+YOU WILL LEARN:
+  1. What alerts and logs tell us.
+  2. How to preserve evidence.
+  3. How to avoid guessing.
+LIVE TRAINER DEMONSTRATION: Review mock incident events.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Write incident timeline for a prepared log.
+WHAT TO SUBMIT: Timeline.
+SUGGESTED DEADLINE: 2027-03-26 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-129 | Thu 25 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Connect the Website to Your Java Backend
+ATTENDING DOMAINS:
+  - Programming Full Stack - Java (6 months, 1 intern)
+YOU WILL LEARN:
+  1. How a frontend calls a REST API.
+  2. Loading and errors.
+  3. Testing a full workflow.
+LIVE TRAINER DEMONSTRATION: Connect a form to Java API.
+AFTER-CLASS ASSIGNMENT (publish at 9:35 PM only after completion): Build a web form connected to backend.
+WHAT TO SUBMIT: Demo and source.
+SUGGESTED DEADLINE: 2027-03-27 23:59 IST (extend where academic break conflicts).
+CLASS/ASSIGNMENT STATUS: DRAFT until admin publishes; attendance requires actual live attendance.
+
+----------------------------------------------------------------------------------------------------------------
+CXA-LIVE-130 | Fri 26 Mar 2027 | 7:30–9:30 PM IST | SINGLE LIVE CLASS
+CLASS NAME: Learn 
+<truncated 148407 bytes>
+
+NOTE: The output was truncated because it was too long. Use a more targeted query or a smaller range to get the information you need.

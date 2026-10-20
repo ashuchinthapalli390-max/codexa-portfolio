@@ -25,552 +25,479 @@ import {
   Send,
   Eye,
   Check,
-  Layers
+  Layers,
+  ShieldAlert,
+  Play,
+  BookOpen
 } from "lucide-react";
 import { getEffectiveRole } from "@/lib/permissions";
 
 interface AssignmentItem {
   id: string;
+  sourceKey?: string | null;
   title: string;
   description: string;
-  assignedBy?: string | null;
   assignedByName: string;
   domain: string;
-  submissionType: string; // TEXT, REPOSITORY, BOTH
+  attendingDomains?: string[] | null;
+  classId?: string | null;
   dueDate: string;
-  lateCutoff?: string | null;
-  requirements?: string | null;
-  status: string;
-  createdAt: string;
+  releaseAt?: string | null;
+  publishedAt?: string | null;
+  evidenceRequired?: string | null;
+  status: string; // DRAFT, PUBLISHED, ACTIVE, CLOSED
+  class?: {
+    id: string;
+    sourceKey?: string;
+    sequenceNumber?: number;
+    title: string;
+    classDate: string;
+    status: string;
+  } | null;
   submittedCount?: number;
   approvedCount?: number;
   pendingCount?: number;
   revisionCount?: number;
+  submissions?: any[];
+  mySubmission?: any;
+  isStudentExcused?: boolean;
+  excuseReason?: string;
 }
 
-interface SubmissionItem {
-  id: string;
-  assignmentId: string;
-  userId: string;
-  userName: string;
-  userRole: string;
-  internId?: string | null;
-  submissionType: string;
-  textContent?: string | null;
-  repositoryUrl?: string | null;
-  branch?: string | null;
-  commitSha?: string | null;
-  notes?: string | null;
-  revision: number;
-  status: string; // SUBMITTED, UNDER_REVIEW, REVISION_REQUESTED, APPROVED, GRADED
-  grade?: string | null;
-  feedback?: string | null;
-  reviewerId?: string | null;
-  reviewerName?: string | null;
-  reviewedAt?: string | null;
-  submittedAt: string;
-  assignment?: {
-    title: string;
-    domain: string;
-    dueDate: string;
-    submissionType: string;
-  };
-}
-
-const DOMAINS = [
-  "All Domains",
-  "Full-Stack Development with AI",
-  "AI & Machine Learning",
-  "Ethical Hacking",
-  "Generative AI & AI Agents",
-  "Web Development",
-  "Programming Full Stack — Python",
-  "Programming Full Stack — Java",
-  "Cybersecurity — Ethical Hacking + Penetration Testing",
+const DOMAIN_OPTIONS = [
+  { code: "ALL", label: "All Domains" },
+  { code: "FS_AI", label: "Full-Stack Development with AI (3m)" },
+  { code: "PY", label: "Programming Full Stack - Python (6m)" },
+  { code: "AIML", label: "AI & Machine Learning (6m)" },
+  { code: "CY2", label: "Cybersecurity (2m)" },
+  { code: "PENTEST", label: "Ethical Hacking + Penetration Testing (9m)" },
+  { code: "AI9", label: "AI & ML + Generative AI & AI Agents (9m)" },
+  { code: "ETH", label: "Ethical Hacking (6m)" },
+  { code: "AG3", label: "Generative AI & AI Agents (3m)" },
+  { code: "MOBILE", label: "Mobile App Development (3m)" },
+  { code: "JAVA", label: "Programming Full Stack - Java (6m)" },
+  { code: "UIUX", label: "UI/UX Design (3m)" },
+  { code: "WEB", label: "Web Development (6m)" },
 ];
 
 export default function AssignmentControlCenterPage() {
   const { user } = useAuth();
   const effectiveRole = user ? getEffectiveRole(user) : "EMPLOYEE";
-  const canManage = ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "OWNER", "ADMIN"].includes(effectiveRole);
+  const canManage = ["FOUNDER", "CO_FOUNDER", "CEO", "CTO", "HR", "OWNER", "ADMIN", "INSTRUCTOR"].includes(effectiveRole);
 
   const [activeTab, setActiveTab] = useState<"ASSIGNMENTS" | "SUBMISSIONS">("ASSIGNMENTS");
   const [assignments, setAssignments] = useState<AssignmentItem[]>([]);
-  const [submissions, setSubmissions] = useState<SubmissionItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [submissionFilter, setSubmissionFilter] = useState("ALL");
-  const [selectedDomain, setSelectedDomain] = useState("All Domains");
+  const [selectedDomain, setSelectedDomain] = useState("ALL");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Create Assignment Modal
-  const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
+  // Submit Modal for Intern
+  const [submitModalAssignment, setSubmitModalAssignment] = useState<AssignmentItem | null>(null);
+  const [textContent, setTextContent] = useState("");
+  const [repositoryUrl, setRepositoryUrl] = useState("");
+  const [submissionNotes, setSubmissionNotes] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
 
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [domain, setDomain] = useState("All Domains");
-  const [submissionType, setSubmissionType] = useState("BOTH");
-  const [dueDate, setDueDate] = useState(
-    new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
-  );
-  const [lateCutoff, setLateCutoff] = useState("");
-  const [requirements, setRequirements] = useState("");
-
-  // Review Modal State
-  const [reviewModalSub, setReviewModalSub] = useState<SubmissionItem | null>(null);
-  const [reviewAction, setReviewAction] = useState<"APPROVE" | "REVISION_REQUESTED" | "GRADED">("APPROVE");
-  const [gradeInput, setGradeInput] = useState("A+");
+  // Review Modal for Trainer
+  const [reviewModalSubmission, setReviewModalSubmission] = useState<any | null>(null);
+  const [gradeInput, setGradeInput] = useState("A");
   const [feedbackInput, setFeedbackInput] = useState("");
-  const [reviewing, setReviewing] = useState(false);
+  const [isGrading, setIsGrading] = useState(false);
 
-  const fetchData = async () => {
+  // Release Worker Action
+  const [releaseChecking, setReleaseChecking] = useState(false);
+  const [releaseMessage, setReleaseMessage] = useState<string | null>(null);
+
+  const fetchAssignments = async () => {
     setLoading(true);
     try {
-      const [asgRes, subRes] = await Promise.all([
-        fetch("/api/admin/assignments").then((r) => r.json()),
-        fetch("/api/admin/assignments/submissions").then((r) => r.json()),
-      ]);
-
-      if (asgRes.ok && Array.isArray(asgRes.assignments)) {
-        setAssignments(asgRes.assignments);
+      const res = await fetch(`/api/admin/assignments?domain=${encodeURIComponent(selectedDomain)}`);
+      const data = await res.json();
+      if (data.ok && Array.isArray(data.assignments)) {
+        setAssignments(data.assignments);
       }
-      if (subRes.ok && Array.isArray(subRes.submissions)) {
-        setSubmissions(subRes.submissions);
-      }
-    } catch (e) {
-      console.error("Failed to load assignment data:", e);
+    } catch (err) {
+      console.error("Failed to load assignments:", err);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    fetchAssignments();
+  }, [selectedDomain]);
 
-  const handleCreateAssignment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setCreateError(null);
-    if (!title || !description || !dueDate) {
-      setCreateError("Title, instructions, and due date are required.");
-      return;
+  // Run Assignment Release Worker
+  const runReleaseWorker = async () => {
+    setReleaseChecking(true);
+    setReleaseMessage(null);
+    try {
+      const res = await fetch("/api/admin/assignments/release-check", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        setReleaseMessage(`Release Check Complete: ${data.releasedCount} assignments unlocked.`);
+        fetchAssignments();
+      } else {
+        setReleaseMessage("Error: " + data.error);
+      }
+    } catch (err: any) {
+      setReleaseMessage("Error: " + err.message);
+    } finally {
+      setReleaseChecking(false);
     }
+  };
 
-    setCreating(true);
+  // Submit Homework (Intern)
+  const handleSubmitAssignment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!submitModalAssignment) return;
+    setIsSubmitting(true);
+    setSubmitError(null);
+    setSubmitSuccess(null);
     try {
       const res = await fetch("/api/admin/assignments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title,
-          description,
-          domain,
-          submissionType,
-          dueDate: new Date(dueDate).toISOString(),
-          lateCutoff: lateCutoff ? new Date(lateCutoff).toISOString() : null,
-          requirements,
-        }),
+          action: "SUBMIT",
+          assignmentId: submitModalAssignment.id,
+          textContent,
+          repositoryUrl,
+          notes: submissionNotes
+        })
       });
-
       const data = await res.json();
       if (data.ok) {
-        setCreateModalOpen(false);
-        setTitle("");
-        setDescription("");
-        setRequirements("");
-        await fetchData();
+        setSubmitSuccess("Assignment submitted successfully!");
+        setTextContent("");
+        setRepositoryUrl("");
+        setSubmissionNotes("");
+        fetchAssignments();
       } else {
-        setCreateError(data.error || "Failed to create assignment.");
+        setSubmitError(data.error || "Failed to submit assignment");
       }
     } catch (err: any) {
-      setCreateError(err.message || "An unexpected error occurred.");
+      setSubmitError(err.message || "Failed to submit assignment");
     } finally {
-      setCreating(false);
+      setIsSubmitting(false);
     }
   };
 
-  const handleReviewSubmission = async (e: React.FormEvent) => {
+  // Grade Homework (Trainer)
+  const handleGradeSubmission = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!reviewModalSub) return;
-    setReviewing(true);
+    if (!reviewModalSubmission) return;
+    setIsGrading(true);
     try {
-      const res = await fetch("/api/admin/assignments/submissions", {
-        method: "POST",
+      const res = await fetch("/api/admin/assignments", {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          submissionId: reviewModalSub.id,
-          status: reviewAction === "APPROVE" ? "APPROVED" : reviewAction,
-          grade: reviewAction === "GRADED" || reviewAction === "APPROVE" ? gradeInput : null,
-          feedback: feedbackInput,
-        }),
+          submissionId: reviewModalSubmission.id,
+          grade: gradeInput,
+          feedback: feedbackInput
+        })
       });
-
       const data = await res.json();
       if (data.ok) {
-        setSubmissions((prev) =>
-          prev.map((s) => (s.id === reviewModalSub.id ? { ...s, ...data.submission } : s))
-        );
-        setReviewModalSub(null);
-        setFeedbackInput("");
+        setReviewModalSubmission(null);
+        fetchAssignments();
+      } else {
+        alert(data.error || "Failed to evaluate submission");
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      alert("Error: " + err.message);
     } finally {
-      setReviewing(false);
+      setIsGrading(false);
     }
   };
 
+  // Filter assignments
   const filteredAssignments = assignments.filter((a) => {
-    if (selectedDomain !== "All Domains" && a.domain !== selectedDomain) return false;
-    if (searchQuery) {
+    if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      return a.title.toLowerCase().includes(q) || a.description.toLowerCase().includes(q);
+      const matchTitle = a.title.toLowerCase().includes(q);
+      const matchDesc = a.description.toLowerCase().includes(q);
+      const matchKey = a.sourceKey?.toLowerCase().includes(q);
+      if (!matchTitle && !matchDesc && !matchKey) return false;
     }
     return true;
   });
 
-  const filteredSubmissions = submissions.filter((s) => {
-    if (submissionFilter !== "ALL" && s.status !== submissionFilter) return false;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      return (
-        s.userName.toLowerCase().includes(q) ||
-        (s.internId && s.internId.toLowerCase().includes(q)) ||
-        (s.assignment?.title && s.assignment.title.toLowerCase().includes(q))
-      );
-    }
-    return true;
-  });
-
-  const pendingSubmissionsCount = submissions.filter(
-    (s) => s.status === "SUBMITTED" || s.status === "UNDER_REVIEW"
-  ).length;
+  // Collect all submissions for trainer view
+  const allSubmissions = assignments.flatMap((a) =>
+    (a.submissions || []).map((s) => ({
+      ...s,
+      assignmentTitle: a.title,
+      assignmentDomain: a.domain,
+      classTitle: a.class?.title,
+      dueDate: a.dueDate
+    }))
+  );
 
   return (
     <TeamCoreShell>
-      <div className="space-y-6 max-w-7xl mx-auto">
-        {/* Top Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#1f2228] pb-6">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-mono text-red-400 mb-1">
-              <FileText className="w-4 h-4" />
-              <span>CODEXA ASSIGNMENT & PRACTICAL WORKSPACE</span>
+      <div className="min-h-screen bg-black text-white p-4 md:p-8 space-y-6">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-800/80 pb-6">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-gradient-to-br from-red-950 to-black border border-red-800/40 shadow-lg shadow-red-950/40">
+              <FileText className="w-6 h-6 text-red-400" />
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-3">
-              Assignments & Practical Reviews
-              {pendingSubmissionsCount > 0 && (
-                <span className="text-xs bg-red-500/20 text-red-400 border border-red-500/40 px-2.5 py-0.5 rounded-full font-mono animate-pulse">
-                  {pendingSubmissionsCount} Pending Review
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white flex items-center gap-2">
+                Internship Assignment Portal
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-red-950/60 border border-red-800/50 text-red-300 font-mono">
+                  Post-Class Release
                 </span>
-              )}
-            </h1>
-            <p className="text-sm text-gray-400 mt-1">
-              Issue text/repository assignments, review student code revisions, submit feedback, and grade submissions.
-            </p>
+              </h1>
+              <p className="text-sm text-zinc-400 mt-0.5">
+                Released daily at 9:35 PM IST strictly after live class completion • 2-Day Deadline
+              </p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={fetchData}
-              disabled={loading}
-              className="px-3 py-2 text-xs font-medium rounded-lg bg-[#14161a] border border-[#232730] hover:bg-[#1a1d24] text-gray-300 flex items-center gap-1.5 transition-colors"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-              Refresh
-            </button>
-
-            {canManage && (
+          {canManage && (
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => setCreateModalOpen(true)}
-                className="px-4 py-2 text-xs font-semibold rounded-lg bg-red-600 hover:bg-red-500 text-white flex items-center gap-2 shadow-lg shadow-red-900/20 transition-all"
+                onClick={runReleaseWorker}
+                disabled={releaseChecking}
+                className="px-3.5 py-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white text-xs font-semibold flex items-center gap-2 transition-all"
               >
-                <Plus className="w-4 h-4" />
-                New Assignment
+                <Play className="w-3.5 h-3.5 text-emerald-400" />
+                {releaseChecking ? "Checking..." : "Evaluate HW Release"}
               </button>
-            )}
+
+              <button
+                onClick={fetchAssignments}
+                className="p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-800"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {releaseMessage && (
+          <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-emerald-300">
+            {releaseMessage}
+          </div>
+        )}
+
+        {/* Filter Bar */}
+        <div className="bg-zinc-950 border border-zinc-800/80 rounded-xl p-4 flex flex-col md:flex-row gap-3 justify-between items-center">
+          <div className="flex items-center gap-2.5 w-full md:w-auto">
+            <Filter className="w-3.5 h-3.5 text-red-400" />
+            <span className="text-xs text-zinc-400">Domain:</span>
+            <select
+              value={selectedDomain}
+              onChange={(e) => setSelectedDomain(e.target.value)}
+              className="bg-zinc-900 border border-zinc-800 text-xs rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-red-600"
+            >
+              {DOMAIN_OPTIONS.map((d) => (
+                <option key={d.code} value={d.code}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="relative w-full md:w-72">
+            <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-2.5" />
+            <input
+              type="text"
+              placeholder="Search assignment title, class..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-red-600"
+            />
           </div>
         </div>
 
-        {/* Navigation Tabs & Search */}
-        <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
-          <div className="flex bg-[#0f1115] p-1 rounded-lg border border-[#1e222a]">
+        {/* Tabs for Trainer */}
+        {canManage && (
+          <div className="flex gap-2 border-b border-zinc-800 pb-2">
             <button
               onClick={() => setActiveTab("ASSIGNMENTS")}
-              className={`px-4 py-2 text-xs font-semibold rounded-md transition-all flex items-center gap-2 ${
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${
                 activeTab === "ASSIGNMENTS"
-                  ? "bg-red-600 text-white shadow-sm"
-                  : "text-gray-400 hover:text-white"
+                  ? "bg-red-950/80 text-red-300 border border-red-800/60"
+                  : "text-zinc-400 hover:text-white"
               }`}
             >
-              <FileText className="w-3.5 h-3.5" />
-              Active Assignments ({assignments.length})
+              Assignments ({assignments.length})
             </button>
-
             <button
               onClick={() => setActiveTab("SUBMISSIONS")}
-              className={`px-4 py-2 text-xs font-semibold rounded-md transition-all flex items-center gap-2 ${
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${
                 activeTab === "SUBMISSIONS"
-                  ? "bg-red-600 text-white shadow-sm"
-                  : "text-gray-400 hover:text-white"
+                  ? "bg-red-950/80 text-red-300 border border-red-800/60"
+                  : "text-zinc-400 hover:text-white"
               }`}
             >
-              <UserCheck className="w-3.5 h-3.5" />
-              Student Submissions ({submissions.length})
-              {pendingSubmissionsCount > 0 && (
-                <span className="w-2 h-2 rounded-full bg-red-400 animate-ping"></span>
-              )}
+              Student Submissions ({allSubmissions.length})
             </button>
           </div>
+        )}
 
-          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-            {activeTab === "ASSIGNMENTS" ? (
-              <div className="flex items-center gap-2 bg-[#0f1115] border border-[#1e222a] px-3 py-1.5 rounded-lg text-xs">
-                <Filter className="w-3.5 h-3.5 text-gray-400" />
-                <select
-                  value={selectedDomain}
-                  onChange={(e) => setSelectedDomain(e.target.value)}
-                  className="bg-transparent text-gray-300 outline-none cursor-pointer"
-                >
-                  {DOMAINS.map((d) => (
-                    <option key={d} value={d} className="bg-[#14161a] text-white">
-                      {d}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 bg-[#0f1115] border border-[#1e222a] px-3 py-1.5 rounded-lg text-xs">
-                <Filter className="w-3.5 h-3.5 text-gray-400" />
-                <select
-                  value={submissionFilter}
-                  onChange={(e) => setSubmissionFilter(e.target.value)}
-                  className="bg-transparent text-gray-300 outline-none cursor-pointer"
-                >
-                  <option value="ALL" className="bg-[#14161a] text-white">All Statuses</option>
-                  <option value="SUBMITTED" className="bg-[#14161a] text-white">Pending Review</option>
-                  <option value="APPROVED" className="bg-[#14161a] text-white">Approved</option>
-                  <option value="REVISION_REQUESTED" className="bg-[#14161a] text-white">Revision Requested</option>
-                  <option value="GRADED" className="bg-[#14161a] text-white">Graded</option>
-                </select>
-              </div>
-            )}
-
-            <div className="flex items-center gap-2 bg-[#0f1115] border border-[#1e222a] px-3 py-1.5 rounded-lg text-xs flex-1 md:w-60">
-              <Search className="w-3.5 h-3.5 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-transparent text-white outline-none w-full placeholder:text-gray-500"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Tab 1: Active Assignments */}
+        {/* Tab 1: Assignments Grid */}
         {activeTab === "ASSIGNMENTS" && (
-          <div>
+          <>
             {loading ? (
-              <div className="flex items-center justify-center p-16 text-gray-400 gap-3">
-                <RefreshCw className="w-5 h-5 animate-spin text-red-500" />
-                <span>Loading assignments...</span>
+              <div className="flex flex-col items-center justify-center p-12 text-zinc-500 space-y-3">
+                <RefreshCw className="w-6 h-6 animate-spin text-red-500" />
+                <p className="text-xs">Loading assignments...</p>
               </div>
             ) : filteredAssignments.length === 0 ? (
-              <div className="bg-[#0f1115] border border-[#1e222a] rounded-2xl p-12 text-center">
-                <FileText className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-                <h3 className="text-base font-semibold text-white">No assignments found</h3>
-                <p className="text-xs text-gray-400 max-w-sm mx-auto mt-1">
-                  Create an assignment to distribute coding tasks to interns.
+              <div className="p-12 text-center bg-zinc-950 border border-zinc-800/60 rounded-xl space-y-2">
+                <FileText className="w-8 h-8 text-zinc-600 mx-auto" />
+                <h3 className="text-sm font-semibold text-zinc-300">No released assignments match this filter</h3>
+                <p className="text-xs text-zinc-500">
+                  {canManage
+                    ? "Assignments unlock automatically at 9:35 PM after the live class is marked COMPLETED."
+                    : "Assignments will appear here once your instructor completes the live class."}
                 </p>
-                {canManage && (
-                  <button
-                    onClick={() => setCreateModalOpen(true)}
-                    className="mt-4 px-4 py-2 text-xs font-semibold rounded-lg bg-red-600 hover:bg-red-500 text-white inline-flex items-center gap-2"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Create First Assignment
-                  </button>
-                )}
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {filteredAssignments.map((a) => {
-                  const dDateStr = a.dueDate ? new Date(a.dueDate).toLocaleDateString() : "No deadline";
+                  const dueDateFormatted = new Date(a.dueDate).toLocaleDateString("en-IN", {
+                    weekday: "short",
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric"
+                  });
+
+                  const mySub = a.mySubmission;
 
                   return (
                     <div
                       key={a.id}
-                      className="bg-[#0f1115] border border-[#1e222a] hover:border-[#2a2f3a] rounded-xl p-5 flex flex-col justify-between transition-all"
+                      className="bg-zinc-950 border border-zinc-800 hover:border-red-900/60 transition-all rounded-xl p-5 flex flex-col justify-between space-y-4 shadow-lg shadow-black/60 relative overflow-hidden group"
                     >
+                      <div className={`absolute top-0 left-0 right-0 h-1 ${
+                        a.status === "PUBLISHED" || a.status === "ACTIVE" ? "bg-emerald-500" : "bg-amber-600"
+                      }`} />
+
                       <div>
-                        <div className="flex items-center justify-between gap-2 mb-3">
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#161920] border border-[#232732] text-gray-300">
-                            {a.domain}
+                        {/* Header & Status */}
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className="text-[11px] font-mono text-zinc-400 font-semibold flex items-center gap-1.5">
+                            <span className="text-red-400 font-bold">{a.sourceKey || a.id}</span>
+                            {a.class && (
+                              <>
+                                <span>•</span>
+                                <span className="text-zinc-500">{a.class.classDate.split("T")[0]}</span>
+                              </>
+                            )}
                           </span>
 
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/30 font-semibold uppercase">
-                            {a.submissionType} FORMAT
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                            a.status === "PUBLISHED" || a.status === "ACTIVE"
+                              ? "bg-emerald-950/60 border-emerald-700/60 text-emerald-300"
+                              : "bg-amber-950/60 border-amber-700/60 text-amber-300"
+                          }`}>
+                            {a.status}
                           </span>
                         </div>
 
-                        <h3 className="text-base font-bold text-white tracking-tight line-clamp-1">
+                        {/* Title */}
+                        <h3 className="text-base font-bold text-white group-hover:text-red-300 transition-colors line-clamp-2">
                           {a.title}
                         </h3>
-                        <p className="text-xs text-gray-400 mt-1 line-clamp-2">
-                          {a.description}
-                        </p>
 
-                        <div className="space-y-1 text-xs text-gray-400 mt-4 border-t border-[#181a20] pt-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-gray-500">Deadline:</span>
-                            <span className="font-mono text-gray-300 font-semibold">{dDateStr}</span>
+                        {/* Associated Class */}
+                        {a.class && (
+                          <div className="mt-2 text-xs text-zinc-400 flex items-center gap-1.5">
+                            <BookOpen className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                            <span className="line-clamp-1">{a.class.title}</span>
                           </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-gray-500">Author:</span>
-                            <span className="text-gray-300">{a.assignedByName}</span>
+                        )}
+
+                        {/* Student Excusal Badge */}
+                        {a.isStudentExcused && (
+                          <div className="mt-2.5 p-2 rounded-lg bg-amber-950/40 border border-amber-800/50 flex items-center gap-2 text-xs text-amber-200">
+                            <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0" />
+                            <span>{a.excuseReason}</span>
                           </div>
+                        )}
+
+                        {/* Task Description */}
+                        <div className="mt-3 text-xs text-zinc-300 bg-zinc-900/60 border border-zinc-800/60 rounded-lg p-3 space-y-1.5">
+                          <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold block">
+                            Instructions:
+                          </span>
+                          <p className="line-clamp-3">{a.description}</p>
                         </div>
 
-                        {/* Submission status breakdown */}
-                        <div className="grid grid-cols-3 gap-2 mt-4 text-center">
-                          <div className="bg-[#14171d] p-2 rounded-lg border border-[#1f222a]">
-                            <div className="text-xs text-gray-500">Submitted</div>
-                            <div className="text-sm font-bold text-white font-mono">{a.submittedCount || 0}</div>
-                          </div>
-                          <div className="bg-[#14171d] p-2 rounded-lg border border-[#1f222a]">
-                            <div className="text-xs text-gray-500">Pending</div>
-                            <div className="text-sm font-bold text-yellow-400 font-mono">{a.pendingCount || 0}</div>
-                          </div>
-                          <div className="bg-[#14171d] p-2 rounded-lg border border-[#1f222a]">
-                            <div className="text-xs text-gray-500">Approved</div>
-                            <div className="text-sm font-bold text-emerald-400 font-mono">{a.approvedCount || 0}</div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-5 pt-3 border-t border-[#181a20] flex items-center justify-end">
-                        <button
-                          onClick={() => {
-                            setActiveTab("SUBMISSIONS");
-                            setSearchQuery(a.title);
-                          }}
-                          className="text-xs text-red-400 hover:text-red-300 font-semibold flex items-center gap-1"
-                        >
-                          View Submissions
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Tab 2: Student Submissions Review */}
-        {activeTab === "SUBMISSIONS" && (
-          <div>
-            {loading ? (
-              <div className="flex items-center justify-center p-16 text-gray-400 gap-3">
-                <RefreshCw className="w-5 h-5 animate-spin text-red-500" />
-                <span>Loading submissions...</span>
-              </div>
-            ) : filteredSubmissions.length === 0 ? (
-              <div className="bg-[#0f1115] border border-[#1e222a] rounded-2xl p-12 text-center">
-                <UserCheck className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-                <h3 className="text-base font-semibold text-white">No submissions found</h3>
-                <p className="text-xs text-gray-400 max-w-sm mx-auto mt-1">
-                  When interns submit solutions from the mobile app, they will appear here for review.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {filteredSubmissions.map((s) => {
-                  const sDate = new Date(s.submittedAt).toLocaleString();
-
-                  return (
-                    <div
-                      key={s.id}
-                      className="bg-[#0f1115] border border-[#1e222a] hover:border-[#2a2f3a] rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all"
-                    >
-                      <div className="space-y-1.5 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-white text-sm">{s.userName}</span>
-                          {s.internId && (
-                            <span className="text-[11px] font-mono text-gray-400 bg-[#161820] px-1.5 py-0.5 rounded border border-[#232732]">
-                              {s.internId}
+                        {/* Evidence Required */}
+                        {a.evidenceRequired && (
+                          <div className="mt-2.5 text-xs text-zinc-400 space-y-1">
+                            <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold block">
+                              What to Submit:
                             </span>
-                          )}
-                          <span className="text-[10px] text-gray-500 font-mono">
-                            Rev #{s.revision} • {sDate}
+                            <p className="text-zinc-300 line-clamp-2">{a.evidenceRequired}</p>
+                          </div>
+                        )}
+
+                        {/* Due Date & Submission Status */}
+                        <div className="mt-3.5 flex items-center justify-between text-xs text-zinc-400 border-t border-zinc-900 pt-3">
+                          <span className="flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-zinc-500" />
+                            Due: {dueDateFormatted} 23:59 IST
                           </span>
                         </div>
-
-                        <div className="text-xs text-red-400 font-medium">
-                          Assignment: {s.assignment?.title || s.assignmentId}
-                        </div>
-
-                        {/* Submission payload preview */}
-                        {s.submissionType === "REPOSITORY" && s.repositoryUrl && (
-                          <div className="flex items-center gap-2 text-xs">
-                            <GitBranch className="w-3.5 h-3.5 text-gray-400" />
-                            <a
-                              href={s.repositoryUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-blue-400 hover:underline flex items-center gap-1 font-mono text-xs"
-                            >
-                              {s.repositoryUrl}
-                              <ExternalLink className="w-3 h-3" />
-                            </a>
-                            {s.branch && <span className="text-gray-500 font-mono">({s.branch})</span>}
-                          </div>
-                        )}
-
-                        {s.submissionType === "TEXT" && s.textContent && (
-                          <p className="text-xs text-gray-300 line-clamp-2 bg-[#14171d] p-2 rounded border border-[#1f222a]">
-                            {s.textContent}
-                          </p>
-                        )}
-
-                        {s.feedback && (
-                          <div className="text-[11px] text-gray-400 italic bg-[#161920] px-2 py-1 rounded border border-[#232732]">
-                            Mentor Feedback: {s.feedback}
-                          </div>
-                        )}
                       </div>
 
-                      <div className="flex items-center gap-3 shrink-0">
-                        <span
-                          className={`text-xs font-mono font-semibold px-2.5 py-1 rounded ${
-                            s.status === "APPROVED"
-                              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30"
-                              : s.status === "REVISION_REQUESTED"
-                              ? "bg-amber-500/10 text-amber-400 border border-amber-500/30"
-                              : s.status === "GRADED"
-                              ? "bg-purple-500/10 text-purple-400 border border-purple-500/30"
-                              : "bg-blue-500/10 text-blue-400 border border-blue-500/30"
-                          }`}
-                        >
-                          {s.status}
-                          {s.grade && ` (${s.grade})`}
-                        </span>
-
-                        {canManage && (
-                          <button
-                            onClick={() => {
-                              setReviewModalSub(s);
-                              setFeedbackInput(s.feedback || "");
-                              setGradeInput(s.grade || "A+");
-                            }}
-                            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-600 hover:bg-red-500 text-white flex items-center gap-1.5"
-                          >
-                            <Award className="w-3.5 h-3.5" />
-                            Review
-                          </button>
+                      {/* Card Footer Actions */}
+                      <div className="pt-2 border-t border-zinc-900">
+                        {!canManage ? (
+                          /* Intern View */
+                          <div>
+                            {mySub ? (
+                              <div className="p-2.5 rounded-lg bg-zinc-900 border border-zinc-800 space-y-1 text-xs">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                    {mySub.status}
+                                  </span>
+                                  {mySub.grade && (
+                                    <span className="px-2 py-0.5 rounded bg-emerald-950 border border-emerald-800 text-emerald-300 font-bold font-mono">
+                                      Grade: {mySub.grade}
+                                    </span>
+                                  )}
+                                </div>
+                                {mySub.feedback && (
+                                  <p className="text-zinc-300 text-[11px] mt-1 bg-black/40 p-2 rounded border border-zinc-800/60">
+                                    <span className="text-zinc-500 font-semibold">Trainer Feedback:</span> {mySub.feedback}
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setSubmitModalAssignment(a);
+                                  setTextContent("");
+                                  setRepositoryUrl("");
+                                  setSubmissionNotes("");
+                                  setSubmitError(null);
+                                  setSubmitSuccess(null);
+                                }}
+                                className="w-full py-2 px-3 rounded-lg bg-red-700 hover:bg-red-600 text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-md shadow-red-950/60 transition-all"
+                              >
+                                <Send className="w-3.5 h-3.5" />
+                                Submit After-Class Homework
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          /* Trainer View */
+                          <div className="flex items-center justify-between text-xs text-zinc-400">
+                            <span>Submissions: <strong className="text-white">{a.submittedCount || 0}</strong></span>
+                            <span>Graded: <strong className="text-emerald-400">{a.approvedCount || 0}</strong></span>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -578,138 +505,168 @@ export default function AssignmentControlCenterPage() {
                 })}
               </div>
             )}
+          </>
+        )}
+
+        {/* Tab 2: Trainer Submissions List */}
+        {activeTab === "SUBMISSIONS" && canManage && (
+          <div className="bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden">
+            <div className="p-4 border-b border-zinc-800 flex justify-between items-center">
+              <h3 className="text-sm font-bold text-white">Student Homework Submissions</h3>
+              <span className="text-xs text-zinc-400 font-mono">{allSubmissions.length} Total Submissions</span>
+            </div>
+
+            {allSubmissions.length === 0 ? (
+              <div className="p-8 text-center text-zinc-500 text-xs">
+                No student submissions yet.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-zinc-300">
+                  <thead className="bg-zinc-900/60 text-zinc-400 uppercase text-[10px] tracking-wider border-b border-zinc-800">
+                    <tr>
+                      <th className="p-3">Intern</th>
+                      <th className="p-3">Assignment</th>
+                      <th className="p-3">Evidence</th>
+                      <th className="p-3">Submitted At</th>
+                      <th className="p-3">Status / Grade</th>
+                      <th className="p-3">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-900">
+                    {allSubmissions.map((sub) => (
+                      <tr key={sub.id} className="hover:bg-zinc-900/40">
+                        <td className="p-3 font-semibold text-white">
+                          {sub.internId || sub.userId}
+                          <span className="block text-[11px] text-zinc-400 font-normal">{sub.userName}</span>
+                        </td>
+                        <td className="p-3">
+                          <span className="font-semibold text-zinc-200">{sub.assignmentTitle}</span>
+                        </td>
+                        <td className="p-3">
+                          {sub.repositoryUrl ? (
+                            <a
+                              href={sub.repositoryUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-red-400 hover:underline flex items-center gap-1 font-mono text-[11px]"
+                            >
+                              <GitBranch className="w-3 h-3" />
+                              View Code Repo
+                            </a>
+                          ) : (
+                            <span className="text-zinc-500">Text Content</span>
+                          )}
+                        </td>
+                        <td className="p-3 text-zinc-400 text-[11px]">
+                          {new Date(sub.submittedAt).toLocaleDateString()}
+                        </td>
+                        <td className="p-3">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            sub.status === "GRADED" ? "bg-emerald-950 text-emerald-300 border border-emerald-800" :
+                            "bg-amber-950 text-amber-300 border border-amber-800"
+                          }`}>
+                            {sub.status} {sub.grade ? `(${sub.grade})` : ""}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <button
+                            onClick={() => {
+                              setReviewModalSubmission(sub);
+                              setGradeInput(sub.grade || "A");
+                              setFeedbackInput(sub.feedback || "Good work on the practical demonstration.");
+                            }}
+                            className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-[11px] text-white"
+                          >
+                            Grade & Feedback
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Create Assignment Modal */}
-        {createModalOpen && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-            <div className="bg-[#0f1115] border border-[#222630] rounded-2xl max-w-xl w-full p-6 my-8 shadow-2xl relative">
-              <button
-                onClick={() => setCreateModalOpen(false)}
-                className="absolute top-5 right-5 text-gray-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-
-              <div className="flex items-center gap-2 text-xs font-mono text-red-400 mb-1">
-                <FileText className="w-4 h-4" />
-                <span>NEW PRACTICAL ASSIGNMENT</span>
+        {/* MODAL 1: INTERN HOMEWORK SUBMISSION */}
+        {submitModalAssignment && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-xl w-full max-w-lg p-6 space-y-4 shadow-2xl">
+              <div className="flex justify-between items-center border-b border-zinc-800 pb-3">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Send className="w-4 h-4 text-red-500" />
+                  Submit Homework: {submitModalAssignment.title}
+                </h3>
+                <button
+                  onClick={() => setSubmitModalAssignment(null)}
+                  className="p-1 rounded text-zinc-400 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              <h2 className="text-xl font-bold text-white mb-4">Publish Assignment to Mobile App</h2>
 
-              {createError && (
-                <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-xs text-red-400 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{createError}</span>
+              {submitError && (
+                <div className="p-3 rounded-lg bg-red-950/60 border border-red-800 text-xs text-red-200">
+                  {submitError}
+                </div>
+              )}
+              {submitSuccess && (
+                <div className="p-3 rounded-lg bg-emerald-950/60 border border-emerald-800 text-xs text-emerald-200">
+                  {submitSuccess}
                 </div>
               )}
 
-              <form onSubmit={handleCreateAssignment} className="space-y-4 text-xs">
+              <form onSubmit={handleSubmitAssignment} className="space-y-3">
                 <div>
-                  <label className="block text-gray-400 mb-1 font-medium">Assignment Title *</label>
+                  <label className="text-xs text-zinc-400 block mb-1 font-semibold">GitHub Repository URL (Optional/Recommended)</label>
+                  <input
+                    type="url"
+                    placeholder="https://github.com/your-username/codexa-task"
+                    value={repositoryUrl}
+                    onChange={(e) => setRepositoryUrl(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-red-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-zinc-400 block mb-1 font-semibold">Task Explanation / Reflection</label>
+                  <textarea
+                    rows={4}
+                    placeholder="Describe your implementation, tests performed, and 3 key takeaways..."
+                    value={textContent}
+                    onChange={(e) => setTextContent(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-red-600"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-zinc-400 block mb-1 font-semibold">Notes for Trainer (Optional)</label>
                   <input
                     type="text"
-                    required
-                    placeholder="e.g. Implement Microservices Database Pooler & JWT Validation"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    className="w-full bg-[#14171d] border border-[#232732] rounded-lg px-3 py-2 text-white outline-none focus:border-red-500"
+                    placeholder="e.g. Completed all steps and deployed to Vercel"
+                    value={submissionNotes}
+                    onChange={(e) => setSubmissionNotes(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-red-600"
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-gray-400 mb-1 font-medium">Domain Track *</label>
-                    <select
-                      value={domain}
-                      onChange={(e) => setDomain(e.target.value)}
-                      className="w-full bg-[#14171d] border border-[#232732] rounded-lg px-3 py-2 text-white outline-none focus:border-red-500"
-                    >
-                      {DOMAINS.map((d) => (
-                        <option key={d} value={d}>
-                          {d}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-gray-400 mb-1 font-medium">Submission Format *</label>
-                    <select
-                      value={submissionType}
-                      onChange={(e) => setSubmissionType(e.target.value)}
-                      className="w-full bg-[#14171d] border border-[#232732] rounded-lg px-3 py-2 text-white outline-none focus:border-red-500"
-                    >
-                      <option value="REPOSITORY">GitHub / Git Repository URL</option>
-                      <option value="TEXT">Written Text / Analysis Response</option>
-                      <option value="BOTH">Both (Repo or Text allowed)</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-gray-400 mb-1 font-medium">Due Date & Time *</label>
-                    <input
-                      type="date"
-                      required
-                      value={dueDate}
-                      onChange={(e) => setDueDate(e.target.value)}
-                      className="w-full bg-[#14171d] border border-[#232732] rounded-lg px-3 py-2 text-white outline-none focus:border-red-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-gray-400 mb-1 font-medium">Late Cutoff (Optional)</label>
-                    <input
-                      type="date"
-                      value={lateCutoff}
-                      onChange={(e) => setLateCutoff(e.target.value)}
-                      className="w-full bg-[#14171d] border border-[#232732] rounded-lg px-3 py-2 text-white outline-none focus:border-red-500"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-gray-400 mb-1 font-medium">Instructions & Overview *</label>
-                  <textarea
-                    rows={3}
-                    required
-                    placeholder="Describe the objective, tools to use, and step-by-step deliverable expectations."
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    className="w-full bg-[#14171d] border border-[#232732] rounded-lg px-3 py-2 text-white outline-none focus:border-red-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-gray-400 mb-1 font-medium">Requirements & Acceptance Criteria</label>
-                  <textarea
-                    rows={2}
-                    placeholder="- Must contain passing unit tests&#10;- Strict TypeScript without any type suppressions&#10;- Clean commit history"
-                    value={requirements}
-                    onChange={(e) => setRequirements(e.target.value)}
-                    className="w-full bg-[#14171d] border border-[#232732] rounded-lg px-3 py-2 text-white outline-none focus:border-red-500"
-                  />
-                </div>
-
-                <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#1e222a]">
+                <div className="flex justify-end gap-2 pt-3 border-t border-zinc-900">
                   <button
                     type="button"
-                    onClick={() => setCreateModalOpen(false)}
-                    className="px-4 py-2 rounded-lg bg-[#14161a] border border-[#232730] text-gray-300 hover:text-white"
+                    onClick={() => setSubmitModalAssignment(null)}
+                    className="px-3 py-1.5 rounded-lg bg-zinc-900 text-xs text-zinc-300"
                   >
                     Cancel
                   </button>
-
                   <button
                     type="submit"
-                    disabled={creating}
-                    className="px-5 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold flex items-center gap-2"
+                    disabled={isSubmitting}
+                    className="px-4 py-1.5 rounded-lg bg-red-700 hover:bg-red-600 disabled:opacity-50 text-xs font-semibold text-white shadow-md"
                   >
-                    {creating ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                    Publish Assignment
+                    {isSubmitting ? "Submitting..." : "Submit Homework"}
                   </button>
                 </div>
               </form>
@@ -717,120 +674,86 @@ export default function AssignmentControlCenterPage() {
           </div>
         )}
 
-        {/* Review Submission Modal */}
-        {reviewModalSub && (
+        {/* MODAL 2: TRAINER GRADING & FEEDBACK */}
+        {reviewModalSubmission && (
           <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-[#0f1115] border border-[#222630] rounded-2xl max-w-lg w-full p-6 shadow-2xl relative">
-              <button
-                onClick={() => setReviewModalSub(null)}
-                className="absolute top-5 right-5 text-gray-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-
-              <div className="flex items-center gap-2 text-xs font-mono text-red-400 mb-1">
-                <Award className="w-3.5 h-3.5" />
-                <span>EVALUATE PRACTICAL WORK</span>
+            <div className="bg-zinc-950 border border-zinc-800 rounded-xl w-full max-w-lg p-6 space-y-4 shadow-2xl">
+              <div className="flex justify-between items-center border-b border-zinc-800 pb-3">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Award className="w-4 h-4 text-red-500" />
+                  Evaluate Submission: {reviewModalSubmission.userName}
+                </h3>
+                <button
+                  onClick={() => setReviewModalSubmission(null)}
+                  className="p-1 rounded text-zinc-400 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              <h2 className="text-lg font-bold text-white mb-1">
-                Review {reviewModalSub.userName}&apos;s Submission
-              </h2>
-              <p className="text-xs text-gray-400 mb-4">
-                Revision #{reviewModalSub.revision} • Submitted on {new Date(reviewModalSub.submittedAt).toLocaleDateString()}
-              </p>
 
-              {/* Submission details display */}
-              <div className="mb-4 p-3 bg-[#14171d] rounded-lg border border-[#232732] space-y-2 text-xs">
-                {reviewModalSub.repositoryUrl && (
-                  <div>
-                    <span className="text-gray-500 block mb-0.5">Repository URL:</span>
-                    <a
-                      href={reviewModalSub.repositoryUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-blue-400 hover:underline flex items-center gap-1 font-mono break-all"
-                    >
-                      {reviewModalSub.repositoryUrl}
-                      <ExternalLink className="w-3 h-3 shrink-0" />
+              <div className="p-3 bg-zinc-900 rounded-lg text-xs space-y-1.5 border border-zinc-800">
+                <p><span className="text-zinc-500">Intern ID:</span> <strong className="text-white">{reviewModalSubmission.internId}</strong></p>
+                <p><span className="text-zinc-500">Assignment:</span> {reviewModalSubmission.assignmentTitle}</p>
+                {reviewModalSubmission.repositoryUrl && (
+                  <p>
+                    <span className="text-zinc-500">Repository:</span>{" "}
+                    <a href={reviewModalSubmission.repositoryUrl} target="_blank" rel="noopener noreferrer" className="text-red-400 underline">
+                      {reviewModalSubmission.repositoryUrl}
                     </a>
-                  </div>
+                  </p>
                 )}
-
-                {reviewModalSub.textContent && (
+                {reviewModalSubmission.textContent && (
                   <div>
-                    <span className="text-gray-500 block mb-0.5">Written Solution:</span>
-                    <p className="text-gray-200 whitespace-pre-wrap max-h-36 overflow-y-auto">
-                      {reviewModalSub.textContent}
+                    <span className="text-zinc-500">Student Explanation:</span>
+                    <p className="mt-1 text-zinc-300 bg-black/50 p-2 rounded border border-zinc-800">
+                      {reviewModalSubmission.textContent}
                     </p>
                   </div>
                 )}
               </div>
 
-              <form onSubmit={handleReviewSubmission} className="space-y-4 text-xs">
+              <form onSubmit={handleGradeSubmission} className="space-y-3">
                 <div>
-                  <label className="block text-gray-400 mb-1 font-medium">Decision *</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { id: "APPROVE", label: "Approve" },
-                      { id: "REVISION_REQUESTED", label: "Request Changes" },
-                      { id: "GRADED", label: "Grade Only" },
-                    ].map((act) => (
-                      <button
-                        key={act.id}
-                        type="button"
-                        onClick={() => setReviewAction(act.id as any)}
-                        className={`p-2 rounded-lg border text-center font-semibold transition-all ${
-                          reviewAction === act.id
-                            ? "bg-red-600 text-white border-red-500"
-                            : "bg-[#14161a] text-gray-300 border-[#232730]"
-                        }`}
-                      >
-                        {act.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-gray-400 mb-1 font-medium">Grade / Rating</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. A+, 95/100, Excellent"
-                      value={gradeInput}
-                      onChange={(e) => setGradeInput(e.target.value)}
-                      className="w-full bg-[#14171d] border border-[#232732] rounded-lg px-3 py-2 text-white outline-none focus:border-red-500"
-                    />
-                  </div>
+                  <label className="text-xs text-zinc-400 block mb-1 font-semibold">Grade</label>
+                  <select
+                    value={gradeInput}
+                    onChange={(e) => setGradeInput(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white"
+                  >
+                    <option value="A+">A+ (Exceptional)</option>
+                    <option value="A">A (Excellent)</option>
+                    <option value="B+">B+ (Good)</option>
+                    <option value="B">B (Satisfactory)</option>
+                    <option value="Revision Required">Revision Required</option>
+                  </select>
                 </div>
 
                 <div>
-                  <label className="block text-gray-400 mb-1 font-medium">Feedback & Review Notes</label>
+                  <label className="text-xs text-zinc-400 block mb-1 font-semibold">Trainer Feedback</label>
                   <textarea
                     rows={3}
-                    placeholder="Provide constructive feedback for the student..."
                     value={feedbackInput}
                     onChange={(e) => setFeedbackInput(e.target.value)}
-                    className="w-full bg-[#14171d] border border-[#232732] rounded-lg px-3 py-2 text-white outline-none focus:border-red-500"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white"
+                    placeholder="Provide constructive feedback and practical advice..."
+                    required
                   />
                 </div>
 
-                <div className="flex justify-end gap-3 pt-2">
+                <div className="flex justify-end gap-2 pt-3 border-t border-zinc-900">
                   <button
                     type="button"
-                    onClick={() => setReviewModalSub(null)}
-                    className="px-4 py-2 rounded-lg bg-[#14161a] border border-[#232730] text-gray-300"
+                    onClick={() => setReviewModalSubmission(null)}
+                    className="px-3 py-1.5 rounded-lg bg-zinc-900 text-xs text-zinc-300"
                   >
                     Cancel
                   </button>
-
                   <button
                     type="submit"
-                    disabled={reviewing}
-                    className="px-5 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold flex items-center gap-2"
+                    disabled={isGrading}
+                    className="px-4 py-1.5 rounded-lg bg-red-700 hover:bg-red-600 disabled:opacity-50 text-xs font-semibold text-white shadow-md"
                   >
-                    {reviewing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                    Confirm Decision
+                    {isGrading ? "Saving..." : "Save Grade & Feedback"}
                   </button>
                 </div>
               </form>

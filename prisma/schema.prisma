@@ -1721,6 +1721,8 @@ model TrustedUpiTransaction {
 // ─── SCHEDULED CLASSES & TRAINING HUB ─────────────────────────────────────────
 model ScheduledClass {
   id                 String    @id
+  sourceKey          String?   @unique @map("source_key")
+  sequenceNumber     Int?      @map("sequence_number")
   title              String
   domain             String    @default("All Domains")
   batch              String    @default("Batch-2026")
@@ -1731,18 +1733,34 @@ model ScheduledClass {
   classDate          DateTime  @map("class_date") @db.Date
   startTime          String    @map("start_time")
   endTime            String    @map("end_time")
-  duration           String    @default("1h 30m")
-  status             String    @default("UPCOMING") // UPCOMING, LIVE, COMPLETED, CANCELLED, RESCHEDULED
+  duration           String    @default("2h 00m")
+  status             String    @default("UPCOMING") // DRAFT, UPCOMING, LIVE, COMPLETED, CANCELLED, RESCHEDULED
   mode               String    @default("ONLINE")
   meetingLink        String?   @map("meeting_link")
   learningObjectives String?   @map("learning_objectives")
   resources          Json?     @default("[]")
   recordingUrl       String?   @map("recording_url")
+  attendingDomains   Json?     @map("attending_domains")
+  learningGoals      Json?     @map("learning_goals")
+  trainerDemo        String?   @map("trainer_demo")
+  timeZone           String?   @default("Asia/Kolkata") @map("time_zone")
+  instructorNotes    String?   @map("instructor_notes")
+  startAt            DateTime? @map("start_at")
+  endAt              DateTime? @map("end_at")
+  publishedAt        DateTime? @map("published_at")
+  completedAt        DateTime? @map("completed_at")
+  cancelledAt        DateTime? @map("cancelled_at")
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at")
 
   questions          ClassQuestion[]
+  assignments        Assignment[]
+  trainingAttendance TrainingClassAttendance[]
+  makeupQueue        TrainingMakeupQueue[] @relation("OriginalClassMakeup")
+  makeupSessions     TrainingMakeupQueue[] @relation("MakeupClassSession")
 
+  @@index([classDate])
+  @@index([status])
   @@map("scheduled_classes")
 }
 
@@ -1765,24 +1783,32 @@ model ClassQuestion {
 
 // ─── ASSIGNMENTS & SUBMISSION WORKFLOW ────────────────────────────────────────
 model Assignment {
-  id             String    @id
-  title          String
-  description    String
-  assignedBy     String?   @map("assigned_by")
-  assignedByName String    @default("CodeXa Technical Lead") @map("assigned_by_name")
-  domain         String    @default("All Domains")
-  classId        String?   @map("class_id")
-  projectId      String?   @map("project_id")
-  submissionType String    @default("BOTH") @map("submission_type") // TEXT, REPOSITORY, BOTH
-  dueDate        DateTime  @map("due_date")
-  lateCutoff     DateTime? @map("late_cutoff")
-  requirements   String?
-  status         String    @default("ACTIVE") // ACTIVE, CLOSED, ARCHIVED
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at")
+  id               String    @id
+  sourceKey        String?   @unique @map("source_key")
+  title            String
+  description      String
+  assignedBy       String?   @map("assigned_by")
+  assignedByName   String    @default("CodeXa Technical Lead") @map("assigned_by_name")
+  domain           String    @default("All Domains")
+  classId          String?   @map("class_id")
+  projectId        String?   @map("project_id")
+  submissionType   String    @default("BOTH") @map("submission_type") // TEXT, REPOSITORY, BOTH
+  dueDate          DateTime  @map("due_date")
+  lateCutoff       DateTime? @map("late_cutoff")
+  requirements     String?
+  status           String    @default("ACTIVE") // DRAFT, ACTIVE, PUBLISHED, CLOSED, ARCHIVED
+  evidenceRequired String?   @map("evidence_required")
+  releaseAt        DateTime? @map("release_at")
+  publishedAt      DateTime? @map("published_at")
+  attendingDomains Json?     @map("attending_domains")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
 
-  submissions    AssignmentSubmission[]
+  class            ScheduledClass? @relation(fields: [classId], references: [id], onDelete: SetNull)
+  submissions      AssignmentSubmission[]
 
+  @@index([classId])
+  @@index([status])
   @@map("assignments")
 }
 
@@ -1814,6 +1840,80 @@ model AssignmentSubmission {
 
   @@unique([assignmentId, userId, revision], map: "uq_user_assignment_rev")
   @@map("assignment_submissions")
+}
+
+model TrainingClassAttendance {
+  id         String    @id @default(cuid())
+  classId    String    @map("class_id")
+  internId   String    @map("intern_id")
+  userId     String?   @map("user_id")
+  status     String    @default("PENDING") // PENDING, PRESENT, ABSENT, EXCUSED, MAKEUP_PENDING
+  recordedBy String?   @map("recorded_by")
+  notes      String?
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  class      ScheduledClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, internId], map: "uq_class_intern_attendance")
+  @@index([internId])
+  @@index([classId])
+  @@index([status])
+  @@map("training_class_attendance")
+}
+
+model StudentExamBlackout {
+  id            String    @id @default(cuid())
+  college       String
+  yearBatch     Int       @map("year_batch")
+  examStartDate DateTime  @map("exam_start_date") @db.Date
+  examEndDate   DateTime  @map("exam_end_date") @db.Date
+  blackoutStart DateTime  @map("blackout_start") @db.Date
+  blackoutEnd   DateTime  @map("blackout_end") @db.Date
+  verifiedBy    String?   @map("verified_by")
+  notes         String?
+  status        String    @default("ACTIVE") // ACTIVE, ARCHIVED
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@index([college, yearBatch])
+  @@map("student_exam_blackouts")
+}
+
+model TrainingMakeupQueue {
+  id              String    @id @default(cuid())
+  originalClassId String    @map("original_class_id")
+  internId        String    @map("intern_id")
+  userId          String?   @map("user_id")
+  reason          String    @default("SEMESTER_EXAM_EXCUSED")
+  status          String    @default("PENDING") // PENDING, SCHEDULED, COMPLETED, CANCELLED
+  makeupClassId   String?   @map("makeup_class_id")
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  originalClass   ScheduledClass  @relation("OriginalClassMakeup", fields: [originalClassId], references: [id], onDelete: Cascade)
+  makeupClass     ScheduledClass? @relation("MakeupClassSession", fields: [makeupClassId], references: [id], onDelete: SetNull)
+
+  @@unique([originalClassId, internId], map: "uq_orig_class_intern_makeup")
+  @@index([internId])
+  @@index([status])
+  @@map("training_makeup_queue")
+}
+
+model TrainingChangeAudit {
+  id         String    @id @default(cuid())
+  actorId    String?   @map("actor_id")
+  actorEmail String?   @map("actor_email")
+  action     String // IMPORT, PUBLISH, EDIT, RESCHEDULE, ATTENDANCE, COMPLETE, BLACKOUT_APPLY
+  entityType String    @map("entity_type") // CLASS, ASSIGNMENT, ATTENDANCE, BLACKOUT, MAKEUP
+  entityId   String    @map("entity_id")
+  before     Json?
+  after      Json?
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@map("training_change_audit")
 }
 
 // ─── POST-PAYMENT BENEFITS: ID CARD & AI ACCESS ──────────────────────────────
