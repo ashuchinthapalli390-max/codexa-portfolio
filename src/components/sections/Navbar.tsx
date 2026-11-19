@@ -9,6 +9,7 @@ import { NeonButton } from "../ui/NeonButton";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
+import { scrollToId } from "@/lib/scroll-store";
 
 export function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -21,9 +22,10 @@ export function Navbar() {
     { name: "Home", id: "home" },
     { name: "About", id: "about" },
     { name: "Services", id: "services" },
-    { name: "Team", id: "team" },
-    { name: "Internship", id: "internship" },
+    { name: "Reel", id: "reel" },
+    { name: "Team", id: "leadership" },
     { name: "Process", id: "process" },
+    { name: "Internship", id: "internship" },
     { name: "FAQ", id: "faq" },
     { name: "Contact", id: "contact" }
   ];
@@ -46,10 +48,7 @@ export function Navbar() {
 
   const handleNavClick = (id: string) => {
     setMobileMenuOpen(false);
-    const element = document.getElementById(id);
-    if (element) {
-      element.scrollIntoView({ behavior: isReduced ? "auto" : "smooth" });
-    }
+    scrollToId(id, isReduced);
   };
 
   const getPortalLink = () => {

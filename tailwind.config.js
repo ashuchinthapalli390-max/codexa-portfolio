@@ -20,6 +20,7 @@ module.exports = {
       fontFamily: {
         sans: ["Inter", "sans-serif"],
         orbitron: ["Orbitron", "sans-serif"],
+        mono: ["'JetBrains Mono'", "ui-monospace", "monospace"],
       },
       boxShadow: {
         'neon': '0 0 15px rgba(217, 4, 41, 0.25)',

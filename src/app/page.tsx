@@ -1,28 +1,34 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
 import "./globals.css";
 import { motion } from "framer-motion";
 import { CodexaCinematicIntro } from "@/components/intro/CodexaCinematicIntro";
 import { Navbar } from "@/components/sections/Navbar";
-import { HeroSection } from "@/components/sections/HeroSection";
-import { AboutSection } from "@/components/sections/AboutSection";
-import { ServicesSection } from "@/components/sections/ServicesSection";
-import { TechDivider } from "@/components/sections/TechDivider";
 import { MainProjectsSection } from "@/components/sections/MainProjectsSection";
 import { TeamProjectsSection } from "@/components/sections/TeamProjectsSection";
 import { PublicLeadershipSection } from "@/components/sections/PublicLeadershipSection";
-import { InternshipSection } from "@/components/sections/InternshipSection";
-import { CapabilitiesSection } from "@/components/sections/CapabilitiesSection";
-import { ProcessSection } from "@/components/sections/ProcessSection";
 import { FAQSection } from "@/components/sections/FAQSection";
 import { ContactSection } from "@/components/sections/ContactSection";
-import { EndingSection } from "@/components/sections/EndingSection";
 import { Footer } from "@/components/sections/Footer";
-import { CyberWebOverlay } from "@/components/ui/CyberWebOverlay";
+import { SmoothScroll } from "@/components/scroll/SmoothScroll";
+import { ScrollHUD } from "@/components/scroll/ScrollHUD";
+import { Hero3D } from "@/components/scroll3d/Hero3D";
+import { Manifesto3D } from "@/components/scroll3d/Manifesto3D";
+import { Services3D } from "@/components/scroll3d/Services3D";
+import { CinematicReel } from "@/components/scroll3d/CinematicReel";
+import { TeamIntro3D } from "@/components/scroll3d/TeamIntro3D";
+import { Process3D } from "@/components/scroll3d/Process3D";
+import { Internship3D } from "@/components/scroll3d/Internship3D";
+import { CapabilitiesMarquee } from "@/components/scroll3d/CapabilitiesMarquee";
+import { FinalPortal } from "@/components/scroll3d/FinalPortal";
+import { Reveal3D, RevealFade } from "@/components/scroll3d/Reveal3D";
+
+// WebGL scene is client-only and code-split so text paints first.
+const CodexaScene = dynamic(() => import("@/components/three/CodexaScene"), { ssr: false });
 
 export default function Home() {
-  const [mounted, setMounted] = useState(false);
   const [introActive, setIntroActive] = useState(true);
   const [siteSettings, setSiteSettings] = useState({
     mainProjectsHomeVisible: true,
@@ -30,13 +36,10 @@ export default function Home() {
   });
 
   useEffect(() => {
-    setMounted(true);
-
     // If intro was already watched this session and not forced, show homepage immediately
     try {
       const urlParams = new URLSearchParams(window.location.search);
-      const forceReplay =
-        urlParams.get("replayIntro") === "1" || urlParams.get("intro") === "force";
+      const forceReplay = urlParams.get("replayIntro") === "1" || urlParams.get("intro") === "force";
       const seen1 = sessionStorage.getItem("codexa_intro_seen_v1");
       const seen2 = sessionStorage.getItem("codexa_intro_seen_v2");
       if ((seen1 === "1" || seen2 === "1") && !forceReplay) {
@@ -46,7 +49,6 @@ export default function Home() {
       // ignore
     }
 
-    // Load site settings
     fetch("/api/site-settings")
       .then((r) => r.json())
       .then((data) => {
@@ -57,57 +59,71 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
-
   return (
-    <div className="relative min-h-screen bg-[#070707] w-full overflow-x-hidden">
-      {/* 1. Cinematic Code-Based Multilingual Intro Animation Overlay */}
+    <div className="relative min-h-screen bg-[#050505] w-full overflow-x-clip">
+      {/* 1. Cinematic code-based multilingual intro overlay */}
       <CodexaCinematicIntro onComplete={() => setIntroActive(false)} />
 
-      {/* 2. Homepage Content rendered behind intro and smoothly animated on reveal */}
+      {/* 2. Fixed WebGL world — the camera flies through it as you scroll */}
+      <CodexaScene />
+      <SmoothScroll />
+
+      {/* 3. Scroll-driven DOM layer */}
       <motion.div
-        key="homepage-content"
-        initial={{ opacity: introActive ? 0.2 : 1, y: introActive ? 8 : 0 }}
-        animate={{ opacity: introActive ? 0.2 : 1, y: introActive ? 8 : 0 }}
+        initial={{ opacity: introActive ? 0.2 : 1 }}
+        animate={{ opacity: introActive ? 0.2 : 1 }}
         transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
         className="w-full relative"
       >
-        {/* Cyber web overlay drawing strands in background */}
-        <CyberWebOverlay />
-
-        {/* Navigation Header */}
         <Navbar />
+        <ScrollHUD />
 
-        {/* Main Content Layout Sections */}
         <main className="w-full relative">
-          {/* 1. HERO */}
-          <HeroSection />
+          <Hero3D ready={!introActive} />
+          <Manifesto3D />
+          <Services3D />
+          <CinematicReel />
 
-          {/* 2. ABOUT */}
-          <AboutSection />
+          {(siteSettings.mainProjectsHomeVisible || siteSettings.teamProjectsHomeVisible) && (
+            <div className="scene-panel">
+              {siteSettings.mainProjectsHomeVisible && (
+                <Reveal3D>
+                  <MainProjectsSection />
+                </Reveal3D>
+              )}
+              {siteSettings.teamProjectsHomeVisible && (
+                <Reveal3D>
+                  <TeamProjectsSection />
+                </Reveal3D>
+              )}
+            </div>
+          )}
 
-          {/* 3. SERVICES */}
-          <ServicesSection />
+          <TeamIntro3D />
+          {/* Leadership hosts fixed-position modals → opacity-only reveal */}
+          <RevealFade className="scene-panel">
+            <PublicLeadershipSection />
+          </RevealFade>
 
-          <TechDivider />
+          <Process3D />
+          <Internship3D />
+          <CapabilitiesMarquee />
 
-          {/* 4. PROJECTS */}
-          {siteSettings.mainProjectsHomeVisible && <MainProjectsSection />}
-          {siteSettings.teamProjectsHomeVisible && <TeamProjectsSection />}
+          <div className="scene-panel">
+            <Reveal3D>
+              <FAQSection />
+            </Reveal3D>
+            <Reveal3D intensity={0.7}>
+              <ContactSection />
+            </Reveal3D>
+          </div>
 
-          {/* 5. CANONICAL CODEXA LEADERSHIP */}
-          <PublicLeadershipSection />
-
-          {/* 6. REMAINING SECTIONS */}
-          <InternshipSection />
-          <CapabilitiesSection />
-          <ProcessSection />
-          <FAQSection />
-          <ContactSection />
-          <EndingSection />
+          <FinalPortal />
         </main>
 
-        {/* Footer Area */}
-        <Footer />
+        <div className="relative bg-[#050505]">
+          <Footer />
+        </div>
       </motion.div>
     </div>
   );

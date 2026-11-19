@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Orbitron:wght@400;500;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Orbitron:wght@400;500;700;900&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -209,7 +209,47 @@
   animation: draw-web 15s linear infinite;
 }
 
-/* Accessible reduced motion override */
+/* ─── 3D SCROLL EXPERIENCE ───────────────────────────────────────────────── */
+
+/* Lenis smooth scroll */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+
+/* Content sections float over the fixed WebGL world with a translucent veil */
+.scene-panel section {
+  background-color: rgba(5, 5, 5, 0.8) !important;
+}
+
+/* Custom cursor (desktop, fine pointer only) */
+html.has-custom-cursor,
+html.has-custom-cursor body,
+html.has-custom-cursor a,
+html.has-custom-cursor button,
+html.has-custom-cursor [role="button"] {
+  cursor: none;
+}
+
+@keyframes scrollcue {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(200%);
+  }
+}
+
+/* Accessible reduced motion override (3D layouts keep their static transforms) */
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-delay: 0s !important;
@@ -217,7 +257,6 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0s !important;
     scroll-behavior: auto !important;
-    transform: none !important;
   }
 
   .animate-pulse-slow,
