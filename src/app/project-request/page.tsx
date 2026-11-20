@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Script from "next/script";
-import { motion, AnimatePresence, useScroll, useTransform, useMotionValueEvent, MotionValue } from "framer-motion";
+import { motion, AnimatePresence, useScroll, useTransform, useMotionValue, MotionValue } from "framer-motion";
 import {
   Sparkles, CheckCircle2, AlertCircle, ArrowRight, ArrowLeft, Shield, Lock, Layers, Cpu, Globe, Smartphone,
   LayoutDashboard, ShoppingCart, BookOpen, Calendar, Users, Database, Key, Palette, Clock, Loader2, Check, Zap,
@@ -145,37 +145,38 @@ export default function ProjectRequestPage() {
   // Form State
   const [formData, setFormData] = useState({
     // Step 1: Project Type
-    projectType: "saas-platform",
+    // Nothing is pre-selected — every choice is the client's own.
+    projectType: "",
     customProjectType: "",
-    closestCategory: "Web Application",
+    closestCategory: "",
 
     // Step 2: Purpose & Features
-    purposes: ["Showcase My Business", "Sell Services"] as string[],
-    features: ["payment_integration", "auth_required", "admin_dashboard"] as string[],
+    purposes: [] as string[],
+    features: [] as string[],
     specificChecklist: [] as string[],
 
     // Step 3: Technical Architecture
-    authOption: "Email + Password",
-    authExtras: ["Forgot Password", "Role-Based Access"] as string[],
-    dashboardOption: "Admin Dashboard",
-    dashboardFeatures: ["Analytics", "User Management", "Payments", "Settings"] as string[],
-    databaseOption: "Yes",
-    databaseDataTypes: ["User Accounts", "Customer Information", "Project Data"] as string[],
-    integrations: ["Razorpay (UPI / Cards)", "Google OAuth", "Resend / Email Services"] as string[],
+    authOption: "",
+    authExtras: [] as string[],
+    dashboardOption: "",
+    dashboardFeatures: [] as string[],
+    databaseOption: "",
+    databaseDataTypes: [] as string[],
+    integrations: [] as string[],
 
     // Step 4: Design & Scope
-    designStyles: ["Dark", "Futuristic", "Premium"] as string[],
-    animationLevel: "Advanced", // Minimal, Standard, Advanced, Cinematic
-    pageRange: "2–5 Pages",
-    hasExistingDesign: "No — CodeXa should design everything",
+    designStyles: [] as string[],
+    animationLevel: "", // Minimal, Standard, Advanced, Cinematic
+    pageRange: "",
+    hasExistingDesign: "",
     designLinks: "",
     existingProjectType: "Build From Scratch",
     existingProjectUrl: "",
     existingTechStack: "",
 
     // Step 5: Timeline, Budget & Contact
-    timeline: "2–4 Weeks",
-    budgetRange: "₹20,000–₹40,000",
+    timeline: "",
+    budgetRange: "",
     fullName: "",
     email: "",
     phone: "",
@@ -197,42 +198,31 @@ export default function ProjectRequestPage() {
   const [, setRazorpayLoaded] = useState(false);
 
   // Real-time advance calculation (shared engine — identical on the server)
-  const advanceResult = useMemo(() => {
-    return calculateProjectAdvance({
-      projectTypeId: formData.projectType,
-      features: formData.features,
-      authOption: formData.authOption,
-      authExtras: formData.authExtras,
-      dashboardOption: formData.dashboardOption,
-      databaseOption: formData.databaseOption,
-      animationLevel: formData.animationLevel,
-      integrations: formData.integrations,
-      specificFeatures: {
-        ai_capabilities:
-          formData.projectType === "ai-platform" ||
-          formData.purposes.includes("Provide AI Features") ||
-          formData.specificChecklist.some((f) => f.toLowerCase().includes("ai")),
-        ecommerce: formData.projectType === "ecommerce-website" || formData.purposes.includes("Sell Products"),
-        subscription: formData.projectType === "saas-platform" || formData.purposes.includes("Build a Subscription Platform"),
-      },
-    });
-  }, [
-    formData.projectType,
-    formData.features,
-    formData.authOption,
-    formData.authExtras,
-    formData.dashboardOption,
-    formData.databaseOption,
-    formData.animationLevel,
-    formData.integrations,
-    formData.purposes,
-    formData.specificChecklist,
-  ]);
+  // specificFeatures is also sent with the order so the server recalculates the exact same amount
+  const specificFeatures = {
+    ai_capabilities:
+      formData.projectType === "ai-platform" ||
+      formData.purposes.includes("Provide AI Features") ||
+      formData.specificChecklist.some((f) => f.toLowerCase().includes("ai")),
+    ecommerce: formData.projectType === "ecommerce-website" || formData.purposes.includes("Sell Products"),
+    subscription: formData.projectType === "saas-platform" || formData.purposes.includes("Build a Subscription Platform"),
+  };
+  const advanceResult = calculateProjectAdvance({
+    projectTypeId: formData.projectType,
+    features: formData.features,
+    authOption: formData.authOption,
+    authExtras: formData.authExtras,
+    dashboardOption: formData.dashboardOption,
+    databaseOption: formData.databaseOption,
+    animationLevel: formData.animationLevel,
+    integrations: formData.integrations,
+    specificFeatures,
+  });
 
-  // Selected project type object
-  const currentProjectTypeObj = useMemo(() => {
-    return PROJECT_TYPES.find((p) => p.id === formData.projectType) || PROJECT_TYPES[0];
-  }, [formData.projectType]);
+  // Selected project type (undefined until the client picks one)
+  const selectedType = PROJECT_TYPES.find((p) => p.id === formData.projectType);
+  const currentProjectTypeObj = selectedType || PROJECT_TYPES[0];
+  const hasLogin = !!formData.authOption && formData.authOption !== "No Login Required";
 
   // Helper to toggle array item
   const toggleArrayItem = (field: keyof typeof formData, item: string) => {
@@ -324,6 +314,7 @@ export default function ProjectRequestPage() {
 
   // Everything required before booking, with the section that fixes it
   const missing = [
+    !formData.projectType ? { label: "Choose what you want to build", step: 1 } : null,
     formData.projectType === "custom-other" && !formData.customProjectType.trim() ? { label: "Describe your custom project", step: 1 } : null,
     formData.purposes.length === 0 ? { label: "Choose at least one goal", step: 2 } : null,
     !formData.fullName.trim() ? { label: "Your full name", step: 5 } : null,
@@ -360,6 +351,7 @@ export default function ProjectRequestPage() {
         body: JSON.stringify({
           ...formData,
           projectType: currentProjectTypeObj.name,
+          specificFeatures,
           termsAccepted: true,
         }),
       });
@@ -467,11 +459,12 @@ export default function ProjectRequestPage() {
     const add = (id: string, label: string) => {
       if (!mods.some((m) => m.id === id)) mods.push({ id, label });
     };
-    if (formData.authOption !== "No Login Required") add("auth", "Secure login");
-    if (formData.authExtras.includes("Two-Factor Authentication") && formData.authOption !== "No Login Required") add("2fa", "2-step verification");
-    if (formData.authExtras.includes("Role-Based Access") && formData.authOption !== "No Login Required") add("roles", "Role-based access");
+    const login = !!formData.authOption && formData.authOption !== "No Login Required";
+    if (login) add("auth", "Secure login");
+    if (login && formData.authExtras.includes("Two-Factor Authentication")) add("2fa", "2-step verification");
+    if (login && formData.authExtras.includes("Role-Based Access")) add("roles", "Role-based access");
     if (formData.databaseOption === "Yes") add("db", "Cloud database");
-    if (formData.dashboardOption !== "No Dashboard") add("dash", formData.dashboardOption);
+    if (formData.dashboardOption && formData.dashboardOption !== "No Dashboard") add("dash", formData.dashboardOption);
     FEATURE_OPTIONS.forEach((f) => formData.features.includes(f.id) && add(f.id, f.name));
     if (formData.purposes.includes("Provide AI Features")) add("ai_integration", "AI agents & LLMs");
     formData.integrations.forEach((i) => add(`int-${i}`, i));
@@ -595,7 +588,7 @@ export default function ProjectRequestPage() {
           </AnimatePresence>
 
           {/* ── STEP 1 ── */}
-          <StorySection n={1} title="What do you want to build?" text="Scroll to browse every build type. Tap a panel to choose it — we'll take you straight to the next chapter." next="Goals & features" onNext={() => scrollToStep(2)}>
+          <StorySection n={1} title="What do you want to build?" text="Swipe or use the arrows to browse every build type. Tap Choose on a panel — we'll take you straight to the next chapter." next="Goals & features" onNext={() => scrollToStep(2)}>
             <TypeReel value={formData.projectType} onSelect={handleTypeSelect} />
             <AnimatePresence>
               {formData.projectType === "custom-other" && (
@@ -620,9 +613,9 @@ export default function ProjectRequestPage() {
           </StorySection>
 
           {/* ── STEP 2 ── */}
-          <StorySection n={2} title="Goals & features" text="One panel at a time — scroll and each decision slides in on top of the last." next="Tech stack" onNext={() => scrollToStep(3)}>
-            <PanelStack labels={["Goals", "Features"]}>
-              <Section flat title="What should it achieve?" icon={Rocket} hint="Select all that apply">
+          <StorySection n={2} title="Goals & features" text="What should your product achieve, and which features does it need? Pick as many as you like." next="Tech stack" onNext={() => scrollToStep(3)}>
+            <>
+              <Section title="What should it achieve?" icon={Rocket} hint="Select all that apply">
                 <div className="flex flex-wrap gap-2.5">
                   {PURPOSE_OPTIONS.map((p) => (
                     <Chip key={p} on={formData.purposes.includes(p)} onClick={() => toggleArrayItem("purposes", p)}>
@@ -631,7 +624,7 @@ export default function ProjectRequestPage() {
                   ))}
                 </div>
               </Section>
-              <Section flat title={`${currentProjectTypeObj.name} features`} icon={Zap} hint="Responsive design always included">
+              <Section title={selectedType ? `${selectedType.name} features` : "Features"} icon={Zap} hint="Responsive design always included">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {FEATURE_OPTIONS.map((f, i) => {
                     const on = formData.features.includes(f.id);
@@ -652,13 +645,13 @@ export default function ProjectRequestPage() {
                   })}
                 </div>
               </Section>
-            </PanelStack>
+            </>
           </StorySection>
 
           {/* ── STEP 3 ── */}
-          <StorySection n={3} title="Tech stack" text="Accounts, data, dashboards and connected services — stacked one by one." next="Design & scope" onNext={() => scrollToStep(4)}>
-            <PanelStack labels={["Login", "Dashboard", "Database", "Integrations"]}>
-              <Section flat title="User accounts & login" icon={Key}>
+          <StorySection n={3} title="Tech stack" text="Accounts, dashboards, data and connected services. Not sure? Skip it — we'll recommend in the review call." next="Design & scope" onNext={() => scrollToStep(4)}>
+            <>
+              <Section title="User accounts & login" icon={Key}>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                   {["No Login Required", "Email + Password", "Google Login", "Phone OTP", "Email OTP", "Multiple Login Methods"].map((opt) => (
                     <Option key={opt} on={formData.authOption === opt} onClick={() => set("authOption", opt)}>
@@ -667,7 +660,7 @@ export default function ProjectRequestPage() {
                   ))}
                 </div>
                 <AnimatePresence>
-                  {formData.authOption !== "No Login Required" && (
+                  {hasLogin && (
                     <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
                       <p className="mt-5 mb-2.5 text-xs font-semibold text-white/55">Security add-ons</p>
                       <div className="flex flex-wrap gap-2.5">
@@ -681,7 +674,7 @@ export default function ProjectRequestPage() {
                   )}
                 </AnimatePresence>
               </Section>
-              <Section flat title="Dashboard & control center" icon={LayoutDashboard}>
+              <Section title="Dashboard & control center" icon={LayoutDashboard}>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                   {["No Dashboard", "User Dashboard", "Admin Dashboard", "User + Admin Dashboard", "Multi-role Dashboard"].map((d) => (
                     <Option key={d} on={formData.dashboardOption === d} onClick={() => set("dashboardOption", d)}>
@@ -690,7 +683,7 @@ export default function ProjectRequestPage() {
                   ))}
                 </div>
               </Section>
-              <Section flat title="Database" icon={Database} hint="Supabase / PostgreSQL">
+              <Section title="Database" icon={Database} hint="Supabase / PostgreSQL">
                 <div className="grid grid-cols-3 gap-2.5">
                   {[
                     { v: "No", d: "Static content only" },
@@ -704,7 +697,7 @@ export default function ProjectRequestPage() {
                   ))}
                 </div>
               </Section>
-              <Section flat title="Integrations" icon={Globe} hint="Third-party services">
+              <Section title="Integrations" icon={Globe} hint="Third-party services">
                 <div className="flex flex-wrap gap-2.5">
                   {INTEGRATION_OPTIONS.map((x) => (
                     <Chip key={x} on={formData.integrations.includes(x)} onClick={() => toggleArrayItem("integrations", x)}>
@@ -713,13 +706,13 @@ export default function ProjectRequestPage() {
                   ))}
                 </div>
               </Section>
-            </PanelStack>
+            </>
           </StorySection>
 
           {/* ── STEP 4 ── */}
           <StorySection n={4} title="Design & scope" text="Pick the look and feel. Your first style becomes the primary one." next="Timeline & contact" onNext={() => scrollToStep(5)}>
-            <PanelStack labels={["Style", "Motion", "Size", "Existing design"]}>
-              <Section flat title="Visual style" icon={Palette} hint="Select one or more">
+            <>
+              <Section title="Visual style" icon={Palette} hint="Select one or more">
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                   {DESIGN_STYLES.map((s, i) => {
                     const on = formData.designStyles.includes(s.id);
@@ -739,7 +732,7 @@ export default function ProjectRequestPage() {
                   })}
                 </div>
               </Section>
-              <Section flat title="Animation & motion" icon={Sparkles}>
+              <Section title="Animation & motion" icon={Sparkles}>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[
                     { id: "Minimal", desc: "Subtle fades", bars: 1 },
@@ -759,7 +752,7 @@ export default function ProjectRequestPage() {
                   ))}
                 </div>
               </Section>
-              <Section flat title="Size of the project" icon={Layers}>
+              <Section title="Size of the project" icon={Layers}>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {["1 Page (Single Landing)", "2–5 Pages", "6–10 Pages", "11–20 Pages", "20+ Pages", "Dynamic Web Application"].map((p, i) => (
                     <Option key={p} on={formData.pageRange === p} onClick={() => set("pageRange", p)}>
@@ -773,7 +766,7 @@ export default function ProjectRequestPage() {
                   ))}
                 </div>
               </Section>
-              <Section flat title="Existing design" icon={Eye}>
+              <Section title="Existing design" icon={Eye}>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {["No — CodeXa should design everything", "Yes — Figma Link Available", "Yes — Reference Websites", "Yes — Screenshot / Wireframes"].map((d) => (
                     <Option key={d} on={formData.hasExistingDesign === d} onClick={() => set("hasExistingDesign", d)}>
@@ -782,20 +775,20 @@ export default function ProjectRequestPage() {
                   ))}
                 </div>
                 <AnimatePresence>
-                  {formData.hasExistingDesign !== "No — CodeXa should design everything" && (
+                  {formData.hasExistingDesign.startsWith("Yes") && (
                     <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
                       <input type="url" value={formData.designLinks} onChange={(e) => set("designLinks", e.target.value)} placeholder="Paste Figma / reference URLs" className={`${inputCls} mt-4`} aria-label="Design links" />
                     </motion.div>
                   )}
                 </AnimatePresence>
               </Section>
-            </PanelStack>
+            </>
           </StorySection>
 
           {/* ── STEP 5 ── */}
           <StorySection n={5} title="Timeline & contact" text="When do you need it, and how can we reach you?" next="Review & book" onNext={() => scrollToStep(6)}>
-            <PanelStack labels={["Timeline", "Budget"]}>
-              <Section flat title="Target delivery" icon={Clock}>
+            <>
+              <Section title="Target delivery" icon={Clock}>
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                   {[
                     { v: "Urgent (< 1 Week)", d: "Priority sprint" },
@@ -812,7 +805,7 @@ export default function ProjectRequestPage() {
                   ))}
                 </div>
               </Section>
-              <Section flat title="Your overall budget" icon={Briefcase} hint="Helps us propose the right scope">
+              <Section title="Your overall budget" icon={Briefcase} hint="Helps us propose the right scope">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {["Below ₹10,000", "₹10,000–₹20,000", "₹20,000–₹40,000", "₹40,000–₹75,000", "₹75,000+", "Need CodeXa Recommendation"].map((b) => (
                     <Option key={b} on={formData.budgetRange === b} onClick={() => set("budgetRange", b)}>
@@ -821,7 +814,7 @@ export default function ProjectRequestPage() {
                   ))}
                 </div>
               </Section>
-            </PanelStack>
+            </>
 
             <Section title="Contact details" icon={User} hint="We'll reach you here">
               <div className="grid sm:grid-cols-2 gap-x-5">
@@ -863,8 +856,8 @@ export default function ProjectRequestPage() {
             <div className="grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] items-start">
               {/* receipt */}
               <BlueprintReceipt
-                typeName={formData.projectType === "custom-other" && formData.customProjectType ? formData.customProjectType : currentProjectTypeObj.name}
-                category={currentProjectTypeObj.category}
+                typeName={!selectedType ? "Not chosen yet" : formData.projectType === "custom-other" && formData.customProjectType ? formData.customProjectType : selectedType.name}
+                category={selectedType ? selectedType.category : "Pick a build type in chapter 1"}
                 typeIcon={TYPE_ICONS[formData.projectType] || Box}
                 onEdit={scrollToStep}
                 groups={[
@@ -875,14 +868,18 @@ export default function ProjectRequestPage() {
                     title: "Tech stack",
                     items: [
                       formData.authOption,
-                      ...(formData.authOption !== "No Login Required" ? formData.authExtras : []),
+                      ...(hasLogin ? formData.authExtras : []),
                       formData.dashboardOption,
-                      `Database: ${formData.databaseOption}`,
+                      formData.databaseOption ? `Database: ${formData.databaseOption}` : "",
                       ...formData.integrations,
-                    ],
+                    ].filter(Boolean),
                   },
-                  { step: 4, title: "Design", items: [...formData.designStyles, `${formData.animationLevel} motion`, formData.pageRange, formData.hasExistingDesign] },
-                  { step: 5, title: "Timeline & budget", items: [formData.timeline, formData.budgetRange] },
+                  {
+                    step: 4,
+                    title: "Design",
+                    items: [...formData.designStyles, formData.animationLevel ? `${formData.animationLevel} motion` : "", formData.pageRange, formData.hasExistingDesign].filter(Boolean),
+                  },
+                  { step: 5, title: "Timeline & budget", items: [formData.timeline, formData.budgetRange].filter(Boolean) },
                   { step: 5, title: "Contact", items: [formData.fullName, formData.email, formData.phone, formData.company, formData.city].filter(Boolean) as string[] },
                 ]}
               />
@@ -1021,7 +1018,7 @@ const inputCls =
   "w-full rounded-2xl bg-white/[0.03] border border-white/10 focus:border-bright-red focus:shadow-[0_0_0_4px_rgba(217,4,41,0.15)] px-4 py-3 text-sm text-white placeholder:text-white/25 outline-none transition";
 
 /** A large panel that rises out of depth as it scrolls into view (scroll-scrubbed, not one-shot). */
-function Section({ title, icon: Icon, hint, children, flat }: { title: string; icon: LucideIcon; hint?: string; children: React.ReactNode; flat?: boolean }) {
+function Section({ title, icon: Icon, hint, children }: { title: string; icon: LucideIcon; hint?: string; children: React.ReactNode }) {
   const ref = useRef<HTMLElement>(null);
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start end", "start 0.6"] });
   const rotateX = useTransform(scrollYProgress, [0, 1], [24, 0]);
@@ -1033,9 +1030,8 @@ function Section({ title, icon: Icon, hint, children, flat }: { title: string; i
   return (
     <motion.section
       ref={ref}
-      // inside a PanelStack the stack drives the motion, so the panel itself stays flat
-      style={flat ? undefined : { rotateX, y, scale, opacity, transformPerspective, transformOrigin: "50% 0%" }}
-      className={`relative overflow-hidden rounded-[30px] border border-white/[0.08] bg-gradient-to-br from-white/[0.05] via-[#0b0b0d]/95 to-[#08080a] backdrop-blur-md p-6 sm:p-9 shadow-[0_40px_100px_-50px_rgba(0,0,0,0.9)] ${flat ? "shadow-[0_-30px_80px_-30px_rgba(0,0,0,0.95)]" : ""}`}
+      style={{ rotateX, y, scale, opacity, transformPerspective, transformOrigin: "50% 0%" }}
+      className="relative overflow-hidden rounded-[30px] border border-white/[0.08] bg-gradient-to-br from-white/[0.05] via-[#0b0b0d]/95 to-[#08080a] p-6 sm:p-9 shadow-[0_40px_100px_-50px_rgba(0,0,0,0.9)]"
     >
       <div className="pointer-events-none absolute -top-24 -right-24 w-72 h-72 rounded-full bg-crimson/10 blur-[90px]" />
       <div className="relative flex items-center justify-between gap-3 mb-6">
@@ -1226,103 +1222,167 @@ function StorySection({ n, title, text, next, onNext, children }: { n: number; t
 }
 
 /**
- * Step 1 — a pinned, scroll-driven reel of large 3D panels (one build type per panel).
- * Desktop: vertical scroll moves the reel sideways; the centred panel is in focus.
- * Mobile: a native swipe carousel with snap points.
+ * Step 1 — a 3D carousel of large build-type panels.
+ * It scrolls sideways on its own (swipe, trackpad, arrows, dots, keyboard), so the page's
+ * vertical scroll is never hijacked. The centred panel is in focus; its neighbours turn away in 3D.
  */
+const REEL_GAP = 24;
+
 function TypeReel({ value, onSelect }: { value: string; onSelect: (id: string) => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const track = useRef<HTMLDivElement>(null);
-  const [dist, setDist] = useState(0);
-  const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end end"] });
+  const scroller = useRef<HTMLDivElement>(null);
+  // horizontal scroll position; starts at -1 so the first real measurement always notifies the panels
+  const sx = useMotionValue(-1);
+  const [focus, setFocus] = useState(0);
   const n = PROJECT_TYPES.length;
 
+  const cards = () => Array.from(scroller.current?.querySelectorAll<HTMLElement>("[data-card]") ?? []);
+
+  const sync = () => {
+    const el = scroller.current;
+    if (!el) return;
+    sx.set(el.scrollLeft);
+    const mid = el.scrollLeft + el.clientWidth / 2;
+    let best = 0;
+    let bestD = Infinity;
+    cards().forEach((c, i) => {
+      const d = Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    });
+    setFocus((f) => (f === best ? f : best));
+    if (pending.current === best) pending.current = null;
+  };
+
+  // where an in-flight smooth scroll is heading, so quick repeated arrow clicks keep counting
+  const pending = useRef<number | null>(null);
+  const step = (dir: 1 | -1) => go((pending.current ?? focus) + dir);
+
+  const go = (i: number, smooth = true) => {
+    const el = scroller.current;
+    i = Math.max(0, Math.min(n - 1, i));
+    const card = cards()[i];
+    if (!el || !card) return;
+    pending.current = smooth ? i : null;
+    el.scrollTo({ left: card.offsetLeft - (el.clientWidth - card.offsetWidth) / 2, behavior: smooth ? "smooth" : "auto" });
+  };
+
   useEffect(() => {
-    const measure = () => {
-      if (track.current) setDist(Math.max(0, track.current.scrollWidth - window.innerWidth));
-    };
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
+    // open on the chosen type (if any) and keep the 3D in sync on resize
+    const idx = PROJECT_TYPES.findIndex((t) => t.id === value);
+    if (idx > 0) go(idx, false);
+    sync();
+    window.addEventListener("resize", sync);
+    return () => window.removeEventListener("resize", sync);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const x = useTransform(scrollYProgress, [0.03, 0.97], [0, -dist]);
-  const p = useTransform(scrollYProgress, [0.03, 0.97], [0, 1]);
-  const selectedIdx = PROJECT_TYPES.findIndex((t) => t.id === value);
+  const choose = (id: string, i: number) => {
+    go(i);
+    onSelect(id);
+  };
+
+  const arrowCls =
+    "absolute top-1/2 -translate-y-1/2 z-20 hidden md:flex w-12 h-12 items-center justify-center rounded-full border border-white/15 bg-black/60 backdrop-blur text-white hover:bg-crimson hover:border-bright-red transition disabled:opacity-25 disabled:pointer-events-none";
 
   return (
     <div className="ml-[calc(50%-50vw)] w-screen">
-      {/* desktop: pinned horizontal reel */}
-      <div ref={ref} className="hidden md:block relative" style={{ height: `${n * 22 + 60}vh` }}>
-        <div className="sticky top-[118px] h-[calc(100vh-118px)] overflow-hidden flex flex-col justify-center">
-          <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(45%_55%_at_50%_50%,rgba(217,4,41,0.16),transparent_70%)]" />
-          <div style={{ perspective: 1800 }}>
-            <motion.div ref={track} style={{ x, transformStyle: "preserve-3d" }} className="flex items-center gap-7 w-max px-[calc(50vw-200px)]">
-              {PROJECT_TYPES.map((pt, i) => (
-                <ReelPanel key={pt.id} i={i} n={n} p={p} pt={pt} selected={value === pt.id} onSelect={onSelect} />
-              ))}
-            </motion.div>
-          </div>
+      <div className="relative">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(40%_60%_at_50%_50%,rgba(217,4,41,0.14),transparent_70%)]" />
 
-          {/* rail + hint */}
-          <div className="relative mt-10 flex flex-col items-center gap-3">
-            <div className="flex gap-1.5">
-              {PROJECT_TYPES.map((pt, i) => (
-                <ReelTick key={pt.id} i={i} n={n} p={p} selected={i === selectedIdx} />
-              ))}
-            </div>
-            <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-white/40">Scroll to browse · tap a panel to choose</p>
-          </div>
+        <button type="button" onClick={() => step(-1)} disabled={focus === 0} aria-label="Previous build type" className={`${arrowCls} left-4 lg:left-10`}>
+          <ArrowRight className="w-5 h-5 rotate-180" />
+        </button>
+        <button type="button" onClick={() => step(1)} disabled={focus === n - 1} aria-label="Next build type" className={`${arrowCls} right-4 lg:right-10`}>
+          <ArrowRight className="w-5 h-5" />
+        </button>
+
+        <div
+          ref={scroller}
+          onScroll={sync}
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowRight") {
+              e.preventDefault();
+              step(1);
+            } else if (e.key === "ArrowLeft") {
+              e.preventDefault();
+              step(-1);
+            }
+          }}
+          aria-label="Build types — use the arrow keys to browse"
+          className="relative flex items-center overflow-x-auto snap-x snap-mandatory py-10 px-[calc(50vw-41vw)] sm:px-[calc(50vw-180px)] outline-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_right,transparent,black_12%,black_88%,transparent)]"
+          style={{ gap: REEL_GAP }}
+        >
+          {PROJECT_TYPES.map((pt, i) => (
+            <ReelCard key={pt.id} i={i} sx={sx} scroller={scroller}>
+              <PanelFace pt={pt} i={i} n={n} selected={value === pt.id} focused={focus === i} onSelect={() => choose(pt.id, i)} />
+            </ReelCard>
+          ))}
         </div>
       </div>
 
-      {/* mobile: swipe carousel */}
-      <div className="md:hidden flex gap-4 overflow-x-auto snap-x snap-mandatory px-[10vw] pb-6 [scrollbar-width:none]" style={{ perspective: 1000 }}>
-        {PROJECT_TYPES.map((pt, i) => (
-          <motion.div
-            key={pt.id}
-            className="snap-center shrink-0 w-[80vw]"
-            initial={{ opacity: 0, rotateY: -25, x: 40 }}
-            whileInView={{ opacity: 1, rotateY: 0, x: 0 }}
-            viewport={{ once: true, amount: 0.4 }}
-            transition={{ duration: 0.6, ease: EASE }}
-          >
-            <PanelFace pt={pt} i={i} n={n} selected={value === pt.id} onSelect={onSelect} />
-          </motion.div>
-        ))}
+      {/* dots + counter */}
+      <div className="mt-2 flex flex-col items-center gap-3 px-4">
+        <div className="flex flex-wrap justify-center gap-1.5" role="tablist" aria-label="Jump to a build type">
+          {PROJECT_TYPES.map((pt, i) => (
+            <button
+              key={pt.id}
+              type="button"
+              role="tab"
+              aria-selected={focus === i}
+              aria-label={pt.name}
+              onClick={() => go(i)}
+              className={`h-1.5 rounded-full transition-all duration-300 ${focus === i ? "w-8 bg-bright-red" : value === pt.id ? "w-3 bg-emerald-400" : "w-3 bg-white/20 hover:bg-white/40"}`}
+            />
+          ))}
+        </div>
+        <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-white/40">
+          <span className="text-white">{String(focus + 1).padStart(2, "0")}</span> / {String(n).padStart(2, "0")} · swipe or use the arrows
+        </p>
       </div>
     </div>
   );
 }
 
-function ReelPanel({ pt, i, n, p, selected, onSelect }: { pt: (typeof PROJECT_TYPES)[number]; i: number; n: number; p: MotionValue<number>; selected: boolean; onSelect: (id: string) => void }) {
-  const c = i / (n - 1);
-  const w = 0.22;
-  const rotateY = useTransform(p, [c - w, c, c + w], [38, 0, -38]);
-  const scale = useTransform(p, [c - w, c, c + w], [0.8, 1, 0.8]);
-  const z = useTransform(p, [c - w, c, c + w], [-280, 0, -280]);
-  const opacity = useTransform(p, [c - w * 1.4, c, c + w * 1.4], [0.25, 1, 0.25]);
-  const glowO = useTransform(p, [c - w * 0.4, c, c + w * 0.4], [0, 1, 0]);
+/** Wraps one panel and turns it in 3D by its distance from the carousel's centre. */
+function ReelCard({ i, sx, scroller, children }: { i: number; sx: MotionValue<number>; scroller: React.RefObject<HTMLDivElement>; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // -1 … 1 (clamped to ±2): how many card-widths this panel sits from the centre
+  const t = useTransform(sx, (v) => {
+    const el = ref.current;
+    const box = scroller.current;
+    if (!el || !box || v < 0) return i === 0 ? 0 : 1;
+    const d = el.offsetLeft + el.offsetWidth / 2 - (v + box.clientWidth / 2);
+    return Math.max(-2, Math.min(2, d / (el.offsetWidth + REEL_GAP)));
+  });
+  const rotateY = useTransform(t, (k) => k * -28);
+  const scale = useTransform(t, (k) => 1 - Math.min(1.5, Math.abs(k)) * 0.09);
+  const opacity = useTransform(t, (k) => 1 - Math.min(1.5, Math.abs(k)) * 0.35);
+  const z = useTransform(t, (k) => -Math.min(1.5, Math.abs(k)) * 120);
   return (
-    <motion.div style={{ rotateY, scale, z, opacity, transformStyle: "preserve-3d" }} className="relative shrink-0 w-[400px]">
-      <motion.div style={{ opacity: glowO }} className="absolute -inset-6 rounded-[40px] bg-crimson/20 blur-3xl pointer-events-none" />
-      <PanelFace pt={pt} i={i} n={n} selected={selected} onSelect={onSelect} tall />
+    <motion.div ref={ref} data-card style={{ rotateY, scale, opacity, z, transformPerspective: 1200 }} className="relative shrink-0 snap-center w-[82vw] sm:w-[360px]">
+      {children}
     </motion.div>
   );
 }
 
-/** The visual card used by both the desktop reel and the mobile carousel. */
-function PanelFace({ pt, i, n, selected, onSelect, tall }: { pt: (typeof PROJECT_TYPES)[number]; i: number; n: number; selected: boolean; onSelect: (id: string) => void; tall?: boolean }) {
+/** One large build-type panel. */
+function PanelFace({ pt, i, n, selected, focused, onSelect }: { pt: (typeof PROJECT_TYPES)[number]; i: number; n: number; selected: boolean; focused: boolean; onSelect: () => void }) {
   const Icon = TYPE_ICONS[pt.id] || Box;
   return (
     <motion.button
       type="button"
-      onClick={() => onSelect(pt.id)}
+      onClick={onSelect}
       aria-pressed={selected}
-      whileHover={{ y: -6 }}
       whileTap={{ scale: 0.97 }}
-      className={`group relative w-full overflow-hidden rounded-[32px] border text-left ${tall ? "h-[min(560px,68vh)]" : "h-[480px]"} p-7 flex flex-col transition-colors ${
-        selected ? "border-bright-red bg-gradient-to-br from-crimson/30 via-[#120709] to-[#08080a] shadow-[0_30px_90px_-25px_rgba(217,4,41,0.85)]" : "border-white/[0.09] bg-gradient-to-br from-white/[0.06] via-[#0b0b0d] to-[#08080a] hover:border-white/25"
+      className={`group relative w-full overflow-hidden rounded-[32px] border text-left h-[500px] p-7 flex flex-col transition-[border-color,box-shadow] duration-300 ${
+        selected
+          ? "border-bright-red bg-gradient-to-br from-crimson/30 via-[#120709] to-[#08080a] shadow-[0_30px_90px_-25px_rgba(217,4,41,0.85)]"
+          : focused
+          ? "border-white/25 bg-gradient-to-br from-white/[0.07] via-[#0b0b0d] to-[#08080a] shadow-[0_30px_80px_-30px_rgba(217,4,41,0.45)]"
+          : "border-white/[0.09] bg-gradient-to-br from-white/[0.05] via-[#0b0b0d] to-[#08080a] hover:border-white/25"
       }`}
     >
       {/* decorative grid + giant ghost icon */}
@@ -1333,15 +1393,13 @@ function PanelFace({ pt, i, n, selected, onSelect, tall }: { pt: (typeof PROJECT
         <span className="font-mono text-[11px] tracking-[0.25em] text-white/40">
           {String(i + 1).padStart(2, "0")} / {String(n).padStart(2, "0")}
         </span>
-        {pt.badge && <span className="px-2.5 py-1 rounded-full bg-crimson text-[10px] font-semibold uppercase tracking-wider text-white">{pt.badge}</span>}
+        {pt.badge && !selected && <span className="px-2.5 py-1 rounded-full bg-crimson text-[10px] font-semibold uppercase tracking-wider text-white">{pt.badge}</span>}
       </div>
 
-      <motion.div
-        animate={{ y: [0, -6, 0] }}
-        transition={{ duration: 4, repeat: Infinity, ease: "easeInOut", delay: (i % 4) * 0.3 }}
-        className={`relative mt-6 w-20 h-20 rounded-3xl flex items-center justify-center border ${
+      <div
+        className={`relative mt-6 w-20 h-20 rounded-3xl flex items-center justify-center border transition-colors ${
           selected ? "bg-crimson border-bright-red shadow-[0_0_50px_rgba(255,30,60,0.7)]" : "bg-white/[0.05] border-white/10 group-hover:border-bright-red/50"
-        } transition-colors`}
+        }`}
       >
         <Icon className={`w-9 h-9 ${selected ? "text-white" : "text-bright-red"}`} />
         {/* spark burst on selection */}
@@ -1360,7 +1418,7 @@ function PanelFace({ pt, i, n, selected, onSelect, tall }: { pt: (typeof PROJECT
               );
             })}
         </AnimatePresence>
-      </motion.div>
+      </div>
 
       <div className="relative mt-auto">
         <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-bright-red">{pt.category}</p>
@@ -1411,133 +1469,6 @@ function PanelFace({ pt, i, n, selected, onSelect, tall }: { pt: (typeof PROJECT
         <motion.span initial={{ opacity: 0.8, scale: 0.6 }} animate={{ opacity: 0, scale: 1.6 }} transition={{ duration: 0.9 }} className="pointer-events-none absolute inset-0 rounded-[32px] border-2 border-bright-red" />
       )}
     </motion.button>
-  );
-}
-
-function ReelTick({ i, n, p, selected }: { i: number; n: number; p: MotionValue<number>; selected: boolean }) {
-  const c = i / (n - 1);
-  const width = useTransform(p, [c - 0.06, c, c + 0.06], [8, 28, 8]);
-  return <motion.span style={{ width }} className={`h-1 rounded-full block ${selected ? "bg-emerald-400" : "bg-white/25"}`} />;
-}
-
-/**
- * "One decision at a time" stack.
- * Desktop: the chapter pins while you scroll; scroll position picks the active panel and
- * each change plays a short spring transition (no half-overlapped, scrubbed states).
- * Smaller screens: panels simply flow one after another.
- */
-function PanelStack({ children, labels }: { children: React.ReactNode; labels: string[] }) {
-  const items = React.Children.toArray(children);
-  const [desktop, setDesktop] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia("(min-width: 1024px) and (min-height: 700px)");
-    const on = () => setDesktop(mq.matches);
-    on();
-    mq.addEventListener("change", on);
-    return () => mq.removeEventListener("change", on);
-  }, []);
-
-  if (!desktop) return <div className="space-y-8">{items}</div>;
-  // mounted separately so its scroll target ref exists on first render
-  return <PinnedStack items={items} labels={labels} />;
-}
-
-const STICKY_TOP = 130;
-
-function PinnedStack({ items, labels }: { items: React.ReactNode[]; labels: string[] }) {
-  const n = items.length;
-  const ref = useRef<HTMLDivElement>(null);
-  const [active, setActive] = useState(0);
-  const { scrollYProgress } = useScroll({ target: ref, offset: [`start ${STICKY_TOP}px`, "end end"] });
-
-  useMotionValueEvent(scrollYProgress, "change", (v) => {
-    const idx = Math.min(n - 1, Math.max(0, Math.floor(v * n * 0.999)));
-    setActive((cur) => (cur === idx ? cur : idx));
-  });
-
-  // jump to a panel by scrolling to the middle of its slice of the pinned range
-  const goTo = (i: number) => {
-    const el = ref.current;
-    if (!el) return;
-    const top = el.getBoundingClientRect().top + window.scrollY - STICKY_TOP;
-    const range = el.offsetHeight - (window.innerHeight - STICKY_TOP);
-    const y = top + ((i + 0.5) / n) * range;
-    const lenis = (window as unknown as { __lenis?: { scrollTo: (y: number, o?: object) => void } }).__lenis;
-    if (lenis) lenis.scrollTo(y, { duration: 0.9 });
-    else window.scrollTo({ top: y, behavior: "smooth" });
-  };
-
-  return (
-    <div ref={ref} className="relative" style={{ height: `${n * 70 + 30}vh` }}>
-      <div className="sticky flex flex-col" style={{ top: STICKY_TOP, height: `calc(100vh - ${STICKY_TOP + 20}px)` }}>
-        {/* all layers share one grid cell, so every panel takes the tallest panel's height
-            and a taller panel behind never peeks out under a shorter one */}
-        <div className="relative flex-1 min-h-0 pt-6 grid content-start" style={{ perspective: 1600 }}>
-          {items.map((child, i) => {
-            const d = i - active;
-            const target =
-              d < 0
-                ? { y: Math.max(d, -3) * 22, scale: 1 + Math.max(d, -3) * 0.045, rotateX: 4, opacity: d < -3 ? 0 : 1 }
-                : d === 0
-                ? { y: 0, scale: 1, rotateX: 0, opacity: 1 }
-                : { y: 160, scale: 0.95, rotateX: -22, opacity: 0 };
-            return (
-              <motion.div
-                key={i}
-                initial={false}
-                animate={target}
-                transition={{ type: "spring", stiffness: 160, damping: 22, mass: 0.9, opacity: { duration: 0.22, ease: "easeOut" } }}
-                style={{ gridArea: "1 / 1", zIndex: i, transformOrigin: "50% 0%", pointerEvents: d === 0 ? "auto" : "none" }}
-                className="relative"
-                aria-hidden={d !== 0}
-              >
-                <div className="relative h-full flex flex-col [&>*]:flex-1">
-                  {child}
-                  <motion.div
-                    initial={false}
-                    animate={{ opacity: d < 0 ? 0.55 : 0 }}
-                    transition={{ duration: 0.4 }}
-                    className="pointer-events-none absolute inset-0 rounded-[30px] bg-black"
-                  />
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
-
-        {/* footer: progress + next cue */}
-        <div className="relative z-50 flex items-center justify-between gap-4 pb-2">
-          <div className="flex items-center gap-2">
-            {labels.map((l, i) => (
-              <button
-                key={l}
-                type="button"
-                onClick={() => goTo(i)}
-                className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs transition ${
-                  i === active ? "bg-crimson text-white shadow-[0_0_18px_rgba(217,4,41,0.5)]" : i < active ? "text-emerald-300 hover:bg-white/[0.05]" : "text-white/40 hover:text-white/70"
-                }`}
-              >
-                {i < active ? <Check className="w-3.5 h-3.5" /> : <span className="font-mono text-[10px]">{String(i + 1).padStart(2, "0")}</span>}
-                {l}
-              </button>
-            ))}
-          </div>
-          <span className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.25em] text-white/40">
-            {active < n - 1 ? (
-              <>
-                Scroll for {labels[active + 1]}
-                <motion.span animate={{ y: [0, 4, 0] }} transition={{ duration: 1.3, repeat: Infinity }}>
-                  ↓
-                </motion.span>
-              </>
-            ) : (
-              "Last panel in this chapter"
-            )}
-          </span>
-        </div>
-      </div>
-    </div>
   );
 }
 

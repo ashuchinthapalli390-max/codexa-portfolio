@@ -36,10 +36,10 @@ export function SmoothScroll() {
     document.documentElement.classList.remove("scroll-smooth");
 
     const lenis = new Lenis({
-      duration: 1.25,
-      easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+      // lerp-based smoothing: light and responsive, no long glide after the wheel stops
+      lerp: 0.14,
       smoothWheel: true,
-      wheelMultiplier: 0.95,
+      wheelMultiplier: 1,
       touchMultiplier: 1.4,
     });
     (window as unknown as { __lenis?: Lenis }).__lenis = lenis;
