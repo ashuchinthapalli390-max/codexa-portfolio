@@ -4,6 +4,10 @@ import React, { Component, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
+import { scrollStore } from "@/lib/scroll-store";
+
+type AnchorMap = React.MutableRefObject<Map<string, THREE.Object3D>>;
+type LabelMap = React.MutableRefObject<Map<string, HTMLDivElement>>;
 
 /* ───────────────────────── blueprint model ───────────────────────── */
 
@@ -369,8 +373,16 @@ function ModuleShapeMesh({ shape, accent }: { shape: ModuleShape; accent: string
 }
 
 /** One module: flies in from above, docks into its slot and beams to the core. */
-function ModuleNode({ module, index, total, accent, motion }: { module: BuildModule; index: number; total: number; accent: string; motion: number }) {
+function ModuleNode({ module, index, total, accent, motion, anchors }: { module: BuildModule; index: number; total: number; accent: string; motion: number; anchors: AnchorMap }) {
   const group = useRef<THREE.Group>(null);
+  useEffect(() => {
+    const g = group.current;
+    const map = anchors.current;
+    if (g) map.set(module.id, g);
+    return () => {
+      map.delete(module.id);
+    };
+  }, [anchors, module.id]);
   const beam = useRef<THREE.Mesh>(null);
   const beamMat = useRef<THREE.MeshBasicMaterial>(null);
   const born = useRef<number | null>(null);
@@ -476,9 +488,13 @@ const CAMERA_BY_STEP: Record<number, [number, number, number]> = {
 function CameraRig({ step, ready }: { step: number; ready: boolean }) {
   const { camera, pointer } = useThree();
   const target = useMemo(() => new THREE.Vector3(), []);
+  const yaw = useRef(0);
   useFrame((state) => {
     const base = CAMERA_BY_STEP[step] || CAMERA_BY_STEP[1];
     target.set(base[0] + pointer.x * 0.6, base[1] + pointer.y * 0.4, base[2]);
+    // scrolling the page slowly orbits the build — the scene feels scroll-driven
+    yaw.current += ((scrollStore.progress - 0.5) * 1.1 - yaw.current) * 0.05;
+    target.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw.current);
     if (ready) {
       const a = state.clock.elapsedTime * 0.15;
       target.set(Math.sin(a) * 9, 3 + pointer.y * 0.4, Math.cos(a) * 9);
@@ -489,9 +505,45 @@ function CameraRig({ step, ready }: { step: number; ready: boolean }) {
   return null;
 }
 
+/** Projects every module's 3D position to screen space and moves its DOM label there. */
+function LabelProjector({ anchors, labels }: { anchors: AnchorMap; labels: LabelMap }) {
+  const { camera, size } = useThree();
+  const v = useMemo(() => new THREE.Vector3(), []);
+  const seen = useRef(new Map<string, number>());
+  useFrame((state) => {
+    const now = state.clock.elapsedTime;
+    labels.current.forEach((el, id) => {
+      const obj = anchors.current.get(id);
+      if (!obj) {
+        el.style.opacity = "0";
+        return;
+      }
+      if (!seen.current.has(id)) seen.current.set(id, now);
+      const age = now - (seen.current.get(id) ?? now);
+      obj.getWorldPosition(v);
+      v.project(camera);
+      const x = (v.x * 0.5 + 0.5) * size.width;
+      const y = (-v.y * 0.5 + 0.5) * size.height;
+      const visible = v.z < 1 && x > 8 && x < size.width - 8 && y > 40 && y < size.height - 70;
+      // put the label on the open side; flip when it would run off the panel edge
+      let right = x >= size.width / 2;
+      if (!right && x < 150) right = true;
+      if (right && x > size.width - 150) right = false;
+      el.style.transform = `translate(${x}px, ${y}px) translate(${right ? "0" : "-100%"}, -50%)`;
+      el.style.flexDirection = right ? "row" : "row-reverse";
+      el.style.opacity = visible && age > 0.85 ? "1" : "0";
+    });
+    // forget modules that were removed so they animate in again if re-added
+    seen.current.forEach((_, id) => {
+      if (!anchors.current.has(id)) seen.current.delete(id);
+    });
+  });
+  return null;
+}
+
 /* ───────────────────────── root ───────────────────────── */
 
-function SceneRoot({ bp, mobile, reduced }: { bp: Blueprint; mobile: boolean; reduced: boolean }) {
+function SceneRoot({ bp, mobile, reduced, anchors, labels }: { bp: Blueprint; mobile: boolean; reduced: boolean; anchors: AnchorMap; labels: LabelMap }) {
   return (
     <>
       <ambientLight intensity={0.35} />
@@ -503,8 +555,9 @@ function SceneRoot({ bp, mobile, reduced }: { bp: Blueprint; mobile: boolean; re
       <Platform accent={bp.accent} motion={bp.motion} />
       <Artifact bp={bp} />
       {bp.modules.map((m, i) => (
-        <ModuleNode key={m.id} module={m} index={i} total={bp.modules.length} accent={bp.accent} motion={bp.motion} />
+        <ModuleNode key={m.id} module={m} index={i} total={bp.modules.length} accent={bp.accent} motion={bp.motion} anchors={anchors} />
       ))}
+      {!mobile && <LabelProjector anchors={anchors} labels={labels} />}
       <Sparks count={mobile ? 120 : 160 + bp.motion * 120} accent={bp.accent} />
 
       {!reduced && (
@@ -529,6 +582,8 @@ class Boundary extends Component<{ children: React.ReactNode; fallback: React.Re
 /** Live 3D preview that assembles the client's project as they configure it. */
 export default function ProjectBuilderScene({ blueprint }: { blueprint: Blueprint }) {
   const [env, setEnv] = useState({ ready: false, webgl: true, mobile: false, reduced: false });
+  const anchors = useRef(new Map<string, THREE.Object3D>());
+  const labels = useRef(new Map<string, HTMLDivElement>());
   useEffect(() => {
     let webgl = false;
     try {
@@ -550,8 +605,32 @@ export default function ProjectBuilderScene({ blueprint }: { blueprint: Blueprin
   return (
     <Boundary fallback={fallback}>
       <Canvas dpr={env.mobile ? [1, 1.25] : [1, 1.75]} gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }} camera={{ position: [0, 2.2, 9.6], fov: 40 }}>
-        <SceneRoot bp={blueprint} mobile={env.mobile} reduced={env.reduced} />
+        <SceneRoot bp={blueprint} mobile={env.mobile} reduced={env.reduced} anchors={anchors} labels={labels} />
       </Canvas>
+
+      {/* labels that ride next to each 3D module */}
+      {!env.mobile && (
+        <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+          {blueprint.modules
+            .filter((m) => m.shape !== "satellite")
+            .map((m) => (
+              <div
+                key={m.id}
+                ref={(el) => {
+                  if (el) labels.current.set(m.id, el);
+                  else labels.current.delete(m.id);
+                }}
+                className="absolute left-0 top-0 flex items-center gap-1.5 opacity-0 transition-opacity duration-500 will-change-transform"
+              >
+                <span className="w-2 h-2 rounded-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.9)]" />
+                <span className="w-6 h-px bg-white/40" />
+                <span className="whitespace-nowrap rounded-lg border border-white/10 bg-black/60 px-2 py-1 text-[11px] font-medium text-white/90 backdrop-blur-md">
+                  {m.label}
+                </span>
+              </div>
+            ))}
+        </div>
+      )}
     </Boundary>
   );
 }

@@ -130,9 +130,11 @@ function pagesFrom(range: string) {
 export default function ProjectRequestPage() {
   const router = useRouter();
 
-  // Current wizard step
+  // Section currently in view (scroll-driven) and the furthest section reached
   const [currentStep, setCurrentStep] = useState(1);
   const [maxVisited, setMaxVisited] = useState(1);
+  // The deposit is only rendered after the client reaches the review section
+  const [revealPhase, setRevealPhase] = useState<"idle" | "compiling" | "revealed">("idle");
 
   // Form State
   const [formData, setFormData] = useState({
@@ -281,20 +283,48 @@ export default function ProjectRequestPage() {
     return true;
   };
 
-  const goTo = (step: number) => {
-    setCurrentStep(step);
-    setMaxVisited((m) => Math.max(m, step));
-    setTimeout(() => scrollToId("builder"), 50);
-  };
+  const scrollToStep = (step: number) => scrollToId(`step-${step}`);
 
-  const handleNextStep = () => {
-    if (validateStep(currentStep)) goTo(Math.min(6, currentStep + 1));
-  };
+  // Scroll-driven: whichever section sits in the middle of the viewport is the active step
+  useEffect(() => {
+    const io = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((e) => {
+          if (!e.isIntersecting) return;
+          const n = Number((e.target as HTMLElement).dataset.step);
+          setCurrentStep(n);
+          setMaxVisited((m) => Math.max(m, n));
+        });
+      },
+      { rootMargin: "-40% 0px -55% 0px" }
+    );
+    STEPS.forEach((s) => {
+      const el = document.getElementById(`step-${s.id}`);
+      if (el) io.observe(el);
+    });
+    return () => io.disconnect();
+  }, []);
 
-  const handlePrevStep = () => {
-    setErrorMessage(null);
-    goTo(Math.max(1, currentStep - 1));
-  };
+  // Reaching the review section "compiles" the blueprint, then reveals the deposit
+  useEffect(() => {
+    if (currentStep === 6 && revealPhase === "idle") setRevealPhase("compiling");
+  }, [currentStep, revealPhase]);
+
+  useEffect(() => {
+    if (revealPhase !== "compiling") return;
+    const t = setTimeout(() => setRevealPhase("revealed"), 2200);
+    return () => clearTimeout(t);
+  }, [revealPhase]);
+
+  // Everything required before booking, with the section that fixes it
+  const missing = [
+    formData.projectType === "custom-other" && !formData.customProjectType.trim() ? { label: "Describe your custom project", step: 1 } : null,
+    formData.purposes.length === 0 ? { label: "Choose at least one goal", step: 2 } : null,
+    !formData.fullName.trim() ? { label: "Your full name", step: 5 } : null,
+    !formData.email.trim() || !/\S+@\S+\.\S+/.test(formData.email) ? { label: "A valid email address", step: 5 } : null,
+    !formData.phone.trim() || formData.phone.trim().length < 8 ? { label: "Phone / WhatsApp number", step: 5 } : null,
+    formData.description.trim().length < 20 ? { label: "Project description (20+ characters)", step: 5 } : null,
+  ].filter(Boolean) as { label: string; step: number }[];
 
   // Check if all 4 terms are checked
   const allTermsAccepted =
@@ -306,9 +336,11 @@ export default function ProjectRequestPage() {
       setErrorMessage("Please accept all terms checkboxes to proceed with booking.");
       return;
     }
-    if (!validateStep(5)) {
-      setCurrentStep(5);
-      return;
+    for (const s of [1, 2, 5]) {
+      if (!validateStep(s)) {
+        scrollToStep(s);
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -504,7 +536,7 @@ export default function ProjectRequestPage() {
         </motion.div>
       </section>
 
-      {/* ── Sticky stepper ── */}
+      {/* ── Sticky stepper (follows the scroll) ── */}
       <div id="builder" className="scroll-mt-16" />
       <div className="sticky top-[60px] z-30 bg-[#050505]/85 backdrop-blur-xl border-y border-white/[0.06]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -512,18 +544,14 @@ export default function ProjectRequestPage() {
             {STEPS.map((s, i) => {
               const done = s.id < currentStep;
               const on = s.id === currentStep;
-              const reachable = s.id <= maxVisited;
               const Icon = s.icon;
               return (
                 <li key={s.id} className="flex items-center gap-1 sm:gap-2 shrink-0">
                   <button
                     type="button"
-                    disabled={!reachable && s.id !== currentStep + 1}
-                    onClick={() => {
-                      if (s.id <= maxVisited || validateStep(currentStep)) goTo(s.id);
-                    }}
+                    onClick={() => scrollToStep(s.id)}
                     className={`relative flex items-center gap-2 rounded-full pl-1.5 pr-3 py-1.5 text-xs transition ${
-                      on ? "bg-crimson text-white shadow-[0_0_20px_rgba(217,4,41,0.45)]" : done ? "text-white/80 hover:bg-white/[0.05]" : "text-white/35 disabled:cursor-not-allowed"
+                      on ? "bg-crimson text-white shadow-[0_0_20px_rgba(217,4,41,0.45)]" : done ? "text-white/80 hover:bg-white/[0.05]" : "text-white/40 hover:text-white/70"
                     }`}
                     aria-current={on ? "step" : undefined}
                   >
@@ -546,56 +574,34 @@ export default function ProjectRequestPage() {
         </div>
       </div>
 
-      {/* ── Builder ── */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 grid gap-8 lg:grid-cols-[minmax(0,1fr)_440px] items-start">
-        {/* 3D preview + blueprint (first on mobile) */}
-        <aside className="lg:order-2 lg:sticky lg:top-[132px] space-y-4">
-          <div className="relative h-[240px] sm:h-[380px] rounded-[28px] overflow-hidden border border-white/[0.08] bg-[radial-gradient(70%_70%_at_50%_40%,rgba(217,4,41,0.14),rgba(8,8,10,0.95))]">
+      {/* ── Scroll story: sections on the left, live 3D build pinned on the right ── */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid gap-6 lg:gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(400px,44%)] items-start">
+        {/* 3D build (sticky) */}
+        <aside className="lg:order-2 lg:sticky lg:top-[118px] z-20 pt-6 lg:pt-8">
+          <div className="relative h-[260px] sm:h-[340px] lg:h-[calc(100vh-170px)] rounded-[28px] overflow-hidden border border-white/[0.08] bg-[radial-gradient(70%_70%_at_50%_40%,rgba(217,4,41,0.14),rgba(8,8,10,0.97))] shadow-[0_30px_80px_-30px_rgba(0,0,0,0.9)]">
             <ProjectBuilderScene blueprint={blueprint} />
-            <div className="pointer-events-none absolute top-4 left-4 right-4 flex items-center justify-between">
-              <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-md border border-white/10 font-mono text-[10px] uppercase tracking-[0.2em] text-white/80">
-                <span className="w-1.5 h-1.5 rounded-full bg-bright-red animate-pulse" /> Live build
-              </span>
-              <span className="px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-md border border-white/10 font-mono text-[10px] text-white/70">
-                {blueprint.modules.length} modules · {blueprint.pages} {blueprint.pages === 1 ? "layer" : "layers"}
-              </span>
-            </div>
-            <AnimatePresence>
-              {currentStep === 6 && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="pointer-events-none absolute bottom-4 inset-x-4 flex justify-center">
-                  <span className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-emerald-500/15 border border-emerald-400/40 text-xs text-emerald-200">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Blueprint assembled
-                  </span>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          <div className="hidden lg:block">
-          <BlueprintCard
-            typeName={formData.projectType === "custom-other" && formData.customProjectType ? formData.customProjectType : currentProjectTypeObj.name}
-            typeIcon={TYPE_ICONS[formData.projectType] || Box}
-            timeline={currentStep >= 5 ? formData.timeline : currentProjectTypeObj.recommendedTimeline}
-            modules={blueprint.modules}
-            styles={formData.designStyles}
-            motionLevel={formData.animationLevel}
-            pages={formData.pageRange}
-            progress={progressPct}
-          />
+            <BuildHud
+              typeName={formData.projectType === "custom-other" && formData.customProjectType ? formData.customProjectType : currentProjectTypeObj.name}
+              category={currentProjectTypeObj.category}
+              typeIcon={TYPE_ICONS[formData.projectType] || Box}
+              timeline={maxVisited >= 5 ? formData.timeline : currentProjectTypeObj.recommendedTimeline}
+              size={formData.pageRange.replace(" (Single Landing)", "")}
+              motionLevel={formData.animationLevel}
+              styles={formData.designStyles}
+              moduleCount={blueprint.modules.length}
+              progress={progressPct}
+              stepTitle={STEPS[currentStep - 1].title}
+              assembled={currentStep === 6}
+            />
           </div>
         </aside>
 
-        {/* Steps */}
-        <div className="lg:order-1 min-w-0">
+        {/* Sections */}
+        <div className="lg:order-1 min-w-0 pb-10">
           <AnimatePresence>
             {errorMessage && (
-              <motion.div
-                initial={{ opacity: 0, y: -10, height: 0 }}
-                animate={{ opacity: 1, y: 0, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="mb-5 overflow-hidden"
-              >
-                <motion.div animate={{ x: [0, -8, 8, -4, 4, 0] }} transition={{ duration: 0.4 }} className="p-4 rounded-2xl border border-bright-red/50 bg-crimson/10 flex items-center gap-3 text-sm text-white" role="alert">
+              <motion.div initial={{ opacity: 0, y: -10, height: 0 }} animate={{ opacity: 1, y: 0, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="sticky top-[132px] z-10 pt-4 overflow-hidden">
+                <motion.div animate={{ x: [0, -8, 8, -4, 4, 0] }} transition={{ duration: 0.4 }} className="p-4 rounded-2xl border border-bright-red/50 bg-[#1a0508]/95 backdrop-blur flex items-center gap-3 text-sm text-white" role="alert">
                   <AlertCircle className="w-5 h-5 text-bright-red shrink-0" />
                   <span className="flex-1">{errorMessage}</span>
                   <button onClick={() => setErrorMessage(null)} className="text-white/50 hover:text-white" aria-label="Dismiss">
@@ -606,389 +612,354 @@ export default function ProjectRequestPage() {
             )}
           </AnimatePresence>
 
-          <div style={{ perspective: 1600 }}>
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={currentStep}
-                initial={{ opacity: 0, rotateY: -14, x: 60, filter: "blur(8px)" }}
-                animate={{ opacity: 1, rotateY: 0, x: 0, filter: "blur(0px)" }}
-                exit={{ opacity: 0, rotateY: 14, x: -60, filter: "blur(8px)" }}
-                transition={{ duration: 0.5, ease: EASE }}
-                className="space-y-6"
-              >
-                {/* ── STEP 1 ── */}
-                {currentStep === 1 && (
-                  <>
-                    <StepHeader n={1} title="What do you want to build?" text="Pick the closest category — it decides the core shape of your product." />
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {PROJECT_TYPES.map((pt, i) => {
-                        const Icon = TYPE_ICONS[pt.id] || Box;
-                        const on = formData.projectType === pt.id;
-                        return (
-                          <Tile key={pt.id} i={i} on={on} onClick={() => set("projectType", pt.id)}>
-                            <div className="flex items-start gap-3">
-                              <IconBadge icon={Icon} on={on} />
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2">
-                                  <h3 className="text-sm font-semibold text-white truncate">{pt.name}</h3>
-                                  {pt.badge && <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-crimson text-[10px] font-semibold text-white">{pt.badge}</span>}
-                                </div>
-                                <p className="mt-1 text-xs text-white/50 leading-relaxed line-clamp-2">{pt.description}</p>
-                                <p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-white/35">
-                                  {pt.category} · {pt.recommendedTimeline}
-                                </p>
-                              </div>
-                            </div>
-                          </Tile>
-                        );
-                      })}
+          {/* ── STEP 1 ── */}
+          <StorySection n={1} title="What do you want to build?" text="Pick the closest category — it decides the core shape of your product." next="Goals & features" onNext={() => scrollToStep(2)}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {PROJECT_TYPES.map((pt, i) => {
+                const Icon = TYPE_ICONS[pt.id] || Box;
+                const on = formData.projectType === pt.id;
+                return (
+                  <Tile key={pt.id} i={i} on={on} onClick={() => set("projectType", pt.id)}>
+                    <div className="flex items-start gap-3">
+                      <IconBadge icon={Icon} on={on} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-semibold text-white truncate">{pt.name}</h3>
+                          {pt.badge && <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-crimson text-[10px] font-semibold text-white">{pt.badge}</span>}
+                        </div>
+                        <p className="mt-1 text-xs text-white/50 leading-relaxed line-clamp-2">{pt.description}</p>
+                        <p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-white/35">
+                          {pt.category} · {pt.recommendedTimeline}
+                        </p>
+                      </div>
                     </div>
-
-                    <AnimatePresence>
-                      {formData.projectType === "custom-other" && (
-                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-                          <Section title="Tell us about your idea" icon={Wrench}>
-                            <Field label="Describe your custom project *">
-                              <input
-                                type="text"
-                                value={formData.customProjectType}
-                                onChange={(e) => set("customProjectType", e.target.value)}
-                                placeholder="e.g. AI financial sentiment analyser with a Discord alert bot"
-                                className={inputCls}
-                              />
-                            </Field>
-                            <Field label="Closest system category">
-                              <div className="flex flex-wrap gap-2">
-                                {["Website", "Web Application", "Mobile Application", "Desktop Application", "AI System", "Automation", "SaaS", "Developer Tool", "Internal Business Tool", "Other"].map((cat) => (
-                                  <Chip key={cat} on={formData.closestCategory === cat} onClick={() => set("closestCategory", cat)}>
-                                    {cat}
-                                  </Chip>
-                                ))}
-                              </div>
-                            </Field>
-                          </Section>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </>
-                )}
-
-                {/* ── STEP 2 ── */}
-                {currentStep === 2 && (
-                  <>
-                    <StepHeader n={2} title="Goals & features" text="What should it achieve? Every feature you add docks into the 3D build." />
-                    <Section title="Primary goals" icon={Rocket} hint="Select all that apply">
+                  </Tile>
+                );
+              })}
+            </div>
+            <AnimatePresence>
+              {formData.projectType === "custom-other" && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                  <Section title="Tell us about your idea" icon={Wrench}>
+                    <Field label="Describe your custom project *" htmlFor="pr-custom">
+                      <input id="pr-custom" type="text" value={formData.customProjectType} onChange={(e) => set("customProjectType", e.target.value)} placeholder="e.g. AI financial sentiment analyser with a Discord alert bot" className={inputCls} />
+                    </Field>
+                    <Field label="Closest system category">
                       <div className="flex flex-wrap gap-2">
-                        {PURPOSE_OPTIONS.map((p) => (
-                          <Chip key={p} on={formData.purposes.includes(p)} onClick={() => toggleArrayItem("purposes", p)}>
-                            {p}
+                        {["Website", "Web Application", "Mobile Application", "Desktop Application", "AI System", "Automation", "SaaS", "Developer Tool", "Internal Business Tool", "Other"].map((cat) => (
+                          <Chip key={cat} on={formData.closestCategory === cat} onClick={() => set("closestCategory", cat)}>
+                            {cat}
                           </Chip>
                         ))}
                       </div>
-                    </Section>
-                    <Section title={`${currentProjectTypeObj.name} features`} icon={Zap} hint="Responsive design is always included">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {FEATURE_OPTIONS.map((f, i) => {
-                          const on = formData.features.includes(f.id);
-                          return (
-                            <Tile key={f.id} i={i} on={on} onClick={() => toggleArrayItem("features", f.id)} compact>
-                              <div className="flex items-center gap-3">
-                                <IconBadge icon={f.icon} on={on} small />
-                                <div className="min-w-0">
-                                  <h4 className="text-sm font-semibold text-white">{f.name}</h4>
-                                  <p className="text-xs text-white/45">{f.desc}</p>
-                                </div>
-                                <CheckDot on={on} />
-                              </div>
-                            </Tile>
-                          );
-                        })}
-                      </div>
-                    </Section>
-                  </>
-                )}
-
-                {/* ── STEP 3 ── */}
-                {currentStep === 3 && (
-                  <>
-                    <StepHeader n={3} title="Tech stack" text="Accounts, data, dashboards and the services your product connects to." />
-                    <Section title="User accounts & login" icon={Key}>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                        {["No Login Required", "Email + Password", "Google Login", "Phone OTP", "Email OTP", "Multiple Login Methods"].map((opt) => (
-                          <Option key={opt} on={formData.authOption === opt} onClick={() => set("authOption", opt)}>
-                            {opt}
-                          </Option>
-                        ))}
-                      </div>
-                      <AnimatePresence>
-                        {formData.authOption !== "No Login Required" && (
-                          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-                            <p className="mt-4 mb-2 text-xs font-semibold text-white/55">Security add-ons</p>
-                            <div className="flex flex-wrap gap-2">
-                              {["Forgot Password", "Email Verification", "Two-Factor Authentication", "Role-Based Access", "Active Sessions Tracker"].map((x) => (
-                                <Chip key={x} on={formData.authExtras.includes(x)} onClick={() => toggleArrayItem("authExtras", x)}>
-                                  {x}
-                                </Chip>
-                              ))}
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </Section>
-                    <Section title="Dashboard & control center" icon={LayoutDashboard}>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                        {["No Dashboard", "User Dashboard", "Admin Dashboard", "User + Admin Dashboard", "Multi-role Dashboard"].map((d) => (
-                          <Option key={d} on={formData.dashboardOption === d} onClick={() => set("dashboardOption", d)}>
-                            {d}
-                          </Option>
-                        ))}
-                      </div>
-                    </Section>
-                    <Section title="Database" icon={Database} hint="Supabase / PostgreSQL">
-                      <div className="grid grid-cols-3 gap-2">
-                        {["No", "Yes", "Not Sure"].map((d) => (
-                          <Option key={d} on={formData.databaseOption === d} onClick={() => set("databaseOption", d)}>
-                            {d}
-                          </Option>
-                        ))}
-                      </div>
-                    </Section>
-                    <Section title="Integrations" icon={Globe} hint="Third-party services">
-                      <div className="flex flex-wrap gap-2">
-                        {INTEGRATION_OPTIONS.map((x) => (
-                          <Chip key={x} on={formData.integrations.includes(x)} onClick={() => toggleArrayItem("integrations", x)}>
-                            {x}
-                          </Chip>
-                        ))}
-                      </div>
-                    </Section>
-                  </>
-                )}
-
-                {/* ── STEP 4 ── */}
-                {currentStep === 4 && (
-                  <>
-                    <StepHeader n={4} title="Design & scope" text="Your first style sets the colour of the 3D build. Page count adds layers." />
-                    <Section title="Visual style" icon={Palette} hint="Select one or more">
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                        {DESIGN_STYLES.map((s, i) => {
-                          const on = formData.designStyles.includes(s.id);
-                          const primary = formData.designStyles[0] === s.id;
-                          return (
-                            <Tile key={s.id} i={i} on={on} onClick={() => toggleArrayItem("designStyles", s.id)} compact>
-                              <div className="h-12 rounded-xl mb-3 border border-white/10 relative overflow-hidden" style={{ background: `linear-gradient(135deg, ${s.color}55, #0b0b0e 70%)` }}>
-                                <span className="absolute bottom-2 left-2 w-6 h-1.5 rounded-full" style={{ background: s.color }} />
-                                <span className="absolute bottom-2 left-10 w-10 h-1.5 rounded-full bg-white/20" />
-                                {primary && <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/60 text-[9px] text-white">Primary</span>}
-                              </div>
-                              <div className="flex items-center justify-between gap-2">
-                                <h4 className="text-sm font-semibold text-white truncate">{s.label}</h4>
-                                <CheckDot on={on} />
-                              </div>
-                              <p className="text-xs text-white/45">{s.desc}</p>
-                            </Tile>
-                          );
-                        })}
-                      </div>
-                    </Section>
-                    <Section title="Animation & motion" icon={Sparkles}>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {[
-                          { id: "Minimal", desc: "Subtle fades" },
-                          { id: "Standard", desc: "Smooth cards & scroll" },
-                          { id: "Advanced", desc: "Parallax & micro-FX" },
-                          { id: "Cinematic", desc: "3D & WebGL" },
-                        ].map((a) => (
-                          <Option key={a.id} on={formData.animationLevel === a.id} onClick={() => set("animationLevel", a.id)}>
-                            <span className="block font-semibold">{a.id}</span>
-                            <span className="block text-[11px] opacity-60">{a.desc}</span>
-                          </Option>
-                        ))}
-                      </div>
-                    </Section>
-                    <Section title="Size of the project" icon={Layers}>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                        {["1 Page (Single Landing)", "2–5 Pages", "6–10 Pages", "11–20 Pages", "20+ Pages", "Dynamic Web Application"].map((p) => (
-                          <Option key={p} on={formData.pageRange === p} onClick={() => set("pageRange", p)}>
-                            {p}
-                          </Option>
-                        ))}
-                      </div>
-                    </Section>
-                    <Section title="Existing design" icon={Eye}>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {["No — CodeXa should design everything", "Yes — Figma Link Available", "Yes — Reference Websites", "Yes — Screenshot / Wireframes"].map((d) => (
-                          <Option key={d} on={formData.hasExistingDesign === d} onClick={() => set("hasExistingDesign", d)}>
-                            {d}
-                          </Option>
-                        ))}
-                      </div>
-                      <AnimatePresence>
-                        {formData.hasExistingDesign !== "No — CodeXa should design everything" && (
-                          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-                            <input type="url" value={formData.designLinks} onChange={(e) => set("designLinks", e.target.value)} placeholder="Paste Figma / reference URLs" className={`${inputCls} mt-3`} aria-label="Design links" />
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </Section>
-                  </>
-                )}
-
-                {/* ── STEP 5 ── */}
-                {currentStep === 5 && (
-                  <>
-                    <StepHeader n={5} title="Timeline & contact" text="When do you need it, and how can we reach you?" />
-                    <Section title="Target delivery" icon={Clock}>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                        {["Urgent (< 1 Week)", "1–2 Weeks", "2–4 Weeks", "1–2 Months", "Flexible Timeline"].map((t) => (
-                          <Option key={t} on={formData.timeline === t} onClick={() => set("timeline", t)}>
-                            {t}
-                          </Option>
-                        ))}
-                      </div>
-                    </Section>
-                    <Section title="Your overall budget" icon={Briefcase} hint="Helps us propose the right scope">
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                        {["Below ₹10,000", "₹10,000–₹20,000", "₹20,000–₹40,000", "₹40,000–₹75,000", "₹75,000+", "Need CodeXa Recommendation"].map((b) => (
-                          <Option key={b} on={formData.budgetRange === b} onClick={() => set("budgetRange", b)}>
-                            {b}
-                          </Option>
-                        ))}
-                      </div>
-                    </Section>
-                    <Section title="Contact details" icon={User}>
-                      <div className="grid sm:grid-cols-2 gap-4">
-                        <Field label="Full name *" htmlFor="pr-name">
-                          <input id="pr-name" type="text" autoComplete="name" value={formData.fullName} onChange={(e) => set("fullName", e.target.value)} placeholder="e.g. Arjun Kumar" className={inputCls} />
-                        </Field>
-                        <Field label="Email address *" htmlFor="pr-email">
-                          <input id="pr-email" type="email" autoComplete="email" value={formData.email} onChange={(e) => set("email", e.target.value)} placeholder="e.g. arjun@startup.com" className={inputCls} />
-                        </Field>
-                        <Field label="Phone / WhatsApp *" htmlFor="pr-phone">
-                          <input id="pr-phone" type="tel" autoComplete="tel" value={formData.phone} onChange={(e) => set("phone", e.target.value)} placeholder="e.g. +91 98765 43210" className={inputCls} />
-                        </Field>
-                        <Field label="Company / brand" htmlFor="pr-company">
-                          <input id="pr-company" type="text" autoComplete="organization" value={formData.company} onChange={(e) => set("company", e.target.value)} placeholder="e.g. Nova Studios" className={inputCls} />
-                        </Field>
-                        <Field label="Preferred contact" htmlFor="pr-contact">
-                          <select id="pr-contact" value={formData.preferredContact} onChange={(e) => set("preferredContact", e.target.value)} className={inputCls}>
-                            <option value="WhatsApp">WhatsApp</option>
-                            <option value="Email">Email</option>
-                            <option value="Phone">Phone call</option>
-                          </select>
-                        </Field>
-                        <Field label="City" htmlFor="pr-city">
-                          <input id="pr-city" type="text" autoComplete="address-level2" value={formData.city} onChange={(e) => set("city", e.target.value)} placeholder="e.g. Hyderabad" className={inputCls} />
-                        </Field>
-                      </div>
-                      <Field
-                        label="Tell us about your idea *"
-                        htmlFor="pr-desc"
-                        right={
-                          <span className={`font-mono text-[11px] ${formData.description.trim().length >= 20 ? "text-emerald-400" : "text-white/40"}`}>
-                            {formData.description.trim().length}/20 min
-                          </span>
-                        }
-                      >
-                        <textarea id="pr-desc" rows={5} value={formData.description} onChange={(e) => set("description", e.target.value)} placeholder="What should it do? Who uses it? Any must-have features or references?" className={`${inputCls} resize-none leading-relaxed`} />
-                      </Field>
-                    </Section>
-                  </>
-                )}
-
-                {/* ── STEP 6 ── */}
-                {currentStep === 6 && (
-                  <>
-                    <StepHeader n={6} title="Review & book" text="Your blueprint is assembled. Check the details, then reserve your build slot." />
-                    <Section title="Project summary" icon={FileText}>
-                      <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {[
-                          { k: "Project", v: currentProjectTypeObj.name },
-                          { k: "Timeline", v: formData.timeline },
-                          { k: "Your budget", v: formData.budgetRange },
-                          { k: "Client", v: formData.fullName || "—" },
-                        ].map((d) => (
-                          <div key={d.k} className="rounded-2xl bg-white/[0.03] border border-white/[0.06] p-3">
-                            <dt className="font-mono text-[10px] uppercase tracking-widest text-white/40">{d.k}</dt>
-                            <dd className="mt-1 text-sm font-semibold text-white">{d.v}</dd>
-                          </div>
-                        ))}
-                      </dl>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {blueprint.modules.map((m, i) => (
-                          <motion.span key={m.id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.03 }} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.04] border border-white/10 text-xs text-white/75">
-                            <Check className="w-3 h-3 text-emerald-400" /> {m.label}
-                          </motion.span>
-                        ))}
-                      </div>
-                    </Section>
-
-                    <DepositReveal result={advanceResult} />
-
-                    <Section title="Confirm & agree" icon={Shield}>
-                      <div className="space-y-3">
-                        <Terms checked={formData.termsInfoCorrect} onChange={(v) => set("termsInfoCorrect", v)}>
-                          The information I provided is correct and represents my project goals.
-                        </Terms>
-                        <Terms checked={formData.termsAdvanceUnderstood} onChange={(v) => set("termsAdvanceUnderstood", v)}>
-                          I understand this ₹{advanceResult.finalAdvance.toLocaleString("en-IN")} is an <strong className="text-white">advance / booking payment</strong>, not the full project price.
-                        </Terms>
-                        <Terms checked={formData.termsReviewUnderstood} onChange={(v) => set("termsReviewUnderstood", v)}>
-                          The final scope, milestones and total quotation are confirmed after CodeXa&apos;s technical review.
-                        </Terms>
-                        <Terms checked={formData.termsPolicyAccepted} onChange={(v) => set("termsPolicyAccepted", v)}>
-                          I agree to the{" "}
-                          <Link href="/payment-policy" target="_blank" className="text-bright-red underline hover:text-white">
-                            booking advance & refund policy
-                          </Link>
-                          .
-                        </Terms>
-                      </div>
-                    </Section>
-
-                    <motion.button
-                      type="button"
-                      onClick={handleInitiatePayment}
-                      disabled={!allTermsAccepted || isSubmitting}
-                      whileHover={allTermsAccepted && !isSubmitting ? { y: -2 } : undefined}
-                      whileTap={{ scale: 0.98 }}
-                      className="group relative w-full overflow-hidden rounded-2xl py-4 px-6 bg-gradient-to-r from-crimson to-bright-red text-white font-semibold flex items-center justify-center gap-3 shadow-[0_20px_50px_-20px_rgba(217,4,41,0.9)] disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent group-enabled:group-hover:translate-x-full transition-transform duration-700" />
-                      {isSubmitting ? (
-                        <>
-                          <Loader2 className="w-5 h-5 animate-spin" /> Securing your slot…
-                        </>
-                      ) : (
-                        <>
-                          <Lock className="w-4 h-4" /> Pay ₹{advanceResult.finalAdvance.toLocaleString("en-IN")} & book my project
-                        </>
-                      )}
-                    </motion.button>
-                    {!allTermsAccepted && <p className="text-center text-xs text-white/40">Tick all four boxes above to enable payment.</p>}
-                  </>
-                )}
-              </motion.div>
+                    </Field>
+                  </Section>
+                </motion.div>
+              )}
             </AnimatePresence>
-          </div>
+          </StorySection>
 
-          {/* Navigation */}
-          <div className="hidden lg:flex items-center justify-between pt-8 mt-8 border-t border-white/[0.06]">
-            {currentStep > 1 ? (
-              <button type="button" onClick={handlePrevStep} className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl border border-white/10 text-sm text-white/70 hover:text-white hover:border-white/30 transition">
-                <ArrowLeft className="w-4 h-4" /> Back
-              </button>
-            ) : (
-              <span />
-            )}
-            {currentStep < 6 && (
-              <motion.button type="button" onClick={handleNextStep} whileHover={{ x: 3 }} whileTap={{ scale: 0.97 }} className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-crimson hover:bg-bright-red text-sm font-semibold text-white shadow-[0_10px_40px_-12px_rgba(217,4,41,0.8)] transition-colors">
-                {currentStep === 5 ? "Review my blueprint" : `Continue to ${STEPS[currentStep].title.toLowerCase()}`} <ArrowRight className="w-4 h-4" />
-              </motion.button>
-            )}
-          </div>
+          {/* ── STEP 2 ── */}
+          <StorySection n={2} title="Goals & features" text="What should it achieve? Every feature you add docks into the 3D build with its label." next="Tech stack" onNext={() => scrollToStep(3)}>
+            <Section title="Primary goals" icon={Rocket} hint="Select all that apply">
+              <div className="flex flex-wrap gap-2">
+                {PURPOSE_OPTIONS.map((p) => (
+                  <Chip key={p} on={formData.purposes.includes(p)} onClick={() => toggleArrayItem("purposes", p)}>
+                    {p}
+                  </Chip>
+                ))}
+              </div>
+            </Section>
+            <Section title={`${currentProjectTypeObj.name} features`} icon={Zap} hint="Responsive design always included">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {FEATURE_OPTIONS.map((f, i) => {
+                  const on = formData.features.includes(f.id);
+                  return (
+                    <Tile key={f.id} i={i} on={on} onClick={() => toggleArrayItem("features", f.id)} compact>
+                      <div className="flex items-center gap-3">
+                        <IconBadge icon={f.icon} on={on} small />
+                        <div className="min-w-0">
+                          <h4 className="text-sm font-semibold text-white">{f.name}</h4>
+                          <p className="text-xs text-white/45">{f.desc}</p>
+                        </div>
+                        <CheckDot on={on} />
+                      </div>
+                    </Tile>
+                  );
+                })}
+              </div>
+            </Section>
+          </StorySection>
 
-          <div className="mt-8 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 text-sm text-white/55">
+          {/* ── STEP 3 ── */}
+          <StorySection n={3} title="Tech stack" text="Accounts, data, dashboards and the services your product connects to." next="Design & scope" onNext={() => scrollToStep(4)}>
+            <Section title="User accounts & login" icon={Key}>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {["No Login Required", "Email + Password", "Google Login", "Phone OTP", "Email OTP", "Multiple Login Methods"].map((opt) => (
+                  <Option key={opt} on={formData.authOption === opt} onClick={() => set("authOption", opt)}>
+                    {opt}
+                  </Option>
+                ))}
+              </div>
+              <AnimatePresence>
+                {formData.authOption !== "No Login Required" && (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                    <p className="mt-4 mb-2 text-xs font-semibold text-white/55">Security add-ons</p>
+                    <div className="flex flex-wrap gap-2">
+                      {["Forgot Password", "Email Verification", "Two-Factor Authentication", "Role-Based Access", "Active Sessions Tracker"].map((x) => (
+                        <Chip key={x} on={formData.authExtras.includes(x)} onClick={() => toggleArrayItem("authExtras", x)}>
+                          {x}
+                        </Chip>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </Section>
+            <Section title="Dashboard & control center" icon={LayoutDashboard}>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {["No Dashboard", "User Dashboard", "Admin Dashboard", "User + Admin Dashboard", "Multi-role Dashboard"].map((d) => (
+                  <Option key={d} on={formData.dashboardOption === d} onClick={() => set("dashboardOption", d)}>
+                    {d}
+                  </Option>
+                ))}
+              </div>
+            </Section>
+            <Section title="Database" icon={Database} hint="Supabase / PostgreSQL">
+              <div className="grid grid-cols-3 gap-2">
+                {["No", "Yes", "Not Sure"].map((d) => (
+                  <Option key={d} on={formData.databaseOption === d} onClick={() => set("databaseOption", d)}>
+                    {d}
+                  </Option>
+                ))}
+              </div>
+            </Section>
+            <Section title="Integrations" icon={Globe} hint="Orbit the build as satellites">
+              <div className="flex flex-wrap gap-2">
+                {INTEGRATION_OPTIONS.map((x) => (
+                  <Chip key={x} on={formData.integrations.includes(x)} onClick={() => toggleArrayItem("integrations", x)}>
+                    {x}
+                  </Chip>
+                ))}
+              </div>
+            </Section>
+          </StorySection>
+
+          {/* ── STEP 4 ── */}
+          <StorySection n={4} title="Design & scope" text="Your first style colours the 3D build. More pages stack more layers behind it." next="Timeline & contact" onNext={() => scrollToStep(5)}>
+            <Section title="Visual style" icon={Palette} hint="Select one or more">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {DESIGN_STYLES.map((s, i) => {
+                  const on = formData.designStyles.includes(s.id);
+                  const primary = formData.designStyles[0] === s.id;
+                  return (
+                    <Tile key={s.id} i={i} on={on} onClick={() => toggleArrayItem("designStyles", s.id)} compact>
+                      <div className="h-12 rounded-xl mb-3 border border-white/10 relative overflow-hidden" style={{ background: `linear-gradient(135deg, ${s.color}55, #0b0b0e 70%)` }}>
+                        <span className="absolute bottom-2 left-2 w-6 h-1.5 rounded-full" style={{ background: s.color }} />
+                        <span className="absolute bottom-2 left-10 w-10 h-1.5 rounded-full bg-white/20" />
+                        {primary && <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/60 text-[9px] text-white">Primary</span>}
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <h4 className="text-sm font-semibold text-white truncate">{s.label}</h4>
+                        <CheckDot on={on} />
+                      </div>
+                      <p className="text-xs text-white/45">{s.desc}</p>
+                    </Tile>
+                  );
+                })}
+              </div>
+            </Section>
+            <Section title="Animation & motion" icon={Sparkles}>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { id: "Minimal", desc: "Subtle fades" },
+                  { id: "Standard", desc: "Smooth cards & scroll" },
+                  { id: "Advanced", desc: "Parallax & micro-FX" },
+                  { id: "Cinematic", desc: "3D & WebGL" },
+                ].map((a) => (
+                  <Option key={a.id} on={formData.animationLevel === a.id} onClick={() => set("animationLevel", a.id)}>
+                    <span className="block font-semibold">{a.id}</span>
+                    <span className="block text-[11px] opacity-60">{a.desc}</span>
+                  </Option>
+                ))}
+              </div>
+            </Section>
+            <Section title="Size of the project" icon={Layers}>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {["1 Page (Single Landing)", "2–5 Pages", "6–10 Pages", "11–20 Pages", "20+ Pages", "Dynamic Web Application"].map((p) => (
+                  <Option key={p} on={formData.pageRange === p} onClick={() => set("pageRange", p)}>
+                    {p}
+                  </Option>
+                ))}
+              </div>
+            </Section>
+            <Section title="Existing design" icon={Eye}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {["No — CodeXa should design everything", "Yes — Figma Link Available", "Yes — Reference Websites", "Yes — Screenshot / Wireframes"].map((d) => (
+                  <Option key={d} on={formData.hasExistingDesign === d} onClick={() => set("hasExistingDesign", d)}>
+                    {d}
+                  </Option>
+                ))}
+              </div>
+              <AnimatePresence>
+                {formData.hasExistingDesign !== "No — CodeXa should design everything" && (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                    <input type="url" value={formData.designLinks} onChange={(e) => set("designLinks", e.target.value)} placeholder="Paste Figma / reference URLs" className={`${inputCls} mt-3`} aria-label="Design links" />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </Section>
+          </StorySection>
+
+          {/* ── STEP 5 ── */}
+          <StorySection n={5} title="Timeline & contact" text="When do you need it, and how can we reach you?" next="Review & book" onNext={() => scrollToStep(6)}>
+            <Section title="Target delivery" icon={Clock}>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {["Urgent (< 1 Week)", "1–2 Weeks", "2–4 Weeks", "1–2 Months", "Flexible Timeline"].map((t) => (
+                  <Option key={t} on={formData.timeline === t} onClick={() => set("timeline", t)}>
+                    {t}
+                  </Option>
+                ))}
+              </div>
+            </Section>
+            <Section title="Your overall budget" icon={Briefcase} hint="Helps us propose the right scope">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {["Below ₹10,000", "₹10,000–₹20,000", "₹20,000–₹40,000", "₹40,000–₹75,000", "₹75,000+", "Need CodeXa Recommendation"].map((b) => (
+                  <Option key={b} on={formData.budgetRange === b} onClick={() => set("budgetRange", b)}>
+                    {b}
+                  </Option>
+                ))}
+              </div>
+            </Section>
+            <Section title="Contact details" icon={User}>
+              <div className="grid sm:grid-cols-2 gap-x-4">
+                <Field label="Full name *" htmlFor="pr-name">
+                  <input id="pr-name" type="text" autoComplete="name" value={formData.fullName} onChange={(e) => set("fullName", e.target.value)} placeholder="e.g. Arjun Kumar" className={inputCls} />
+                </Field>
+                <Field label="Email address *" htmlFor="pr-email">
+                  <input id="pr-email" type="email" autoComplete="email" value={formData.email} onChange={(e) => set("email", e.target.value)} placeholder="e.g. arjun@startup.com" className={inputCls} />
+                </Field>
+                <Field label="Phone / WhatsApp *" htmlFor="pr-phone">
+                  <input id="pr-phone" type="tel" autoComplete="tel" value={formData.phone} onChange={(e) => set("phone", e.target.value)} placeholder="e.g. +91 98765 43210" className={inputCls} />
+                </Field>
+                <Field label="Company / brand" htmlFor="pr-company">
+                  <input id="pr-company" type="text" autoComplete="organization" value={formData.company} onChange={(e) => set("company", e.target.value)} placeholder="e.g. Nova Studios" className={inputCls} />
+                </Field>
+                <Field label="Preferred contact" htmlFor="pr-contact">
+                  <select id="pr-contact" value={formData.preferredContact} onChange={(e) => set("preferredContact", e.target.value)} className={inputCls}>
+                    <option value="WhatsApp">WhatsApp</option>
+                    <option value="Email">Email</option>
+                    <option value="Phone">Phone call</option>
+                  </select>
+                </Field>
+                <Field label="City" htmlFor="pr-city">
+                  <input id="pr-city" type="text" autoComplete="address-level2" value={formData.city} onChange={(e) => set("city", e.target.value)} placeholder="e.g. Hyderabad" className={inputCls} />
+                </Field>
+              </div>
+              <Field
+                label="Tell us about your idea *"
+                htmlFor="pr-desc"
+                right={<span className={`font-mono text-[11px] ${formData.description.trim().length >= 20 ? "text-emerald-400" : "text-white/40"}`}>{formData.description.trim().length}/20 min</span>}
+              >
+                <textarea id="pr-desc" rows={5} value={formData.description} onChange={(e) => set("description", e.target.value)} placeholder="What should it do? Who uses it? Any must-have features or references?" className={`${inputCls} resize-none leading-relaxed`} />
+              </Field>
+            </Section>
+          </StorySection>
+
+          {/* ── STEP 6 ── */}
+          <StorySection n={6} title="Review & book" text="We compile your blueprint and calculate your booking deposit here — nowhere earlier.">
+            <Section title="Project summary" icon={FileText}>
+              <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  { k: "Project", v: currentProjectTypeObj.name },
+                  { k: "Timeline", v: formData.timeline },
+                  { k: "Your budget", v: formData.budgetRange },
+                  { k: "Client", v: formData.fullName || "—" },
+                ].map((d) => (
+                  <div key={d.k} className="rounded-2xl bg-white/[0.03] border border-white/[0.06] p-3">
+                    <dt className="font-mono text-[10px] uppercase tracking-widest text-white/40">{d.k}</dt>
+                    <dd className="mt-1 text-sm font-semibold text-white">{d.v}</dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="mt-4 text-xs text-white/45">
+                {blueprint.modules.length} modules: {blueprint.modules.map((m) => m.label).join(" · ")}
+              </p>
+            </Section>
+
+            {missing.length > 0 && (
+              <Section title="Almost there" icon={AlertCircle} hint={`${missing.length} item${missing.length > 1 ? "s" : ""} left`}>
+                <ul className="space-y-2">
+                  {missing.map((m) => (
+                    <li key={m.label}>
+                      <button type="button" onClick={() => scrollToStep(m.step)} className="w-full flex items-center justify-between gap-3 rounded-xl border border-amber-400/25 bg-amber-500/[0.06] px-4 py-3 text-left text-sm text-white/80 hover:border-amber-400/50">
+                        <span className="flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 text-amber-300" /> {m.label}
+                        </span>
+                        <span className="text-xs text-amber-300">Fix in step {m.step} ↑</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </Section>
+            )}
+
+            <AnimatePresence mode="wait">
+              {revealPhase !== "revealed" ? (
+                <CompileSequence key="compile" active={revealPhase === "compiling"} modules={blueprint.modules.length} typeName={currentProjectTypeObj.name} />
+              ) : (
+                <motion.div key="revealed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+                  <DepositReveal result={advanceResult} />
+
+                  <Section title="Confirm & agree" icon={Shield}>
+                    <div className="space-y-3">
+                      <Terms checked={formData.termsInfoCorrect} onChange={(v) => set("termsInfoCorrect", v)}>
+                        The information I provided is correct and represents my project goals.
+                      </Terms>
+                      <Terms checked={formData.termsAdvanceUnderstood} onChange={(v) => set("termsAdvanceUnderstood", v)}>
+                        I understand this ₹{advanceResult.finalAdvance.toLocaleString("en-IN")} is an <strong className="text-white">advance / booking payment</strong>, not the full project price.
+                      </Terms>
+                      <Terms checked={formData.termsReviewUnderstood} onChange={(v) => set("termsReviewUnderstood", v)}>
+                        The final scope, milestones and total quotation are confirmed after CodeXa&apos;s technical review.
+                      </Terms>
+                      <Terms checked={formData.termsPolicyAccepted} onChange={(v) => set("termsPolicyAccepted", v)}>
+                        I agree to the{" "}
+                        <Link href="/payment-policy" target="_blank" className="text-bright-red underline hover:text-white">
+                          booking advance & refund policy
+                        </Link>
+                        .
+                      </Terms>
+                    </div>
+                  </Section>
+
+                  <motion.button
+                    type="button"
+                    onClick={handleInitiatePayment}
+                    disabled={!allTermsAccepted || isSubmitting || missing.length > 0}
+                    whileHover={allTermsAccepted && !isSubmitting ? { y: -2 } : undefined}
+                    whileTap={{ scale: 0.98 }}
+                    className="group relative w-full overflow-hidden rounded-2xl py-4 px-6 bg-gradient-to-r from-crimson to-bright-red text-white font-semibold flex items-center justify-center gap-3 shadow-[0_20px_50px_-20px_rgba(217,4,41,0.9)] disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent group-enabled:group-hover:translate-x-full transition-transform duration-700" />
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" /> Securing your slot…
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-4 h-4" /> Pay ₹{advanceResult.finalAdvance.toLocaleString("en-IN")} & book my project
+                      </>
+                    )}
+                  </motion.button>
+                  <p className="text-center text-xs text-white/40">
+                    {missing.length > 0 ? "Complete the items above to enable payment." : !allTermsAccepted ? "Tick all four boxes to enable payment." : "Secure checkout by Razorpay."}
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </StorySection>
+
+          <div className="mt-4 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 text-sm text-white/55">
             Need something custom? Talk to us on{" "}
             <a href="https://wa.me/918897901413" target="_blank" rel="noopener noreferrer" className="text-bright-red hover:text-white">
               WhatsApp
@@ -1000,13 +971,8 @@ export default function ProjectRequestPage() {
 
       {/* Mobile bottom bar */}
       <div className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-[#070707]/95 backdrop-blur-xl border-t border-white/10 px-4 py-3 flex items-center gap-3">
-        {currentStep > 1 && (
-          <button type="button" onClick={handlePrevStep} className="p-3 rounded-xl border border-white/10 text-white/70" aria-label="Previous step">
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-        )}
         <div className="flex-1 min-w-0">
-          {currentStep === 6 ? (
+          {currentStep === 6 && revealPhase === "revealed" ? (
             <>
               <span className="block text-[10px] uppercase tracking-widest text-white/40">Booking deposit</span>
               <span className="font-mono text-lg font-bold text-bright-red">₹{advanceResult.finalAdvance.toLocaleString("en-IN")}</span>
@@ -1019,11 +985,11 @@ export default function ProjectRequestPage() {
           )}
         </div>
         {currentStep < 6 ? (
-          <button type="button" onClick={handleNextStep} className="px-5 py-3 rounded-xl bg-crimson text-white text-sm font-semibold">
-            Continue
+          <button type="button" onClick={() => scrollToStep(currentStep + 1)} className="px-5 py-3 rounded-xl bg-crimson text-white text-sm font-semibold">
+            Next ↓
           </button>
         ) : (
-          <button type="button" onClick={handleInitiatePayment} disabled={!allTermsAccepted || isSubmitting} className="px-5 py-3 rounded-xl bg-gradient-to-r from-crimson to-bright-red text-white text-sm font-semibold disabled:opacity-40">
+          <button type="button" onClick={handleInitiatePayment} disabled={revealPhase !== "revealed" || !allTermsAccepted || isSubmitting || missing.length > 0} className="px-5 py-3 rounded-xl bg-gradient-to-r from-crimson to-bright-red text-white text-sm font-semibold disabled:opacity-40">
             {isSubmitting ? "Processing…" : "Pay & book"}
           </button>
         )}
@@ -1037,16 +1003,6 @@ export default function ProjectRequestPage() {
 
 const inputCls =
   "w-full rounded-2xl bg-white/[0.03] border border-white/10 focus:border-bright-red focus:shadow-[0_0_0_4px_rgba(217,4,41,0.15)] px-4 py-3 text-sm text-white placeholder:text-white/25 outline-none transition";
-
-function StepHeader({ n, title, text }: { n: number; title: string; text: string }) {
-  return (
-    <div>
-      <div className="font-mono text-[11px] uppercase tracking-[0.3em] text-bright-red">Step {n} of 6</div>
-      <h2 className="mt-2 font-orbitron font-black text-2xl sm:text-3xl text-white tracking-tight">{title}</h2>
-      <p className="mt-2 text-sm text-white/55">{text}</p>
-    </div>
-  );
-}
 
 function Section({ title, icon: Icon, hint, children }: { title: string; icon: LucideIcon; hint?: string; children: React.ReactNode }) {
   return (
@@ -1176,91 +1132,170 @@ function Terms({ checked, onChange, children }: { checked: boolean; onChange: (v
   );
 }
 
-function BlueprintCard({
-  typeName, typeIcon: TypeIcon, timeline, modules, styles, motionLevel, pages, progress,
+/** One chapter of the scroll story — big watermark number, reveal-on-scroll and a "next" cue. */
+function StorySection({ n, title, text, next, onNext, children }: { n: number; title: string; text: string; next?: string; onNext?: () => void; children: React.ReactNode }) {
+  return (
+    <section id={`step-${n}`} data-step={n} className="relative scroll-mt-[140px] py-14 sm:py-20 border-b border-white/[0.05] last:border-b-0">
+      <motion.span
+        aria-hidden="true"
+        initial={{ opacity: 0, x: -30 }}
+        whileInView={{ opacity: 1, x: 0 }}
+        viewport={{ once: true, margin: "-20%" }}
+        transition={{ duration: 1, ease: EASE }}
+        className="pointer-events-none absolute -top-2 right-0 font-orbitron font-black text-[7rem] sm:text-[9rem] leading-none text-transparent [-webkit-text-stroke:1px_rgba(255,255,255,0.06)] select-none"
+      >
+        0{n}
+      </motion.span>
+      <motion.div initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-15%" }} transition={{ duration: 0.7, ease: EASE }} className="relative mb-8">
+        <div className="font-mono text-[11px] uppercase tracking-[0.3em] text-bright-red">Step {n} of 6</div>
+        <h2 className="mt-2 font-orbitron font-black text-2xl sm:text-4xl text-white tracking-tight">{title}</h2>
+        <p className="mt-3 max-w-xl text-sm sm:text-base text-white/55">{text}</p>
+      </motion.div>
+      <div className="relative space-y-6">{children}</div>
+      {next && onNext && (
+        <motion.button
+          type="button"
+          onClick={onNext}
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+          whileHover={{ y: 2 }}
+          className="group mt-10 inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/[0.03] pl-5 pr-2 py-2 text-sm text-white/70 hover:text-white hover:border-bright-red/60 transition-colors"
+        >
+          Next: <span className="font-semibold text-white">{next}</span>
+          <span className="w-8 h-8 rounded-full bg-crimson flex items-center justify-center">
+            <motion.span animate={{ y: [0, 3, 0] }} transition={{ duration: 1.4, repeat: Infinity }}>
+              <ArrowRight className="w-4 h-4 rotate-90" />
+            </motion.span>
+          </span>
+        </motion.button>
+      )}
+    </section>
+  );
+}
+
+/** Heads-up display layered over the 3D build (replaces the long module list). */
+function BuildHud({
+  typeName, category, typeIcon: TypeIcon, timeline, size, motionLevel, styles, moduleCount, progress, stepTitle, assembled,
 }: {
   typeName: string;
+  category: string;
   typeIcon: LucideIcon;
   timeline: string;
-  modules: BuildModule[];
-  styles: string[];
+  size: string;
   motionLevel: string;
-  pages: string;
+  styles: string[];
+  moduleCount: number;
   progress: number;
+  stepTitle: string;
+  assembled: boolean;
 }) {
-  const r = 22;
+  const r = 18;
   const c = 2 * Math.PI * r;
   return (
-    <div className="rounded-[24px] border border-white/[0.08] bg-[#0a0a0c]/85 backdrop-blur-md p-5">
-      <div className="flex items-center gap-3">
-        <span className="w-11 h-11 rounded-xl bg-crimson/15 border border-crimson/30 flex items-center justify-center">
-          <TypeIcon className="w-5 h-5 text-bright-red" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="font-mono text-[10px] uppercase tracking-[0.25em] text-white/40">Your blueprint</p>
-          <AnimatePresence mode="wait">
-            <motion.p key={typeName} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="text-sm font-semibold text-white truncate">
-              {typeName}
-            </motion.p>
-          </AnimatePresence>
+    <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-3 sm:p-5">
+      {/* top */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0 rounded-2xl bg-black/45 backdrop-blur-md border border-white/10 pl-2 pr-4 py-2">
+          <span className="w-9 h-9 rounded-xl bg-crimson/20 border border-crimson/40 flex items-center justify-center shrink-0">
+            <TypeIcon className="w-4 h-4 text-bright-red" />
+          </span>
+          <span className="min-w-0">
+            <span className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.25em] text-white/50">
+              <span className="w-1.5 h-1.5 rounded-full bg-bright-red animate-pulse" /> Live build · {stepTitle}
+            </span>
+            <AnimatePresence mode="wait">
+              <motion.span key={typeName} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="block text-sm font-semibold text-white truncate max-w-[200px] sm:max-w-[260px]">
+                {typeName}
+              </motion.span>
+            </AnimatePresence>
+            <span className="hidden sm:block text-[11px] text-white/45 truncate">{category}</span>
+          </span>
         </div>
-        <div className="relative w-14 h-14 shrink-0" aria-label={`Builder ${progress}% complete`}>
-          <svg viewBox="0 0 56 56" className="w-14 h-14 -rotate-90">
-            <circle cx="28" cy="28" r={r} stroke="rgba(255,255,255,0.08)" strokeWidth="5" fill="none" />
-            <motion.circle cx="28" cy="28" r={r} stroke="#FF1E3C" strokeWidth="5" fill="none" strokeLinecap="round" strokeDasharray={c} animate={{ strokeDashoffset: c - (c * progress) / 100 }} transition={{ duration: 0.8, ease: EASE }} />
+        <div className="relative w-12 h-12 shrink-0 rounded-full bg-black/45 backdrop-blur-md border border-white/10" aria-label={`Builder ${progress}% complete`}>
+          <svg viewBox="0 0 48 48" className="w-12 h-12 -rotate-90">
+            <circle cx="24" cy="24" r={r} stroke="rgba(255,255,255,0.1)" strokeWidth="4" fill="none" />
+            <motion.circle cx="24" cy="24" r={r} stroke={assembled ? "#34D399" : "#FF1E3C"} strokeWidth="4" fill="none" strokeLinecap="round" strokeDasharray={c} animate={{ strokeDashoffset: c - (c * progress) / 100 }} transition={{ duration: 0.8, ease: EASE }} />
           </svg>
-          <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold text-white">{progress}%</span>
+          <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">{progress}%</span>
         </div>
       </div>
 
-      <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
-        {[
-          { k: "Timeline", v: timeline },
-          { k: "Size", v: pages.replace(" (Single Landing)", "") },
-          { k: "Motion", v: motionLevel },
-        ].map((d) => (
-          <div key={d.k} className="rounded-xl bg-white/[0.03] border border-white/[0.06] px-2 py-2">
-            <dt className="font-mono text-[9px] uppercase tracking-widest text-white/35">{d.k}</dt>
-            <dd className="mt-0.5 text-xs font-semibold text-white truncate">{d.v}</dd>
-          </div>
-        ))}
-      </dl>
-
-      <p className="mt-4 mb-2 font-mono text-[10px] uppercase tracking-[0.25em] text-white/40">Modules docked · {modules.length}</p>
-      <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1" data-lenis-prevent>
-        <AnimatePresence initial={false}>
-          {modules.map((m) => (
-            <motion.span
-              key={m.id}
-              layout
-              initial={{ opacity: 0, scale: 0.6, y: -6 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.6 }}
-              transition={{ type: "spring", stiffness: 400, damping: 24 }}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-[11px] text-white/75"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-bright-red" /> {m.label}
-            </motion.span>
+      {/* bottom */}
+      <div className="hidden sm:flex items-end justify-between gap-3">
+        <div className="flex gap-2">
+          {[
+            { k: "Timeline", v: timeline },
+            { k: "Size", v: size },
+            { k: "Motion", v: motionLevel },
+          ].map((d) => (
+            <div key={d.k} className="rounded-xl bg-black/45 backdrop-blur-md border border-white/10 px-3 py-2">
+              <div className="font-mono text-[9px] uppercase tracking-widest text-white/40">{d.k}</div>
+              <AnimatePresence mode="wait">
+                <motion.div key={d.v} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="text-xs font-semibold text-white whitespace-nowrap">
+                  {d.v}
+                </motion.div>
+              </AnimatePresence>
+            </div>
           ))}
-        </AnimatePresence>
-        {modules.length === 0 && <span className="text-xs text-white/35">Add features to see modules dock in.</span>}
-      </div>
-
-      {styles.length > 0 && (
-        <div className="mt-4 flex items-center gap-2">
-          <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-white/40">Style</span>
-          <div className="flex -space-x-1.5">
-            {styles.slice(0, 5).map((s) => (
-              <span key={s} title={s} className="w-5 h-5 rounded-full border-2 border-[#0a0a0c]" style={{ background: DESIGN_STYLES.find((d) => d.id === s)?.color }} />
-            ))}
+        </div>
+        <div className="rounded-xl bg-black/45 backdrop-blur-md border border-white/10 px-3 py-2 text-right">
+          <div className="font-mono text-[9px] uppercase tracking-widest text-white/40">Modules</div>
+          <div className="flex items-center gap-2 justify-end">
+            <div className="flex -space-x-1.5">
+              {styles.slice(0, 4).map((s) => (
+                <span key={s} className="w-3.5 h-3.5 rounded-full border border-black" style={{ background: DESIGN_STYLES.find((d) => d.id === s)?.color }} />
+              ))}
+            </div>
+            <motion.span key={moduleCount} initial={{ scale: 1.6, color: "#FF1E3C" }} animate={{ scale: 1, color: "#ffffff" }} className="text-sm font-bold tabular-nums">
+              {moduleCount}
+            </motion.span>
           </div>
         </div>
-      )}
+      </div>
 
-      <p className="mt-4 pt-4 border-t border-white/[0.06] text-xs text-white/40 flex items-center gap-2">
-        <Lock className="w-3.5 h-3.5" /> Your booking deposit is shown at the final step.
-      </p>
+      <AnimatePresence>
+        {assembled && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="absolute top-20 sm:top-24 inset-x-0 flex justify-center">
+            <span className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-emerald-500/15 border border-emerald-400/40 text-xs text-emerald-200 backdrop-blur-md">
+              <CheckCircle2 className="w-3.5 h-3.5" /> Blueprint assembled
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
+  );
+}
+
+/** Short "compiling" sequence that plays before the deposit is revealed. */
+function CompileSequence({ active, modules, typeName }: { active: boolean; modules: number; typeName: string }) {
+  const lines = [`Architecture · ${typeName}`, `${modules} modules wired`, "Design system & motion", "Timeline & delivery plan", "Calculating booking deposit"];
+  const [done, setDone] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    setDone(0);
+    const t = setInterval(() => setDone((d) => Math.min(lines.length, d + 1)), 400);
+    return () => clearInterval(t);
+  }, [active, lines.length]);
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97, filter: "blur(6px)" }} transition={{ duration: 0.5, ease: EASE }} className="rounded-[28px] border border-white/[0.08] bg-[#0a0a0c]/85 p-6 sm:p-8">
+      <div className="flex items-center gap-3">
+        <Loader2 className={`w-5 h-5 text-bright-red ${active ? "animate-spin" : ""}`} />
+        <p className="font-semibold text-white">{active ? "Compiling your blueprint…" : "Scroll here to compile your blueprint"}</p>
+      </div>
+      <ul className="mt-5 space-y-2 font-mono text-sm">
+        {lines.map((l, i) => (
+          <li key={l} className={`flex items-center gap-3 transition-colors ${i < done ? "text-white/80" : "text-white/25"}`}>
+            <span className={`w-5 h-5 rounded-full flex items-center justify-center border ${i < done ? "bg-emerald-500 border-emerald-400" : "border-white/15"}`}>{i < done && <Check className="w-3 h-3 text-white" />}</span>
+            {l}
+          </li>
+        ))}
+      </ul>
+      <div className="mt-5 h-1.5 rounded-full bg-white/10 overflow-hidden">
+        <motion.div className="h-full bg-gradient-to-r from-crimson to-emerald-400" animate={{ width: `${(done / lines.length) * 100}%` }} transition={{ duration: 0.4 }} />
+      </div>
+    </motion.div>
   );
 }
 
