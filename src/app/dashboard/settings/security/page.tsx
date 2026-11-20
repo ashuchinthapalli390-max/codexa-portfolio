@@ -26,6 +26,7 @@ import {
   LogOut
 } from "lucide-react";
 import { TeamCoreShell } from "@/components/layout/TeamCoreShell";
+import { OtpInput } from "@/components/auth/OtpInput";
 import { modalDialogVariants, buttonHoverVariants, errorShakeVariants } from "@/lib/motion";
 
 export default function SecuritySettingsPage() {
@@ -646,23 +647,16 @@ export default function SecuritySettingsPage() {
                     </div>
                   )}
 
-                  <div className="flex justify-between gap-2 sm:gap-3 my-4">
-                    {setupTotpDigits.map((digit, idx) => (
-                      <input
-                        key={idx}
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={1}
-                        value={digit}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, "");
-                          const newDigits = [...setupTotpDigits];
-                          newDigits[idx] = val;
-                          setSetupTotpDigits(newDigits);
-                        }}
-                        className="flex-1 h-14 text-center font-mono text-xl font-black rounded-xl bg-[#121212] border border-crimson/30 focus:border-bright-red text-white outline-none"
-                      />
-                    ))}
+                  <div className="my-4">
+                    <OtpInput
+                      value={setupTotpDigits}
+                      onChange={(d) => {
+                        setSetupTotpDigits(d);
+                        if (setupError) setSetupError("");
+                      }}
+                      status={setupLoading ? "verifying" : setupError ? "error" : "idle"}
+                      label="Authenticator code"
+                    />
                   </div>
 
                   <button

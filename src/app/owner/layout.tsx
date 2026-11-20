@@ -3,7 +3,8 @@
 import React, { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { Shield, RefreshCw, AlertTriangle } from "lucide-react";
+import { RefreshCw, AlertTriangle } from "lucide-react";
+import { SecureBoot } from "@/components/auth/SecureBoot";
 import { isOwner } from "@/lib/permissions";
 import "../../app/globals.css";
 
@@ -31,24 +32,7 @@ export default function OwnerLayout({
 
   // Initial loading state
   if (status === "loading") {
-    return (
-      <div className="min-h-screen bg-[#070707] text-white flex flex-col items-center justify-center space-y-4">
-        <div className="relative">
-          <div className="w-16 h-16 rounded-2xl bg-[#0D0D0D] border border-crimson/40 flex items-center justify-center shadow-[0_0_30px_rgba(217,4,41,0.25)]">
-            <Shield className="w-8 h-8 text-bright-red animate-pulse" />
-          </div>
-          <div className="absolute -inset-1 rounded-2xl border border-bright-red/30 animate-ping opacity-25 pointer-events-none" />
-        </div>
-        <div className="text-center space-y-1">
-          <p className="font-orbitron text-xs font-bold uppercase tracking-[0.25em] text-white">
-            CODEXA OWNER CORE
-          </p>
-          <p className="font-mono text-[10px] text-[#666666] uppercase tracking-wider">
-            Restoring Secure Workspace...
-          </p>
-        </div>
-      </div>
-    );
+    return <SecureBoot label="Founder console" />;
   }
 
   // Temporary service outage on cold load (do not show login page)

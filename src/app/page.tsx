@@ -11,7 +11,7 @@ import { TeamProjectsSection } from "@/components/sections/TeamProjectsSection";
 import { PublicLeadershipSection } from "@/components/sections/PublicLeadershipSection";
 import { FAQSection } from "@/components/sections/FAQSection";
 import { ContactSection } from "@/components/sections/ContactSection";
-import { Footer } from "@/components/sections/Footer";
+import { SiteFooter } from "@/components/site/SiteFooter";
 import { SmoothScroll } from "@/components/scroll/SmoothScroll";
 import { ScrollHUD } from "@/components/scroll/ScrollHUD";
 import { Hero3D } from "@/components/scroll3d/Hero3D";
@@ -121,9 +121,7 @@ export default function Home() {
           <FinalPortal />
         </main>
 
-        <div className="relative bg-[#050505]">
-          <Footer />
-        </div>
+        <SiteFooter />
       </motion.div>
     </div>
   );

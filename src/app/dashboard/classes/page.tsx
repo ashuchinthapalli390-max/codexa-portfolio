@@ -488,7 +488,7 @@ export default function ClassSchedulingPage() {
 
   return (
     <TeamCoreShell>
-      <div className="min-h-screen bg-black text-white p-4 md:p-8 space-y-6">
+      <div className="space-y-6">
         {/* Header Strip */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-800/80 pb-6">
           <div>

@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { TeamCoreShell } from "@/components/layout/TeamCoreShell";
 
 interface AccessKey {
   id: string;
@@ -190,22 +191,8 @@ export default function AccessKeysPage() {
   const isExpired = (d: string | null) => d ? new Date(d) < new Date() : false;
 
   return (
-    <div className="min-h-screen bg-[#070707] text-[#F7F7F7] antialiased">
-
-      {/* Grid background */}
-      <div
-        className="fixed inset-0 pointer-events-none opacity-[0.025]"
-        style={{
-          backgroundImage:
-            "linear-gradient(to right, rgba(217,4,41,0.5) 1px, transparent 1px), linear-gradient(to bottom, rgba(217,4,41,0.5) 1px, transparent 1px)",
-          backgroundSize: "40px 40px",
-        }}
-      />
-
-      {/* Top glow */}
-      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[700px] h-[300px] bg-[#D90429] opacity-[0.04] rounded-full blur-[100px] pointer-events-none" />
-
-      <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+    <TeamCoreShell>
+      <div className="max-w-6xl mx-auto">
 
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
@@ -591,6 +578,6 @@ export default function AccessKeysPage() {
           </div>
         </div>
       )}
-    </div>
+    </TeamCoreShell>
   );
 }

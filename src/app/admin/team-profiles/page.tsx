@@ -4,6 +4,7 @@
 import React, { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { TeamCoreShell } from "@/components/layout/TeamCoreShell";
 import { getProfileImageStyle } from "@/lib/profile-media";
 import { PfpGalleryModal } from "@/components/ui/PfpGalleryModal";
 import { PfpCropModal } from "@/components/ui/PfpCropModal";
@@ -341,82 +342,20 @@ function TeamProfilesContent() {
   const leadershipProfiles = profiles.filter((p) => p.memberType === "LEADERSHIP");
 
   return (
-    <div className="min-h-screen bg-[#070707] flex text-[#F7F7F7] relative overflow-hidden">
-
-      {/* Sidebar */}
-      <aside className="w-64 flex-shrink-0 border-r border-[rgba(217,4,41,0.15)] flex flex-col z-20 bg-[#070707]/95">
-        <div className="px-6 py-5 border-b border-[rgba(217,4,41,0.1)] flex items-center gap-3">
-          {!logoError ? (
-            <img
-              src="/assets/images/logo.jpeg"
-              alt="CodeXa Agency logo"
-              className="w-10 h-10 object-contain rounded border border-crimson/25 shadow-[0_0_10px_rgba(217,4,41,0.2)]"
-              onError={() => setLogoError(true)}
-            />
-          ) : (
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-gradient-to-br from-[#D90429]/30 to-[#63000F]/50 border border-[#D90429]/40">
-              <span className="text-[#D90429] font-orbitron font-black text-sm">⚡</span>
-            </div>
-          )}
-          <div>
-            <div className="font-orbitron text-xs font-bold tracking-wider">CODEXA</div>
-            <div className="text-[10px] text-[#A5A5A5] tracking-widest">OWNER PANEL</div>
-          </div>
-        </div>
-
-        <div className="px-6 py-4 border-b border-[rgba(217,4,41,0.08)]">
-          <div className="text-[10px] text-[#A5A5A5] uppercase font-orbitron tracking-widest mb-1">Signed in as</div>
-          <div className="text-sm font-semibold truncate">{sessionOwner?.displayName ?? "Owner"}</div>
-        </div>
-
-        <nav className="flex-1 px-3 py-4">
-          <div className="text-[10px] text-[#333] font-orbitron tracking-widest uppercase px-3 mb-2">Navigation</div>
-          <ul className="space-y-1">
-            <li>
-              <Link href="/admin" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-[#A5A5A5] hover:text-[#F7F7F7] hover:bg-[rgba(217,4,41,0.06)] transition-all duration-150 group">
-                <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-[#A5A5A5]" aria-hidden="true">
-                  <path fillRule="evenodd" d="M4.25 2A2.25 2.25 0 0 0 2 4.25v2.5A2.25 2.25 0 0 0 4.25 9h2.5A2.25 2.25 0 0 0 9 6.75v-2.5A2.25 2.25 0 0 0 6.75 2h-2.5Zm0 9A2.25 2.25 0 0 0 2 13.25v2.5A2.25 2.25 0 0 0 4.25 18h2.5A2.25 2.25 0 0 0 9 15.75v-2.5A2.25 2.25 0 0 0 6.75 11h-2.5Zm9-9A2.25 2.25 0 0 0 11 4.25v2.5A2.25 2.25 0 0 0 13.25 9h2.5A2.25 2.25 0 0 0 18 6.75v-2.5A2.25 2.25 0 0 0 15.75 2h-2.5Zm0 9A2.25 2.25 0 0 0 11 13.25v2.5A2.25 2.25 0 0 0 13.25 18h2.5A2.25 2.25 0 0 0 18 15.75v-2.5A2.25 2.25 0 0 0 15.75 11h-2.5Z" clipRule="evenodd" />
-                </svg>
-                Overview
-              </Link>
-            </li>
-            <li>
-              <Link href="/admin/team-profiles" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-[#F7F7F7] bg-[rgba(217,4,41,0.08)] border border-[rgba(217,4,41,0.15)] transition-all duration-150 group">
-                <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-[#D90429]" aria-hidden="true">
-                  <path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" />
-                </svg>
-                Team Profiles
-              </Link>
-            </li>
-          </ul>
-        </nav>
-
-        <div className="px-3 pb-6 border-t border-[rgba(217,4,41,0.08)] pt-4">
-          <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-[#A5A5A5] hover:text-[#D90429] hover:bg-[rgba(217,4,41,0.06)] transition-all duration-150">
-            <span className="text-xs">🚪</span> Sign Out
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Area */}
-      <main className="flex-1 flex flex-col overflow-hidden relative z-10">
-        
-        {/* Header */}
-        <header className="px-8 py-6 border-b border-[rgba(217,4,41,0.08)] flex justify-between items-center bg-[#070707]/90 relative z-20">
-          <div>
-            <h1 className="font-orbitron text-lg font-bold text-[#F7F7F7]">Team Profiles Manager</h1>
-            <p className="text-xs text-[#A5A5A5] mt-0.5 font-light">Manage Leadership display media and Core Team workspace logins.</p>
-          </div>
-          <button
-            onClick={() => setIsCreateOpen(true)}
-            className="px-5 py-2.5 rounded-lg font-orbitron text-xs tracking-wider uppercase text-white bg-gradient-to-r from-[#D90429] to-[#FF6B35] shadow-[0_4px_15px_rgba(217,4,41,0.35)] hover:opacity-90 transition-opacity"
-          >
-            Create Team Login
-          </button>
-        </header>
-
-        {/* Scrollable Work Area */}
-        <div className="flex-1 overflow-y-auto p-8 space-y-10 bg-[radial-gradient(circle_at_top,rgba(217,4,41,0.02)_0%,transparent_60%)]">
+    <TeamCoreShell
+      title="Team Profiles Manager"
+      subtitle="Admin · People"
+      actions={
+        <button
+          onClick={() => setIsCreateOpen(true)}
+          className="px-5 py-2.5 rounded-xl font-orbitron text-xs tracking-wider uppercase text-white bg-crimson hover:bg-bright-red shadow-[0_4px_15px_rgba(217,4,41,0.35)] transition-colors"
+        >
+          Create Team Login
+        </button>
+      }
+    >
+      <p className="-mt-3 text-sm text-white/55">Manage leadership display media and core team workspace logins.</p>
+      <div className="space-y-10">
           
           {/* ─── SECTION 1: LEADERSHIP PROFILES MANAGER ────────── */}
           <section className="space-y-4">
@@ -679,7 +618,6 @@ function TeamProfilesContent() {
           </section>
 
         </div>
-      </main>
 
       {/* ─── CREATE TEAM LOGIN MODAL ───────────────────────────── */}
       {isCreateOpen && (
@@ -1109,7 +1047,7 @@ function TeamProfilesContent() {
           }}
         />
       )}
-    </div>
+    </TeamCoreShell>
   );
 }
 

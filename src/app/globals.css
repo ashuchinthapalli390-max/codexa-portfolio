@@ -268,3 +268,216 @@ html.has-custom-cursor [role="button"] {
     animation: none !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CONSOLE THEME LAYER  (.cx-console = every logged-in dashboard)
+   The dashboards grew with three gray palettes (neutral / zinc / hex), tiny
+   9–11px text and Orbitron on body copy. This layer maps all of those legacy
+   utilities onto one surface + type system so every page reads the same.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.cx-console {
+  --cx-surface: #0c0c0e;
+  --cx-surface-glass: rgba(14, 14, 16, 0.86);
+  --cx-well: #131316;
+  --cx-raised: #1a1a1e;
+  --cx-hover: #202025;
+  --cx-line: rgba(255, 255, 255, 0.075);
+  --cx-line-strong: rgba(255, 255, 255, 0.13);
+  --cx-text-1: rgba(255, 255, 255, 0.88);
+  --cx-text-2: rgba(255, 255, 255, 0.62);
+  --cx-text-3: rgba(255, 255, 255, 0.42);
+  --cx-text-4: rgba(255, 255, 255, 0.3);
+}
+
+/* ── surfaces: cards & panels ── */
+.cx-console .bg-\[\#0A0A0A\], .cx-console .bg-\[\#0a0a0a\], .cx-console .bg-\[\#090909\],
+.cx-console .bg-\[\#0f0f0f\], .cx-console .bg-\[\#0F0F0F\], .cx-console .bg-\[\#0d0d0d\],
+.cx-console .bg-\[\#0D0D0D\], .cx-console .bg-\[\#0C0C0C\], .cx-console .bg-\[\#0c0c0c\],
+.cx-console .bg-\[\#0B0B0B\], .cx-console .bg-\[\#080808\], .cx-console .bg-\[\#101010\],
+.cx-console .bg-\[\#0f1115\], .cx-console .bg-\[\#14171d\], .cx-console .bg-neutral-950,
+.cx-console .bg-zinc-950 {
+  background-color: var(--cx-surface);
+}
+
+.cx-console .bg-neutral-900\/60, .cx-console .bg-neutral-900\/70, .cx-console .bg-neutral-950\/80,
+.cx-console .bg-neutral-950\/70, .cx-console .bg-neutral-950\/60, .cx-console .bg-zinc-900\/60,
+.cx-console .bg-zinc-900\/50, .cx-console .bg-\[\#0a0a0a\]\/80, .cx-console .bg-\[\#090909\]\/90,
+.cx-console .bg-\[\#090909\]\/95 {
+  background-color: var(--cx-surface-glass);
+}
+
+/* ── wells: inputs, inner boxes, chips ── */
+.cx-console .bg-\[\#111\], .cx-console .bg-\[\#111111\], .cx-console .bg-\[\#121212\],
+.cx-console .bg-\[\#141414\], .cx-console .bg-\[\#151515\], .cx-console .bg-\[\#161616\],
+.cx-console .bg-\[\#181818\], .cx-console .bg-neutral-900, .cx-console .bg-zinc-900 {
+  background-color: var(--cx-well);
+}
+
+/* ── raised: secondary buttons, toggles ── */
+.cx-console .bg-neutral-800, .cx-console .bg-zinc-800, .cx-console .bg-\[\#1a1a1a\],
+.cx-console .bg-\[\#1A1A1A\], .cx-console .bg-\[\#1c1c1c\], .cx-console .bg-\[\#222\] {
+  background-color: var(--cx-raised);
+}
+
+.cx-console .hover\:bg-neutral-700:hover, .cx-console .hover\:bg-neutral-800:hover,
+.cx-console .hover\:bg-neutral-900:hover, .cx-console .hover\:bg-zinc-700:hover,
+.cx-console .hover\:bg-zinc-800:hover, .cx-console .hover\:bg-\[\#1a1a1a\]:hover,
+.cx-console .hover\:bg-\[\#1A1A1A\]:hover, .cx-console .hover\:bg-\[\#202020\]:hover,
+.cx-console .hover\:bg-\[\#222\]:hover, .cx-console .hover\:bg-\[\#222222\]:hover,
+.cx-console .hover\:bg-\[\#252525\]:hover, .cx-console .hover\:bg-\[\#333\]:hover,
+.cx-console .hover\:bg-\[\#111\]:hover, .cx-console .hover\:bg-\[\#151515\]:hover,
+.cx-console .hover\:bg-\[\#121212\]:hover {
+  background-color: var(--cx-hover);
+}
+
+/* ── hairlines ── */
+.cx-console .border-neutral-800, .cx-console .border-zinc-800, .cx-console .border-white\/5,
+.cx-console .border-white\/10, .cx-console .border-\[\#222\], .cx-console .border-\[\#1a1a1a\],
+.cx-console .border-\[\#191919\], .cx-console .border-\[\#161616\], .cx-console .border-\[\#232732\],
+.cx-console .border-\[\#1e222a\], .cx-console .border-neutral-800\/80, .cx-console .border-zinc-800\/80,
+.cx-console .border-zinc-800\/60, .cx-console .border-zinc-900, .cx-console .border-neutral-900,
+.cx-console .border-crimson\/15, .cx-console .border-crimson\/20, .cx-console .border-crimson\/25,
+.cx-console .border-\[\#333\] {
+  border-color: var(--cx-line);
+}
+.cx-console .border-neutral-700, .cx-console .border-white\/20 {
+  border-color: var(--cx-line-strong);
+}
+.cx-console .divide-white\/5 > :not([hidden]) ~ :not([hidden]),
+.cx-console .divide-neutral-800\/60 > :not([hidden]) ~ :not([hidden]),
+.cx-console .divide-neutral-800 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--cx-line);
+}
+
+/* ── text ramp ── */
+.cx-console .text-zinc-200, .cx-console .text-neutral-200, .cx-console .text-zinc-300,
+.cx-console .text-neutral-300, .cx-console .text-gray-300, .cx-console .text-\[\#ccc\],
+.cx-console .text-\[\#CCC\], .cx-console .text-\[\#DDD\], .cx-console .text-\[\#CCCCCC\] {
+  color: var(--cx-text-1);
+}
+.cx-console .text-neutral-400, .cx-console .text-zinc-400, .cx-console .text-gray-400,
+.cx-console .text-\[\#888\], .cx-console .text-\[\#888888\], .cx-console .text-\[\#A5A5A5\],
+.cx-console .text-\[\#aaa\], .cx-console .text-\[\#AAA\], .cx-console .text-\[\#999\],
+.cx-console .text-\[\#BBB\], .cx-console .text-secondary-text {
+  color: var(--cx-text-2);
+}
+.cx-console .text-neutral-500, .cx-console .text-zinc-500, .cx-console .text-gray-500,
+.cx-console .text-\[\#666\], .cx-console .text-\[\#666666\], .cx-console .text-\[\#777\] {
+  color: var(--cx-text-3);
+}
+.cx-console .text-zinc-600, .cx-console .text-neutral-600, .cx-console .text-\[\#555\],
+.cx-console .text-\[\#555555\], .cx-console .text-\[\#444\], .cx-console .text-\[\#333\] {
+  color: var(--cx-text-4);
+}
+
+/* ── type scale: lift unreadable micro text ── */
+.cx-console .text-\[8px\] { font-size: 10px; }
+.cx-console .text-\[9px\] { font-size: 10.5px; }
+.cx-console .text-\[10px\] { font-size: 11px; }
+.cx-console .text-\[11px\] { font-size: 12px; }
+
+/* Orbitron stays for headings & big numbers; small copy switches to Inter */
+.cx-console :is(.text-xs, .text-sm, .text-\[8px\], .text-\[9px\], .text-\[10px\], .text-\[11px\], .text-\[12px\]).font-orbitron,
+.cx-console :is(p, li, td, label, button, a, span, input, select, textarea, option).font-orbitron:not(h1 *):not(h2 *):not(h3 *) {
+  font-family: "Inter", sans-serif;
+  letter-spacing: 0.03em;
+}
+.cx-console :is(.text-xs, .text-\[9px\], .text-\[10px\], .text-\[11px\]).font-orbitron.uppercase {
+  letter-spacing: 0.08em;
+}
+.cx-console :is(.text-xl, .text-2xl, .text-3xl, .text-4xl, .text-5xl).font-orbitron,
+.cx-console :is(h1, h2, h3).font-orbitron {
+  font-family: "Orbitron", sans-serif;
+  letter-spacing: 0.01em;
+}
+
+/* ── forms ── */
+.cx-console :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]), select, textarea) {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+.cx-console :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]), select, textarea):focus {
+  border-color: rgba(255, 30, 60, 0.6);
+  box-shadow: 0 0 0 3px rgba(217, 4, 41, 0.16);
+  outline: none;
+}
+.cx-console :where(input, textarea)::placeholder {
+  color: var(--cx-text-4);
+}
+.cx-console select option {
+  background-color: #121214;
+  color: #fff;
+}
+.cx-console :where(label) {
+  color: var(--cx-text-2);
+}
+
+/* ── tables ── */
+.cx-console table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.cx-console thead th {
+  font-family: "Inter", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cx-text-3);
+  background-color: rgba(255, 255, 255, 0.02);
+}
+.cx-console tbody tr {
+  transition: background-color 0.15s ease;
+}
+.cx-console tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.025);
+}
+
+/* ── second legacy palette (AI / topics / admin panels) ── */
+.cx-console .bg-\[\#14161a\], .cx-console .bg-\[\#111317\], .cx-console .bg-\[\#0B0B0B\]\/90 {
+  background-color: var(--cx-well);
+}
+.cx-console .hover\:bg-\[\#1a1d24\]:hover, .cx-console .hover\:bg-\[\#0D0D0D\]:hover {
+  background-color: var(--cx-hover);
+}
+.cx-console .border-\[\#1f2228\], .cx-console .border-\[\#232730\], .cx-console .border-\[\#111\],
+.cx-console .border-\[rgba\(217\,4\,41\,0\.08\)\], .cx-console .border-\[rgba\(217\,4\,41\,0\.1\)\],
+.cx-console .border-\[rgba\(217\,4\,41\,0\.12\)\], .cx-console .border-\[rgba\(217\,4\,41\,0\.15\)\] {
+  border-color: var(--cx-line);
+}
+.cx-console .divide-\[\#111\] > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--cx-line);
+}
+
+/* ── one page-title style everywhere ── */
+.cx-console main h1 {
+  font-family: "Orbitron", sans-serif;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1.15;
+}
+.cx-console main h1 :is(span, small).font-mono {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-weight: 500;
+}
+
+/* ── interactive polish ── */
+.cx-console :where(button, a) {
+  -webkit-tap-highlight-color: transparent;
+}
+.cx-console :where(button:focus-visible, a:focus-visible, [role="tab"]:focus-visible) {
+  outline: 2px solid rgba(255, 30, 60, 0.7);
+  outline-offset: 2px;
+}
+.cx-console .shadow-neon {
+  box-shadow: 0 8px 30px -12px rgba(217, 4, 41, 0.45);
+}
+.cx-console ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.cx-console ::-webkit-scrollbar-thumb {
+  background: #232327;
+  border: 2px solid #0c0c0e;
+  border-radius: 8px;
+}

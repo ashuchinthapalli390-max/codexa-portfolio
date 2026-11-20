@@ -65,6 +65,7 @@ import {
   ActivityEvent
 } from "@/lib/data-store";
 import { CodeXaAvatar } from "@/components/ui/CodeXaAvatar";
+import { TeamCoreShell } from "@/components/layout/TeamCoreShell";
 import { CodeXaMediaSelectorModal } from "@/components/ui/CodeXaMediaSelectorModal";
 import { MotionNumber } from "@/components/motion/MotionNumber";
 import { useAuth } from "@/context/AuthContext";
@@ -1023,6 +1024,17 @@ function OwnerDashboardContent() {
     return projects;
   };
 
+  // Switch tab + keep URL shareable (?tab=…) without a full navigation
+  const selectOwnerTab = (id: OwnerTab) => {
+    setActiveTab(id);
+    try {
+      window.history.replaceState(null, "", `/owner?tab=${id}`);
+      window.scrollTo({ top: 0 });
+    } catch {
+      /* ignore */
+    }
+  };
+
   // Nav Groups definition
   const navSections = [
     {
@@ -1088,219 +1100,36 @@ function OwnerDashboardContent() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#070707] text-white flex flex-col selection:bg-crimson selection:text-white">
-      
-      {/* ─── TOP COMMAND BAR ──────────────────────────────────────────────── */}
-      <header className="h-16 border-b border-crimson/20 bg-[#090909]/95 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between sticky top-0 z-40">
-        
-        {/* Brand & Mobile Hamburger */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 rounded-xl bg-[#141414] text-[#888] hover:text-white"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-          <div className="p-1.5 rounded-lg bg-deep-red/30 border border-crimson/40">
-            <Shield className="w-5 h-5 text-bright-red" />
-          </div>
-          <span className="font-orbitron font-black text-sm tracking-[0.2em] text-white">
-            CODEXA <span className="text-crimson text-xs font-normal">FOUNDER CORE</span>
-          </span>
-          <span className="hidden sm:inline-block ml-2 px-2 py-0.5 rounded bg-crimson/20 border border-crimson/30 text-[9px] font-orbitron font-bold text-bright-red uppercase">
-            OWNER
-          </span>
-        </div>
-
-        {/* Search */}
-        <div className="hidden md:flex items-center relative w-72">
-          <Search className="w-3.5 h-3.5 text-[#666] absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={globalSearch}
-            onChange={(e) => setGlobalSearch(e.target.value)}
-            placeholder="Search members, builds, leads..."
-            className="w-full bg-[#121212] border border-crimson/20 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-[#555] outline-none focus:border-bright-red transition-colors"
-          />
-        </div>
-
-        {/* Actions & Profile Pill */}
-        <div className="flex items-center gap-3">
-          <Link
-            href="/"
-            target="_blank"
-            className="hidden lg:flex items-center gap-1.5 text-xs font-orbitron text-[#888] hover:text-white transition-colors uppercase tracking-wider"
-          >
-            Public Site <ArrowUpRight className="w-3.5 h-3.5" />
-          </Link>
-
-          <button
-            onClick={() => setCreateAccountModalOpen(true)}
-            className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-crimson hover:bg-bright-red text-white text-[11px] font-orbitron font-bold uppercase transition-all shadow-[0_0_12px_rgba(217,4,41,0.3)]"
-          >
-            <Plus className="w-3.5 h-3.5" /> New Account
-          </button>
-
-          {/* Notifications */}
-          <button
-            onClick={() => setActiveTab("notifications")}
-            className="p-2 rounded-xl bg-[#121212] hover:bg-deep-red/20 border border-crimson/20 text-[#888] hover:text-white transition-colors relative"
-            title="Notifications"
-          >
-            <Bell className="w-4 h-4" />
-            {unreadNotifsCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-crimson text-white font-mono text-[9px] font-bold flex items-center justify-center animate-pulse">
-                {unreadNotifsCount}
-              </span>
-            )}
-          </button>
-
-          {/* Owner Avatar Identity Pill */}
-          <div
-            onClick={() => setActiveTab("my-profile")}
-            className="flex items-center gap-2 pl-2 cursor-pointer group"
-            title="My Profile"
-          >
-            <CodeXaAvatar
-              src={currentUser?.mediaUrl || "/assets/images/128acbeb739b3eb8bc4d1d9ae15fcfb2.jpg"}
-              alt="Ashu"
-              size="sm"
-              showGlow
-            />
-            <div className="hidden sm:block text-left">
-              <span className="block text-xs font-orbitron font-bold text-white group-hover:text-bright-red transition-colors">
-                {currentUser?.displayName || "Ashu"}
-              </span>
-              <span className="block text-[9px] font-mono text-crimson">@ashu &bull; Founder</span>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* ─── MAIN WORKSPACE BODY ──────────────────────────────────────────── */}
-      <div className="flex-1 flex overflow-hidden">
-        
-        {/* Desktop Sidebar Navigation */}
-        <aside className="hidden md:flex w-64 border-r border-crimson/15 bg-[#080808] flex-col justify-between p-4 flex-shrink-0 overflow-y-auto">
-          <div className="space-y-5">
-            {navSections.map((section, sIdx) => (
-              <div key={sIdx} className="space-y-1">
-                <span className="px-3 text-[9px] font-orbitron font-bold uppercase tracking-widest text-[#555] block mb-1">
-                  {section.title}
-                </span>
-                {section.items.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = activeTab === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => setActiveTab(item.id)}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl font-orbitron text-xs font-semibold uppercase tracking-wider transition-all ${
-                        isActive
-                          ? "bg-crimson text-white border border-bright-red shadow-[0_0_15px_rgba(217,4,41,0.3)]"
-                          : "text-[#888] hover:text-white hover:bg-[#111] border border-transparent"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <Icon className="w-3.5 h-3.5" />
-                        <span className="truncate">{item.label}</span>
-                      </div>
-                      {item.badge !== undefined && item.badge > 0 && (
-                        <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
-                          isActive ? "bg-white text-crimson" : "bg-deep-red/30 text-bright-red border border-crimson/30"
-                        }`}>
-                          {item.badge}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-
-          <div className="pt-4 border-t border-white/5 space-y-2 mt-4">
-            <Link
-              href={`/team/${currentUser?.username || "ashu"}`}
-              className="w-full py-2 rounded-xl bg-[#121212] hover:bg-deep-red/20 text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5"
-            >
-              Public Profile <ExternalLink className="w-3.5 h-3.5 text-bright-red" />
-            </Link>
-            <button
-              onClick={() => authLogout()}
-              className="w-full py-2 rounded-xl bg-[#121212] hover:bg-deep-red/40 text-[#AAA] hover:text-white text-xs font-orbitron font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5"
-            >
-              <LogOut className="w-3.5 h-3.5 text-crimson" /> Sign Out
-            </button>
-          </div>
-        </aside>
-
-        {/* Mobile Slide-Out Drawer */}
-        <AnimatePresence>
-          {mobileMenuOpen && (
-            <div className="fixed inset-0 z-50 md:hidden flex">
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setMobileMenuOpen(false)}
-                className="fixed inset-0 bg-black/80 backdrop-blur-sm"
-              />
-              <motion.aside
-                initial={{ x: "-100%" }}
-                animate={{ x: 0 }}
-                exit={{ x: "-100%" }}
-                transition={{ type: "spring", damping: 25, stiffness: 200 }}
-                className="relative w-72 bg-[#090909] border-r border-crimson/30 flex flex-col justify-between p-5 z-10 overflow-y-auto"
-              >
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                    <span className="font-orbitron font-black text-sm text-white uppercase">Menu</span>
-                    <button onClick={() => setMobileMenuOpen(false)} className="p-1 rounded bg-[#151515] text-[#888]">
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                  {navSections.map((section, sIdx) => (
-                    <div key={sIdx} className="space-y-1">
-                      <span className="text-[9px] font-orbitron font-bold uppercase text-[#555] block mb-1">
-                        {section.title}
-                      </span>
-                      {section.items.map((item) => {
-                        const Icon = item.icon;
-                        const isActive = activeTab === item.id;
-                        return (
-                          <button
-                            key={item.id}
-                            onClick={() => {
-                              setActiveTab(item.id);
-                              setMobileMenuOpen(false);
-                            }}
-                            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl font-orbitron text-xs font-semibold uppercase ${
-                              isActive ? "bg-crimson text-white" : "text-[#888] hover:bg-[#151515]"
-                            }`}
-                          >
-                            <div className="flex items-center gap-2.5">
-                              <Icon className="w-3.5 h-3.5" />
-                              <span>{item.label}</span>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ))}
-                </div>
-              </motion.aside>
-            </div>
-          )}
-        </AnimatePresence>
-
-        {/* Dynamic Main Workspace Container */}
-        <motion.main
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
-          className="flex-1 bg-[#070707] overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6"
+    <TeamCoreShell
+      nav={navSections.map((section) => {
+        const seen = new Set<string>();
+        return {
+          title: section.title.charAt(0) + section.title.slice(1).toLowerCase(),
+          items: section.items
+            .filter((item) => {
+              if (seen.has(item.id)) return false;
+              seen.add(item.id);
+              return true;
+            })
+            .filter((item) => section.title === "CORE" || !navSections[0].items.some((c) => c.id === item.id))
+            .map((item) => ({
+              label: item.label,
+              icon: item.icon,
+              badge: item.badge,
+              active: activeTab === item.id,
+              onClick: () => selectOwnerTab(item.id),
+            })),
+        };
+      }).filter((s) => s.items.length > 0)}
+      topbarActions={
+        <button
+          onClick={() => setCreateAccountModalOpen(true)}
+          className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-crimson hover:bg-bright-red text-white text-[11px] font-orbitron font-bold uppercase tracking-wider transition-all shadow-[0_0_14px_rgba(217,4,41,0.35)]"
         >
+          <Plus className="w-3.5 h-3.5" /> New Account
+        </button>
+      }
+    >
           
           {/* ═══ TAB 1: OVERVIEW ════════════════════════════════════════════ */}
           {activeTab === "overview" && (
@@ -2653,8 +2482,6 @@ function OwnerDashboardContent() {
             </div>
           )}
 
-        </motion.main>
-      </div>
 
       {/* ─── MODAL: EDIT SELF PROFILE ───────────────────────────────────── */}
       <AnimatePresence>
@@ -3465,7 +3292,7 @@ function OwnerDashboardContent() {
         }}
       />
 
-    </div>
+    </TeamCoreShell>
   );
 }
 
