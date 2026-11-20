@@ -4,8 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Script from "next/script";
-import dynamic from "next/dynamic";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useScroll, useTransform, useMotionValueEvent, MotionValue } from "framer-motion";
 import {
   Sparkles, CheckCircle2, AlertCircle, ArrowRight, ArrowLeft, Shield, Lock, Layers, Cpu, Globe, Smartphone,
   LayoutDashboard, ShoppingCart, BookOpen, Calendar, Users, Database, Key, Palette, Clock, Loader2, Check, Zap,
@@ -15,10 +14,7 @@ import {
 import { PageShell } from "@/components/site/PageShell";
 import { PROJECT_TYPES, calculateProjectAdvance } from "@/lib/project-calculator";
 import { scrollToId } from "@/lib/scroll-store";
-import type { Blueprint, BuildKind, BuildModule } from "@/components/builder/ProjectBuilderScene";
-
-// WebGL builder is client-only and code-split so the form paints first.
-const ProjectBuilderScene = dynamic(() => import("@/components/builder/ProjectBuilderScene"), { ssr: false });
+type ModuleItem = { id: string; label: string };
 
 declare global {
   interface Window {
@@ -84,7 +80,7 @@ const INTEGRATION_OPTIONS = [
   "REST / GraphQL APIs",
 ];
 
-const FEATURE_OPTIONS: { id: string; name: string; desc: string; icon: LucideIcon; shape: BuildModule["shape"] }[] = [
+const FEATURE_OPTIONS: { id: string; name: string; desc: string; icon: LucideIcon; shape: string }[] = [
   { id: "payment_integration", name: "Payment gateway", desc: "Razorpay / UPI checkout", icon: CreditCard, shape: "card" },
   { id: "ecommerce_system", name: "Shopping cart & catalog", desc: "Products, variants, checkout", icon: ShoppingCart, shape: "cart" },
   { id: "subscription_system", name: "Subscriptions & billing", desc: "Tiered, recurring plans", icon: Repeat, shape: "card" },
@@ -96,6 +92,26 @@ const FEATURE_OPTIONS: { id: string; name: string; desc: string; icon: LucideIco
   { id: "email_notifications", name: "Automated emails", desc: "Transactional alerts", icon: Mail, shape: "box" },
   { id: "advanced_search", name: "Search & filters", desc: "Faceted, instant results", icon: Search, shape: "search" },
 ];
+
+// three concrete deliverables shown on each build-type panel
+const TYPE_DELIVERABLES: Record<string, string[]> = {
+  "personal-portfolio": ["Interactive project showcase", "Resume & skills sections", "Contact & social links"],
+  "landing-page": ["Conversion-focused layout", "Lead capture form", "Speed & SEO optimised"],
+  "blog-content": ["Article & category system", "CMS editing", "Newsletter capture"],
+  "business-website": ["Services & team pages", "Enquiry & lead forms", "Google-ready SEO setup"],
+  "agency-website": ["Case study showcase", "Animated reels & motion", "Quote request flow"],
+  "corporate-website": ["Multi-page structure", "Compliance & policy pages", "Secure, scalable hosting"],
+  "event-website": ["Speakers & schedule", "Ticket / registration", "Countdown & updates"],
+  "community-platform": ["Member profiles & feeds", "Discussions & messaging", "Moderation tools"],
+  "booking-platform": ["Calendar slot booking", "Online payments", "Automated reminders"],
+  "ecommerce-website": ["Product catalog & cart", "Razorpay checkout", "Orders & inventory"],
+  "lms-edtech": ["Courses & video lessons", "Quizzes & certificates", "Student dashboards"],
+  "admin-management": ["Charts & KPIs", "Role-based access", "Audit logs & workflows"],
+  "saas-platform": ["Auth & multi-tenancy", "Subscription billing", "Admin & API"],
+  "ai-platform": ["AI agents & chat", "RAG knowledge base", "Workflow automation"],
+  "mobile-application": ["Android & iOS apps", "Push notifications", "Device features"],
+  "custom-other": ["Discovery & architecture", "Bespoke engineering", "Built around your idea"],
+};
 
 const TYPE_ICONS: Record<string, LucideIcon> = {
   "personal-portfolio": User,
@@ -116,16 +132,6 @@ const TYPE_ICONS: Record<string, LucideIcon> = {
   "custom-other": Wrench,
 };
 
-const PLATFORM_TYPES = new Set(["community-platform", "booking-platform", "ecommerce-website", "lms-edtech", "admin-management", "saas-platform", "custom-other"]);
-
-function pagesFrom(range: string) {
-  if (range.startsWith("1 Page")) return 1;
-  if (range.startsWith("2")) return 3;
-  if (range.startsWith("6")) return 4;
-  if (range.startsWith("11")) return 5;
-  if (range.startsWith("20")) return 6;
-  return 5;
-}
 
 export default function ProjectRequestPage() {
   const router = useRouter();
@@ -454,36 +460,33 @@ export default function ProjectRequestPage() {
     }
   };
 
-  /* ───────────────────────── live blueprint for the 3D builder ───────────────────────── */
+  /* ───────────────────────── modules the client has picked (for the review summary) ───────────────────────── */
 
-  const blueprint: Blueprint = useMemo(() => {
-    const kind: BuildKind =
-      formData.projectType === "mobile-application" ? "mobile" : formData.projectType === "ai-platform" ? "ai" : PLATFORM_TYPES.has(formData.projectType) ? "platform" : "web";
-    const mods: BuildModule[] = [];
-    const add = (id: string, label: string, shape: BuildModule["shape"]) => {
-      if (!mods.some((m) => m.id === id)) mods.push({ id, label, shape });
+  const modules: ModuleItem[] = useMemo(() => {
+    const mods: ModuleItem[] = [];
+    const add = (id: string, label: string) => {
+      if (!mods.some((m) => m.id === id)) mods.push({ id, label });
     };
-    if (formData.authOption !== "No Login Required") add("auth", "Secure login", "ring");
-    if (formData.authExtras.includes("Two-Factor Authentication") && formData.authOption !== "No Login Required") add("2fa", "2-step verification", "shield");
-    if (formData.authExtras.includes("Role-Based Access") && formData.authOption !== "No Login Required") add("roles", "Role-based access", "shield");
-    if (formData.databaseOption === "Yes") add("db", "Cloud database", "db");
-    if (formData.dashboardOption !== "No Dashboard") add("dash", formData.dashboardOption, "panel");
-    FEATURE_OPTIONS.forEach((f) => formData.features.includes(f.id) && add(f.id, f.name, f.shape));
-    if (formData.purposes.includes("Provide AI Features")) add("ai_integration", "AI agents & LLMs", "ai");
-    formData.integrations.slice(0, 6).forEach((i) => add(`int-${i}`, i, "satellite"));
-    const accent = DESIGN_STYLES.find((s) => s.id === formData.designStyles[0])?.color || "#FF1E3C";
-    return {
-      kind,
-      pages: pagesFrom(formData.pageRange),
-      accent,
-      motion: ["Minimal", "Standard", "Advanced", "Cinematic"].indexOf(formData.animationLevel),
-      modules: mods,
-      step: currentStep,
-      ready: currentStep === 6,
-    };
-  }, [formData, currentStep]);
+    if (formData.authOption !== "No Login Required") add("auth", "Secure login");
+    if (formData.authExtras.includes("Two-Factor Authentication") && formData.authOption !== "No Login Required") add("2fa", "2-step verification");
+    if (formData.authExtras.includes("Role-Based Access") && formData.authOption !== "No Login Required") add("roles", "Role-based access");
+    if (formData.databaseOption === "Yes") add("db", "Cloud database");
+    if (formData.dashboardOption !== "No Dashboard") add("dash", formData.dashboardOption);
+    FEATURE_OPTIONS.forEach((f) => formData.features.includes(f.id) && add(f.id, f.name));
+    if (formData.purposes.includes("Provide AI Features")) add("ai_integration", "AI agents & LLMs");
+    formData.integrations.forEach((i) => add(`int-${i}`, i));
+    return mods;
+  }, [formData]);
 
-  const progressPct = Math.round(((maxVisited - 1) / 5) * 100);
+  // picking a type is the first decision — confirm it, then glide to the next chapter
+  const handleTypeSelect = (id: string) => {
+    set("projectType", id);
+    setErrorMessage(null);
+    setTimeout(() => {
+      if (id === "custom-other") scrollToId("pr-custom-panel");
+      else scrollToStep(2);
+    }, 750);
+  };
 
   return (
     <PageShell>
@@ -512,12 +515,12 @@ export default function ProjectRequestPage() {
           ))}
         </h1>
         <motion.p initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.35, ease: EASE }} className="mt-6 max-w-2xl text-base sm:text-lg text-white/60 leading-relaxed">
-          Choose what you need and watch your product assemble in 3D. Your booking deposit is calculated and shown only at the final step.
+          Scroll through each chapter and tap what you need — one decision at a time. Your booking deposit is calculated and shown only at the final step.
         </motion.p>
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.55 }} className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-3xl">
           {[
-            { i: Box, t: "Configure", d: "Pick type, features & stack" },
-            { i: Eye, t: "Preview", d: "See it build live in 3D" },
+            { i: Box, t: "Choose", d: "Browse panels & pick your build" },
+            { i: Eye, t: "Shape", d: "Features, stack & design" },
             { i: Lock, t: "Book", d: "Review & secure your slot" },
           ].map((s, k) => (
             <div key={s.t} className="flex items-center gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3.5">
@@ -574,30 +577,9 @@ export default function ProjectRequestPage() {
         </div>
       </div>
 
-      {/* ── Scroll story: sections on the left, live 3D build pinned on the right ── */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid gap-6 lg:gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(400px,44%)] items-start">
-        {/* 3D build (sticky) */}
-        <aside className="lg:order-2 lg:sticky lg:top-[118px] z-20 pt-6 lg:pt-8">
-          <div className="relative h-[260px] sm:h-[340px] lg:h-[calc(100vh-170px)] rounded-[28px] overflow-hidden border border-white/[0.08] bg-[radial-gradient(70%_70%_at_50%_40%,rgba(217,4,41,0.14),rgba(8,8,10,0.97))] shadow-[0_30px_80px_-30px_rgba(0,0,0,0.9)]">
-            <ProjectBuilderScene blueprint={blueprint} />
-            <BuildHud
-              typeName={formData.projectType === "custom-other" && formData.customProjectType ? formData.customProjectType : currentProjectTypeObj.name}
-              category={currentProjectTypeObj.category}
-              typeIcon={TYPE_ICONS[formData.projectType] || Box}
-              timeline={maxVisited >= 5 ? formData.timeline : currentProjectTypeObj.recommendedTimeline}
-              size={formData.pageRange.replace(" (Single Landing)", "")}
-              motionLevel={formData.animationLevel}
-              styles={formData.designStyles}
-              moduleCount={blueprint.modules.length}
-              progress={progressPct}
-              stepTitle={STEPS[currentStep - 1].title}
-              assembled={currentStep === 6}
-            />
-          </div>
-        </aside>
-
-        {/* Sections */}
-        <div className="lg:order-1 min-w-0 pb-10">
+      {/* ── Scroll story: one chapter, one decision at a time ── */}
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="min-w-0 pb-10">
           <AnimatePresence>
             {errorMessage && (
               <motion.div initial={{ opacity: 0, y: -10, height: 0 }} animate={{ opacity: 1, y: 0, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="sticky top-[132px] z-10 pt-4 overflow-hidden">
@@ -613,33 +595,11 @@ export default function ProjectRequestPage() {
           </AnimatePresence>
 
           {/* ── STEP 1 ── */}
-          <StorySection n={1} title="What do you want to build?" text="Pick the closest category — it decides the core shape of your product." next="Goals & features" onNext={() => scrollToStep(2)}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {PROJECT_TYPES.map((pt, i) => {
-                const Icon = TYPE_ICONS[pt.id] || Box;
-                const on = formData.projectType === pt.id;
-                return (
-                  <Tile key={pt.id} i={i} on={on} onClick={() => set("projectType", pt.id)}>
-                    <div className="flex items-start gap-3">
-                      <IconBadge icon={Icon} on={on} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-semibold text-white truncate">{pt.name}</h3>
-                          {pt.badge && <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-crimson text-[10px] font-semibold text-white">{pt.badge}</span>}
-                        </div>
-                        <p className="mt-1 text-xs text-white/50 leading-relaxed line-clamp-2">{pt.description}</p>
-                        <p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-white/35">
-                          {pt.category} · {pt.recommendedTimeline}
-                        </p>
-                      </div>
-                    </div>
-                  </Tile>
-                );
-              })}
-            </div>
+          <StorySection n={1} title="What do you want to build?" text="Scroll to browse every build type. Tap a panel to choose it — we'll take you straight to the next chapter." next="Goals & features" onNext={() => scrollToStep(2)}>
+            <TypeReel value={formData.projectType} onSelect={handleTypeSelect} />
             <AnimatePresence>
               {formData.projectType === "custom-other" && (
-                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                <motion.div id="pr-custom-panel" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden scroll-mt-40">
                   <Section title="Tell us about your idea" icon={Wrench}>
                     <Field label="Describe your custom project *" htmlFor="pr-custom">
                       <input id="pr-custom" type="text" value={formData.customProjectType} onChange={(e) => set("customProjectType", e.target.value)} placeholder="e.g. AI financial sentiment analyser with a Discord alert bot" className={inputCls} />
@@ -660,179 +620,211 @@ export default function ProjectRequestPage() {
           </StorySection>
 
           {/* ── STEP 2 ── */}
-          <StorySection n={2} title="Goals & features" text="What should it achieve? Every feature you add docks into the 3D build with its label." next="Tech stack" onNext={() => scrollToStep(3)}>
-            <Section title="Primary goals" icon={Rocket} hint="Select all that apply">
-              <div className="flex flex-wrap gap-2">
-                {PURPOSE_OPTIONS.map((p) => (
-                  <Chip key={p} on={formData.purposes.includes(p)} onClick={() => toggleArrayItem("purposes", p)}>
-                    {p}
-                  </Chip>
-                ))}
-              </div>
-            </Section>
-            <Section title={`${currentProjectTypeObj.name} features`} icon={Zap} hint="Responsive design always included">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {FEATURE_OPTIONS.map((f, i) => {
-                  const on = formData.features.includes(f.id);
-                  return (
-                    <Tile key={f.id} i={i} on={on} onClick={() => toggleArrayItem("features", f.id)} compact>
-                      <div className="flex items-center gap-3">
-                        <IconBadge icon={f.icon} on={on} small />
-                        <div className="min-w-0">
-                          <h4 className="text-sm font-semibold text-white">{f.name}</h4>
-                          <p className="text-xs text-white/45">{f.desc}</p>
+          <StorySection n={2} title="Goals & features" text="One panel at a time — scroll and each decision slides in on top of the last." next="Tech stack" onNext={() => scrollToStep(3)}>
+            <PanelStack labels={["Goals", "Features"]}>
+              <Section flat title="What should it achieve?" icon={Rocket} hint="Select all that apply">
+                <div className="flex flex-wrap gap-2.5">
+                  {PURPOSE_OPTIONS.map((p) => (
+                    <Chip key={p} on={formData.purposes.includes(p)} onClick={() => toggleArrayItem("purposes", p)}>
+                      {p}
+                    </Chip>
+                  ))}
+                </div>
+              </Section>
+              <Section flat title={`${currentProjectTypeObj.name} features`} icon={Zap} hint="Responsive design always included">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {FEATURE_OPTIONS.map((f, i) => {
+                    const on = formData.features.includes(f.id);
+                    return (
+                      <Tile key={f.id} i={i} on={on} onClick={() => toggleArrayItem("features", f.id)} compact>
+                        <div className="flex items-center gap-3">
+                          <motion.span animate={on ? { rotateY: [0, 180, 360] } : { rotateY: 0 }} transition={{ duration: 0.7 }} style={{ transformPerspective: 600 }}>
+                            <IconBadge icon={f.icon} on={on} small />
+                          </motion.span>
+                          <div className="min-w-0">
+                            <h4 className="font-semibold text-sm text-white">{f.name}</h4>
+                            <p className="text-xs text-white/50">{f.desc}</p>
+                          </div>
+                          <CheckDot on={on} />
                         </div>
-                        <CheckDot on={on} />
-                      </div>
-                    </Tile>
-                  );
-                })}
-              </div>
-            </Section>
+                      </Tile>
+                    );
+                  })}
+                </div>
+              </Section>
+            </PanelStack>
           </StorySection>
 
           {/* ── STEP 3 ── */}
-          <StorySection n={3} title="Tech stack" text="Accounts, data, dashboards and the services your product connects to." next="Design & scope" onNext={() => scrollToStep(4)}>
-            <Section title="User accounts & login" icon={Key}>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {["No Login Required", "Email + Password", "Google Login", "Phone OTP", "Email OTP", "Multiple Login Methods"].map((opt) => (
-                  <Option key={opt} on={formData.authOption === opt} onClick={() => set("authOption", opt)}>
-                    {opt}
-                  </Option>
-                ))}
-              </div>
-              <AnimatePresence>
-                {formData.authOption !== "No Login Required" && (
-                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-                    <p className="mt-4 mb-2 text-xs font-semibold text-white/55">Security add-ons</p>
-                    <div className="flex flex-wrap gap-2">
-                      {["Forgot Password", "Email Verification", "Two-Factor Authentication", "Role-Based Access", "Active Sessions Tracker"].map((x) => (
-                        <Chip key={x} on={formData.authExtras.includes(x)} onClick={() => toggleArrayItem("authExtras", x)}>
-                          {x}
-                        </Chip>
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </Section>
-            <Section title="Dashboard & control center" icon={LayoutDashboard}>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {["No Dashboard", "User Dashboard", "Admin Dashboard", "User + Admin Dashboard", "Multi-role Dashboard"].map((d) => (
-                  <Option key={d} on={formData.dashboardOption === d} onClick={() => set("dashboardOption", d)}>
-                    {d}
-                  </Option>
-                ))}
-              </div>
-            </Section>
-            <Section title="Database" icon={Database} hint="Supabase / PostgreSQL">
-              <div className="grid grid-cols-3 gap-2">
-                {["No", "Yes", "Not Sure"].map((d) => (
-                  <Option key={d} on={formData.databaseOption === d} onClick={() => set("databaseOption", d)}>
-                    {d}
-                  </Option>
-                ))}
-              </div>
-            </Section>
-            <Section title="Integrations" icon={Globe} hint="Orbit the build as satellites">
-              <div className="flex flex-wrap gap-2">
-                {INTEGRATION_OPTIONS.map((x) => (
-                  <Chip key={x} on={formData.integrations.includes(x)} onClick={() => toggleArrayItem("integrations", x)}>
-                    {x}
-                  </Chip>
-                ))}
-              </div>
-            </Section>
+          <StorySection n={3} title="Tech stack" text="Accounts, data, dashboards and connected services — stacked one by one." next="Design & scope" onNext={() => scrollToStep(4)}>
+            <PanelStack labels={["Login", "Dashboard", "Database", "Integrations"]}>
+              <Section flat title="User accounts & login" icon={Key}>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  {["No Login Required", "Email + Password", "Google Login", "Phone OTP", "Email OTP", "Multiple Login Methods"].map((opt) => (
+                    <Option key={opt} on={formData.authOption === opt} onClick={() => set("authOption", opt)}>
+                      {opt}
+                    </Option>
+                  ))}
+                </div>
+                <AnimatePresence>
+                  {formData.authOption !== "No Login Required" && (
+                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                      <p className="mt-5 mb-2.5 text-xs font-semibold text-white/55">Security add-ons</p>
+                      <div className="flex flex-wrap gap-2.5">
+                        {["Forgot Password", "Email Verification", "Two-Factor Authentication", "Role-Based Access", "Active Sessions Tracker"].map((x) => (
+                          <Chip key={x} on={formData.authExtras.includes(x)} onClick={() => toggleArrayItem("authExtras", x)}>
+                            {x}
+                          </Chip>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </Section>
+              <Section flat title="Dashboard & control center" icon={LayoutDashboard}>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  {["No Dashboard", "User Dashboard", "Admin Dashboard", "User + Admin Dashboard", "Multi-role Dashboard"].map((d) => (
+                    <Option key={d} on={formData.dashboardOption === d} onClick={() => set("dashboardOption", d)}>
+                      {d}
+                    </Option>
+                  ))}
+                </div>
+              </Section>
+              <Section flat title="Database" icon={Database} hint="Supabase / PostgreSQL">
+                <div className="grid grid-cols-3 gap-2.5">
+                  {[
+                    { v: "No", d: "Static content only" },
+                    { v: "Yes", d: "Accounts, orders & data" },
+                    { v: "Not Sure", d: "We'll recommend" },
+                  ].map((o) => (
+                    <Option key={o.v} on={formData.databaseOption === o.v} onClick={() => set("databaseOption", o.v)}>
+                      <span className="block font-semibold">{o.v}</span>
+                      <span className="block text-[11px] opacity-60">{o.d}</span>
+                    </Option>
+                  ))}
+                </div>
+              </Section>
+              <Section flat title="Integrations" icon={Globe} hint="Third-party services">
+                <div className="flex flex-wrap gap-2.5">
+                  {INTEGRATION_OPTIONS.map((x) => (
+                    <Chip key={x} on={formData.integrations.includes(x)} onClick={() => toggleArrayItem("integrations", x)}>
+                      {x}
+                    </Chip>
+                  ))}
+                </div>
+              </Section>
+            </PanelStack>
           </StorySection>
 
           {/* ── STEP 4 ── */}
-          <StorySection n={4} title="Design & scope" text="Your first style colours the 3D build. More pages stack more layers behind it." next="Timeline & contact" onNext={() => scrollToStep(5)}>
-            <Section title="Visual style" icon={Palette} hint="Select one or more">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {DESIGN_STYLES.map((s, i) => {
-                  const on = formData.designStyles.includes(s.id);
-                  const primary = formData.designStyles[0] === s.id;
-                  return (
-                    <Tile key={s.id} i={i} on={on} onClick={() => toggleArrayItem("designStyles", s.id)} compact>
-                      <div className="h-12 rounded-xl mb-3 border border-white/10 relative overflow-hidden" style={{ background: `linear-gradient(135deg, ${s.color}55, #0b0b0e 70%)` }}>
-                        <span className="absolute bottom-2 left-2 w-6 h-1.5 rounded-full" style={{ background: s.color }} />
-                        <span className="absolute bottom-2 left-10 w-10 h-1.5 rounded-full bg-white/20" />
-                        {primary && <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/60 text-[9px] text-white">Primary</span>}
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
+          <StorySection n={4} title="Design & scope" text="Pick the look and feel. Your first style becomes the primary one." next="Timeline & contact" onNext={() => scrollToStep(5)}>
+            <PanelStack labels={["Style", "Motion", "Size", "Existing design"]}>
+              <Section flat title="Visual style" icon={Palette} hint="Select one or more">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                  {DESIGN_STYLES.map((s, i) => {
+                    const on = formData.designStyles.includes(s.id);
+                    const primary = formData.designStyles[0] === s.id;
+                    return (
+                      <Tile key={s.id} i={i} on={on} onClick={() => toggleArrayItem("designStyles", s.id)} compact>
+                        <div className="h-16 rounded-xl mb-3 border border-white/10 relative overflow-hidden" style={{ background: `linear-gradient(135deg, ${s.color}66, #0b0b0e 75%)` }}>
+                          <span className="absolute top-2 left-2 right-2 h-1.5 rounded-full bg-white/15" />
+                          <span className="absolute bottom-2 left-2 w-6 h-1.5 rounded-full" style={{ background: s.color }} />
+                          <span className="absolute bottom-2 left-10 w-10 h-1.5 rounded-full bg-white/20" />
+                          {primary && <span className="absolute top-5 right-1.5 px-1.5 py-0.5 rounded bg-black/60 text-[9px] text-white">Primary</span>}
+                        </div>
                         <h4 className="text-sm font-semibold text-white truncate">{s.label}</h4>
-                        <CheckDot on={on} />
-                      </div>
-                      <p className="text-xs text-white/45">{s.desc}</p>
-                    </Tile>
-                  );
-                })}
-              </div>
-            </Section>
-            <Section title="Animation & motion" icon={Sparkles}>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {[
-                  { id: "Minimal", desc: "Subtle fades" },
-                  { id: "Standard", desc: "Smooth cards & scroll" },
-                  { id: "Advanced", desc: "Parallax & micro-FX" },
-                  { id: "Cinematic", desc: "3D & WebGL" },
-                ].map((a) => (
-                  <Option key={a.id} on={formData.animationLevel === a.id} onClick={() => set("animationLevel", a.id)}>
-                    <span className="block font-semibold">{a.id}</span>
-                    <span className="block text-[11px] opacity-60">{a.desc}</span>
-                  </Option>
-                ))}
-              </div>
-            </Section>
-            <Section title="Size of the project" icon={Layers}>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {["1 Page (Single Landing)", "2–5 Pages", "6–10 Pages", "11–20 Pages", "20+ Pages", "Dynamic Web Application"].map((p) => (
-                  <Option key={p} on={formData.pageRange === p} onClick={() => set("pageRange", p)}>
-                    {p}
-                  </Option>
-                ))}
-              </div>
-            </Section>
-            <Section title="Existing design" icon={Eye}>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {["No — CodeXa should design everything", "Yes — Figma Link Available", "Yes — Reference Websites", "Yes — Screenshot / Wireframes"].map((d) => (
-                  <Option key={d} on={formData.hasExistingDesign === d} onClick={() => set("hasExistingDesign", d)}>
-                    {d}
-                  </Option>
-                ))}
-              </div>
-              <AnimatePresence>
-                {formData.hasExistingDesign !== "No — CodeXa should design everything" && (
-                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-                    <input type="url" value={formData.designLinks} onChange={(e) => set("designLinks", e.target.value)} placeholder="Paste Figma / reference URLs" className={`${inputCls} mt-3`} aria-label="Design links" />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </Section>
+                        <p className="text-[11px] text-white/45 line-clamp-1">{s.desc}</p>
+                      </Tile>
+                    );
+                  })}
+                </div>
+              </Section>
+              <Section flat title="Animation & motion" icon={Sparkles}>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { id: "Minimal", desc: "Subtle fades", bars: 1 },
+                    { id: "Standard", desc: "Smooth cards & scroll", bars: 2 },
+                    { id: "Advanced", desc: "Parallax & micro-FX", bars: 3 },
+                    { id: "Cinematic", desc: "3D & WebGL scenes", bars: 4 },
+                  ].map((a) => (
+                    <Option key={a.id} on={formData.animationLevel === a.id} onClick={() => set("animationLevel", a.id)}>
+                      <span className="flex gap-1 mb-3">
+                        {[1, 2, 3, 4].map((b) => (
+                          <span key={b} className={`h-6 w-1.5 rounded-full ${b <= a.bars ? "bg-bright-red" : "bg-white/10"}`} />
+                        ))}
+                      </span>
+                      <span className="block font-semibold text-sm">{a.id}</span>
+                      <span className="block text-[11px] opacity-60">{a.desc}</span>
+                    </Option>
+                  ))}
+                </div>
+              </Section>
+              <Section flat title="Size of the project" icon={Layers}>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {["1 Page (Single Landing)", "2–5 Pages", "6–10 Pages", "11–20 Pages", "20+ Pages", "Dynamic Web Application"].map((p, i) => (
+                    <Option key={p} on={formData.pageRange === p} onClick={() => set("pageRange", p)}>
+                      <span className="flex -space-x-3 mb-3">
+                        {Array.from({ length: Math.min(i + 1, 5) }).map((_, k) => (
+                          <span key={k} className="w-6 h-8 rounded-md border border-white/20 bg-white/[0.06]" style={{ transform: `translateY(${-k * 2}px)` }} />
+                        ))}
+                      </span>
+                      <span className="block font-semibold text-sm">{p}</span>
+                    </Option>
+                  ))}
+                </div>
+              </Section>
+              <Section flat title="Existing design" icon={Eye}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {["No — CodeXa should design everything", "Yes — Figma Link Available", "Yes — Reference Websites", "Yes — Screenshot / Wireframes"].map((d) => (
+                    <Option key={d} on={formData.hasExistingDesign === d} onClick={() => set("hasExistingDesign", d)}>
+                      {d}
+                    </Option>
+                  ))}
+                </div>
+                <AnimatePresence>
+                  {formData.hasExistingDesign !== "No — CodeXa should design everything" && (
+                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                      <input type="url" value={formData.designLinks} onChange={(e) => set("designLinks", e.target.value)} placeholder="Paste Figma / reference URLs" className={`${inputCls} mt-4`} aria-label="Design links" />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </Section>
+            </PanelStack>
           </StorySection>
 
           {/* ── STEP 5 ── */}
           <StorySection n={5} title="Timeline & contact" text="When do you need it, and how can we reach you?" next="Review & book" onNext={() => scrollToStep(6)}>
-            <Section title="Target delivery" icon={Clock}>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {["Urgent (< 1 Week)", "1–2 Weeks", "2–4 Weeks", "1–2 Months", "Flexible Timeline"].map((t) => (
-                  <Option key={t} on={formData.timeline === t} onClick={() => set("timeline", t)}>
-                    {t}
-                  </Option>
-                ))}
-              </div>
-            </Section>
-            <Section title="Your overall budget" icon={Briefcase} hint="Helps us propose the right scope">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {["Below ₹10,000", "₹10,000–₹20,000", "₹20,000–₹40,000", "₹40,000–₹75,000", "₹75,000+", "Need CodeXa Recommendation"].map((b) => (
-                  <Option key={b} on={formData.budgetRange === b} onClick={() => set("budgetRange", b)}>
-                    {b}
-                  </Option>
-                ))}
-              </div>
-            </Section>
-            <Section title="Contact details" icon={User}>
-              <div className="grid sm:grid-cols-2 gap-x-4">
+            <PanelStack labels={["Timeline", "Budget"]}>
+              <Section flat title="Target delivery" icon={Clock}>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                  {[
+                    { v: "Urgent (< 1 Week)", d: "Priority sprint" },
+                    { v: "1–2 Weeks", d: "Fast track" },
+                    { v: "2–4 Weeks", d: "Standard" },
+                    { v: "1–2 Months", d: "Large scope" },
+                    { v: "Flexible Timeline", d: "Quality first" },
+                  ].map((t) => (
+                    <Option key={t.v} on={formData.timeline === t.v} onClick={() => set("timeline", t.v)}>
+                      <Clock className="w-5 h-5 mb-3 text-bright-red" />
+                      <span className="block font-semibold text-sm">{t.v}</span>
+                      <span className="block text-[11px] opacity-60">{t.d}</span>
+                    </Option>
+                  ))}
+                </div>
+              </Section>
+              <Section flat title="Your overall budget" icon={Briefcase} hint="Helps us propose the right scope">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {["Below ₹10,000", "₹10,000–₹20,000", "₹20,000–₹40,000", "₹40,000–₹75,000", "₹75,000+", "Need CodeXa Recommendation"].map((b) => (
+                    <Option key={b} on={formData.budgetRange === b} onClick={() => set("budgetRange", b)}>
+                      <span className="block font-semibold text-sm py-2">{b}</span>
+                    </Option>
+                  ))}
+                </div>
+              </Section>
+            </PanelStack>
+
+            <Section title="Contact details" icon={User} hint="We'll reach you here">
+              <div className="grid sm:grid-cols-2 gap-x-5">
                 <Field label="Full name *" htmlFor="pr-name">
                   <input id="pr-name" type="text" autoComplete="name" value={formData.fullName} onChange={(e) => set("fullName", e.target.value)} placeholder="e.g. Arjun Kumar" className={inputCls} />
                 </Field>
@@ -867,96 +859,120 @@ export default function ProjectRequestPage() {
           </StorySection>
 
           {/* ── STEP 6 ── */}
-          <StorySection n={6} title="Review & book" text="We compile your blueprint and calculate your booking deposit here — nowhere earlier.">
-            <Section title="Project summary" icon={FileText}>
-              <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[
-                  { k: "Project", v: currentProjectTypeObj.name },
-                  { k: "Timeline", v: formData.timeline },
-                  { k: "Your budget", v: formData.budgetRange },
-                  { k: "Client", v: formData.fullName || "—" },
-                ].map((d) => (
-                  <div key={d.k} className="rounded-2xl bg-white/[0.03] border border-white/[0.06] p-3">
-                    <dt className="font-mono text-[10px] uppercase tracking-widest text-white/40">{d.k}</dt>
-                    <dd className="mt-1 text-sm font-semibold text-white">{d.v}</dd>
+          <StorySection n={6} title="Review & book" text="Check your blueprint, then reserve your build slot. Your booking deposit is calculated here — nowhere earlier.">
+            <div className="grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] items-start">
+              {/* receipt */}
+              <BlueprintReceipt
+                typeName={formData.projectType === "custom-other" && formData.customProjectType ? formData.customProjectType : currentProjectTypeObj.name}
+                category={currentProjectTypeObj.category}
+                typeIcon={TYPE_ICONS[formData.projectType] || Box}
+                onEdit={scrollToStep}
+                groups={[
+                  { step: 2, title: "Goals", items: formData.purposes },
+                  { step: 2, title: "Features", items: FEATURE_OPTIONS.filter((f) => formData.features.includes(f.id)).map((f) => f.name) },
+                  {
+                    step: 3,
+                    title: "Tech stack",
+                    items: [
+                      formData.authOption,
+                      ...(formData.authOption !== "No Login Required" ? formData.authExtras : []),
+                      formData.dashboardOption,
+                      `Database: ${formData.databaseOption}`,
+                      ...formData.integrations,
+                    ],
+                  },
+                  { step: 4, title: "Design", items: [...formData.designStyles, `${formData.animationLevel} motion`, formData.pageRange, formData.hasExistingDesign] },
+                  { step: 5, title: "Timeline & budget", items: [formData.timeline, formData.budgetRange] },
+                  { step: 5, title: "Contact", items: [formData.fullName, formData.email, formData.phone, formData.company, formData.city].filter(Boolean) as string[] },
+                ]}
+              />
+
+              {/* booking card */}
+              <div className="space-y-5">
+                {missing.length > 0 && (
+                  <div className="rounded-[24px] border border-amber-400/30 bg-amber-500/[0.06] p-5">
+                    <p className="flex items-center gap-2 text-sm font-semibold text-amber-200">
+                      <AlertCircle className="w-4 h-4" /> {missing.length} item{missing.length > 1 ? "s" : ""} needed before booking
+                    </p>
+                    <ul className="mt-3 space-y-2">
+                      {missing.map((m) => (
+                        <li key={m.label}>
+                          <button type="button" onClick={() => scrollToStep(m.step)} className="w-full flex items-center justify-between gap-3 rounded-xl border border-amber-400/20 bg-black/20 px-3.5 py-2.5 text-left text-sm text-white/80 hover:border-amber-400/50">
+                            {m.label}
+                            <span className="text-xs text-amber-300 shrink-0">Chapter {m.step} ↑</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                ))}
-              </dl>
-              <p className="mt-4 text-xs text-white/45">
-                {blueprint.modules.length} modules: {blueprint.modules.map((m) => m.label).join(" · ")}
-              </p>
-            </Section>
+                )}
 
-            {missing.length > 0 && (
-              <Section title="Almost there" icon={AlertCircle} hint={`${missing.length} item${missing.length > 1 ? "s" : ""} left`}>
-                <ul className="space-y-2">
-                  {missing.map((m) => (
-                    <li key={m.label}>
-                      <button type="button" onClick={() => scrollToStep(m.step)} className="w-full flex items-center justify-between gap-3 rounded-xl border border-amber-400/25 bg-amber-500/[0.06] px-4 py-3 text-left text-sm text-white/80 hover:border-amber-400/50">
-                        <span className="flex items-center gap-2">
-                          <AlertCircle className="w-4 h-4 text-amber-300" /> {m.label}
-                        </span>
-                        <span className="text-xs text-amber-300">Fix in step {m.step} ↑</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </Section>
-            )}
+                <AnimatePresence mode="wait">
+                  {revealPhase !== "revealed" ? (
+                    <CompileSequence key="compile" active={revealPhase === "compiling"} modules={modules.length} typeName={currentProjectTypeObj.name} />
+                  ) : (
+                    <motion.div key="revealed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
+                      <DepositReveal result={advanceResult} />
 
-            <AnimatePresence mode="wait">
-              {revealPhase !== "revealed" ? (
-                <CompileSequence key="compile" active={revealPhase === "compiling"} modules={blueprint.modules.length} typeName={currentProjectTypeObj.name} />
-              ) : (
-                <motion.div key="revealed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-                  <DepositReveal result={advanceResult} />
+                      <div className="rounded-[24px] border border-white/[0.08] bg-[#0a0a0c]/85 p-5">
+                        <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-white/40 mb-4">What happens next</p>
+                        <ol className="relative space-y-4 before:absolute before:left-[13px] before:top-2 before:bottom-2 before:w-px before:bg-white/10">
+                          {["Pay the booking deposit", "Requirement review with our team", "Final quote & delivery milestones", "Your build begins"].map((s, i) => (
+                            <motion.li key={s} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 + i * 0.1 }} className="relative flex items-center gap-3 text-sm text-white/75">
+                              <span className={`relative z-10 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${i === 0 ? "bg-crimson text-white" : "bg-white/[0.06] text-white/60"}`}>{i + 1}</span>
+                              {s}
+                            </motion.li>
+                          ))}
+                        </ol>
+                      </div>
 
-                  <Section title="Confirm & agree" icon={Shield}>
-                    <div className="space-y-3">
-                      <Terms checked={formData.termsInfoCorrect} onChange={(v) => set("termsInfoCorrect", v)}>
-                        The information I provided is correct and represents my project goals.
-                      </Terms>
-                      <Terms checked={formData.termsAdvanceUnderstood} onChange={(v) => set("termsAdvanceUnderstood", v)}>
-                        I understand this ₹{advanceResult.finalAdvance.toLocaleString("en-IN")} is an <strong className="text-white">advance / booking payment</strong>, not the full project price.
-                      </Terms>
-                      <Terms checked={formData.termsReviewUnderstood} onChange={(v) => set("termsReviewUnderstood", v)}>
-                        The final scope, milestones and total quotation are confirmed after CodeXa&apos;s technical review.
-                      </Terms>
-                      <Terms checked={formData.termsPolicyAccepted} onChange={(v) => set("termsPolicyAccepted", v)}>
-                        I agree to the{" "}
-                        <Link href="/payment-policy" target="_blank" className="text-bright-red underline hover:text-white">
-                          booking advance & refund policy
-                        </Link>
-                        .
-                      </Terms>
-                    </div>
-                  </Section>
+                      <div className="space-y-2.5">
+                        <Terms checked={formData.termsInfoCorrect} onChange={(v) => set("termsInfoCorrect", v)}>
+                          The information I provided is correct and represents my project goals.
+                        </Terms>
+                        <Terms checked={formData.termsAdvanceUnderstood} onChange={(v) => set("termsAdvanceUnderstood", v)}>
+                          I understand this ₹{advanceResult.finalAdvance.toLocaleString("en-IN")} is an <strong className="text-white">advance / booking payment</strong>, not the full project price.
+                        </Terms>
+                        <Terms checked={formData.termsReviewUnderstood} onChange={(v) => set("termsReviewUnderstood", v)}>
+                          The final scope, milestones and total quotation are confirmed after CodeXa&apos;s technical review.
+                        </Terms>
+                        <Terms checked={formData.termsPolicyAccepted} onChange={(v) => set("termsPolicyAccepted", v)}>
+                          I agree to the{" "}
+                          <Link href="/payment-policy" target="_blank" className="text-bright-red underline hover:text-white">
+                            booking advance & refund policy
+                          </Link>
+                          .
+                        </Terms>
+                      </div>
 
-                  <motion.button
-                    type="button"
-                    onClick={handleInitiatePayment}
-                    disabled={!allTermsAccepted || isSubmitting || missing.length > 0}
-                    whileHover={allTermsAccepted && !isSubmitting ? { y: -2 } : undefined}
-                    whileTap={{ scale: 0.98 }}
-                    className="group relative w-full overflow-hidden rounded-2xl py-4 px-6 bg-gradient-to-r from-crimson to-bright-red text-white font-semibold flex items-center justify-center gap-3 shadow-[0_20px_50px_-20px_rgba(217,4,41,0.9)] disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent group-enabled:group-hover:translate-x-full transition-transform duration-700" />
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="w-5 h-5 animate-spin" /> Securing your slot…
-                      </>
-                    ) : (
-                      <>
-                        <Lock className="w-4 h-4" /> Pay ₹{advanceResult.finalAdvance.toLocaleString("en-IN")} & book my project
-                      </>
-                    )}
-                  </motion.button>
-                  <p className="text-center text-xs text-white/40">
-                    {missing.length > 0 ? "Complete the items above to enable payment." : !allTermsAccepted ? "Tick all four boxes to enable payment." : "Secure checkout by Razorpay."}
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                      <motion.button
+                        type="button"
+                        onClick={handleInitiatePayment}
+                        disabled={!allTermsAccepted || isSubmitting || missing.length > 0}
+                        whileHover={allTermsAccepted && !isSubmitting && missing.length === 0 ? { y: -2 } : undefined}
+                        whileTap={{ scale: 0.98 }}
+                        className="group relative w-full overflow-hidden rounded-2xl py-4 px-6 bg-gradient-to-r from-crimson to-bright-red text-white font-semibold flex items-center justify-center gap-3 shadow-[0_20px_50px_-20px_rgba(217,4,41,0.9)] disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent group-enabled:group-hover:translate-x-full transition-transform duration-700" />
+                        {isSubmitting ? (
+                          <>
+                            <Loader2 className="w-5 h-5 animate-spin" /> Securing your slot…
+                          </>
+                        ) : (
+                          <>
+                            <Lock className="w-4 h-4" /> Pay ₹{advanceResult.finalAdvance.toLocaleString("en-IN")} & book my project
+                          </>
+                        )}
+                      </motion.button>
+                      <p className="flex items-center justify-center gap-2 text-center text-xs text-white/40">
+                        <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                        {missing.length > 0 ? "Complete the items above to enable payment." : !allTermsAccepted ? "Tick all four boxes to enable payment." : "Secure checkout by Razorpay."}
+                      </p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
           </StorySection>
 
           <div className="mt-4 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 text-sm text-white/55">
@@ -1004,26 +1020,34 @@ export default function ProjectRequestPage() {
 const inputCls =
   "w-full rounded-2xl bg-white/[0.03] border border-white/10 focus:border-bright-red focus:shadow-[0_0_0_4px_rgba(217,4,41,0.15)] px-4 py-3 text-sm text-white placeholder:text-white/25 outline-none transition";
 
-function Section({ title, icon: Icon, hint, children }: { title: string; icon: LucideIcon; hint?: string; children: React.ReactNode }) {
+/** A large panel that rises out of depth as it scrolls into view (scroll-scrubbed, not one-shot). */
+function Section({ title, icon: Icon, hint, children, flat }: { title: string; icon: LucideIcon; hint?: string; children: React.ReactNode; flat?: boolean }) {
+  const ref = useRef<HTMLElement>(null);
+  const { scrollYProgress } = useScroll({ target: ref, offset: ["start end", "start 0.6"] });
+  const rotateX = useTransform(scrollYProgress, [0, 1], [24, 0]);
+  const y = useTransform(scrollYProgress, [0, 1], [110, 0]);
+  const scale = useTransform(scrollYProgress, [0, 1], [0.9, 1]);
+  const opacity = useTransform(scrollYProgress, [0, 0.7], [0.15, 1]);
+  // resolves to no transform once settled so inner fixed elements behave
+  const transformPerspective = useTransform(scrollYProgress, (v) => (v >= 0.999 ? 0 : 1300));
   return (
     <motion.section
-      initial={{ opacity: 0, y: 30, rotateX: 10 }}
-      whileInView={{ opacity: 1, y: 0, rotateX: 0 }}
-      viewport={{ once: true, margin: "-8%" }}
-      transition={{ duration: 0.7, ease: EASE }}
-      style={{ transformPerspective: 1200 }}
-      className="rounded-[24px] border border-white/[0.08] bg-[#0a0a0c]/80 backdrop-blur-md p-5 sm:p-6"
+      ref={ref}
+      // inside a PanelStack the stack drives the motion, so the panel itself stays flat
+      style={flat ? undefined : { rotateX, y, scale, opacity, transformPerspective, transformOrigin: "50% 0%" }}
+      className={`relative overflow-hidden rounded-[30px] border border-white/[0.08] bg-gradient-to-br from-white/[0.05] via-[#0b0b0d]/95 to-[#08080a] backdrop-blur-md p-6 sm:p-9 shadow-[0_40px_100px_-50px_rgba(0,0,0,0.9)] ${flat ? "shadow-[0_-30px_80px_-30px_rgba(0,0,0,0.95)]" : ""}`}
     >
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <h3 className="flex items-center gap-2.5 text-sm font-semibold text-white">
-          <span className="w-8 h-8 rounded-xl bg-crimson/15 border border-crimson/30 flex items-center justify-center">
-            <Icon className="w-4 h-4 text-bright-red" />
+      <div className="pointer-events-none absolute -top-24 -right-24 w-72 h-72 rounded-full bg-crimson/10 blur-[90px]" />
+      <div className="relative flex items-center justify-between gap-3 mb-6">
+        <h3 className="flex items-center gap-3 font-orbitron font-bold text-lg sm:text-xl text-white">
+          <span className="w-11 h-11 rounded-2xl bg-crimson/15 border border-crimson/40 flex items-center justify-center shadow-[0_0_25px_rgba(217,4,41,0.25)]">
+            <Icon className="w-5 h-5 text-bright-red" />
           </span>
           {title}
         </h3>
         {hint && <span className="text-xs text-white/40 text-right">{hint}</span>}
       </div>
-      {children}
+      <div className="relative">{children}</div>
     </motion.section>
   );
 }
@@ -1095,7 +1119,7 @@ function Option({ on, onClick, children }: { on: boolean; onClick: () => void; c
       onClick={onClick}
       aria-pressed={on}
       whileTap={{ scale: 0.97 }}
-      className={`relative w-full text-left rounded-xl border px-3.5 py-3 text-xs transition ${on ? "bg-crimson/15 border-bright-red/70 text-white shadow-[0_0_20px_-8px_rgba(217,4,41,0.7)]" : "border-white/10 bg-white/[0.02] text-white/65 hover:text-white hover:border-white/25"}`}
+      className={`relative w-full text-left rounded-2xl border px-4 py-3.5 text-sm transition ${on ? "bg-crimson/15 border-bright-red/70 text-white shadow-[0_0_24px_-8px_rgba(217,4,41,0.8)]" : "border-white/10 bg-white/[0.02] text-white/65 hover:text-white hover:border-white/25 hover:bg-white/[0.04]"}`}
     >
       {children}
     </motion.button>
@@ -1135,23 +1159,50 @@ function Terms({ checked, onChange, children }: { checked: boolean; onChange: (v
 /** One chapter of the scroll story — big watermark number, reveal-on-scroll and a "next" cue. */
 function StorySection({ n, title, text, next, onNext, children }: { n: number; title: string; text: string; next?: string; onNext?: () => void; children: React.ReactNode }) {
   return (
-    <section id={`step-${n}`} data-step={n} className="relative scroll-mt-[140px] py-14 sm:py-20 border-b border-white/[0.05] last:border-b-0">
+    <section id={`step-${n}`} data-step={n} className="relative scroll-mt-[130px] py-20 sm:py-28 border-b border-white/[0.05] last:border-b-0">
       <motion.span
         aria-hidden="true"
-        initial={{ opacity: 0, x: -30 }}
-        whileInView={{ opacity: 1, x: 0 }}
+        initial={{ opacity: 0, x: -40, rotateY: -30 }}
+        whileInView={{ opacity: 1, x: 0, rotateY: 0 }}
         viewport={{ once: true, margin: "-20%" }}
-        transition={{ duration: 1, ease: EASE }}
-        className="pointer-events-none absolute -top-2 right-0 font-orbitron font-black text-[7rem] sm:text-[9rem] leading-none text-transparent [-webkit-text-stroke:1px_rgba(255,255,255,0.06)] select-none"
+        transition={{ duration: 1.1, ease: EASE }}
+        style={{ transformPerspective: 900 }}
+        className="pointer-events-none absolute top-6 right-0 font-orbitron font-black text-[8rem] sm:text-[13rem] leading-none text-transparent [-webkit-text-stroke:1px_rgba(255,255,255,0.07)] select-none"
       >
         0{n}
       </motion.span>
-      <motion.div initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-15%" }} transition={{ duration: 0.7, ease: EASE }} className="relative mb-8">
-        <div className="font-mono text-[11px] uppercase tracking-[0.3em] text-bright-red">Step {n} of 6</div>
-        <h2 className="mt-2 font-orbitron font-black text-2xl sm:text-4xl text-white tracking-tight">{title}</h2>
-        <p className="mt-3 max-w-xl text-sm sm:text-base text-white/55">{text}</p>
-      </motion.div>
-      <div className="relative space-y-6">{children}</div>
+      <div className="relative mb-12 max-w-3xl" style={{ perspective: 900 }}>
+        <motion.div initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.6, ease: EASE }} className="flex items-center gap-3">
+          <span className="h-px w-10 bg-bright-red" />
+          <span className="font-mono text-[11px] uppercase tracking-[0.35em] text-bright-red">Chapter {n} of 6</span>
+        </motion.div>
+        {/* the h2 itself is observed — the words start clipped, so they can't trigger their own reveal */}
+        <motion.h2
+          initial="hidden"
+          whileInView="show"
+          viewport={{ once: true, margin: "-10%" }}
+          className="mt-4 font-orbitron font-black text-3xl sm:text-5xl lg:text-6xl text-white tracking-tight leading-[1.02]"
+        >
+          {title.split(" ").map((w, i) => (
+            <span key={i} className="inline-block overflow-hidden align-bottom mr-[0.22em] pb-1">
+              <motion.span
+                className="inline-block"
+                variants={{
+                  hidden: { y: "110%", rotateX: -80, opacity: 0 },
+                  show: { y: "0%", rotateX: 0, opacity: 1, transition: { duration: 0.9, delay: i * 0.06, ease: EASE } },
+                }}
+                style={{ transformOrigin: "50% 100%" }}
+              >
+                {w}
+              </motion.span>
+            </span>
+          ))}
+        </motion.h2>
+        <motion.p initial={{ opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.2, ease: EASE }} className="mt-5 text-base sm:text-lg text-white/55 leading-relaxed">
+          {text}
+        </motion.p>
+      </div>
+      <div className="relative space-y-8">{children}</div>
       {next && onNext && (
         <motion.button
           type="button"
@@ -1174,96 +1225,388 @@ function StorySection({ n, title, text, next, onNext, children }: { n: number; t
   );
 }
 
-/** Heads-up display layered over the 3D build (replaces the long module list). */
-function BuildHud({
-  typeName, category, typeIcon: TypeIcon, timeline, size, motionLevel, styles, moduleCount, progress, stepTitle, assembled,
-}: {
-  typeName: string;
-  category: string;
-  typeIcon: LucideIcon;
-  timeline: string;
-  size: string;
-  motionLevel: string;
-  styles: string[];
-  moduleCount: number;
-  progress: number;
-  stepTitle: string;
-  assembled: boolean;
-}) {
-  const r = 18;
-  const c = 2 * Math.PI * r;
-  return (
-    <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-3 sm:p-5">
-      {/* top */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0 rounded-2xl bg-black/45 backdrop-blur-md border border-white/10 pl-2 pr-4 py-2">
-          <span className="w-9 h-9 rounded-xl bg-crimson/20 border border-crimson/40 flex items-center justify-center shrink-0">
-            <TypeIcon className="w-4 h-4 text-bright-red" />
-          </span>
-          <span className="min-w-0">
-            <span className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.25em] text-white/50">
-              <span className="w-1.5 h-1.5 rounded-full bg-bright-red animate-pulse" /> Live build · {stepTitle}
-            </span>
-            <AnimatePresence mode="wait">
-              <motion.span key={typeName} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="block text-sm font-semibold text-white truncate max-w-[200px] sm:max-w-[260px]">
-                {typeName}
-              </motion.span>
-            </AnimatePresence>
-            <span className="hidden sm:block text-[11px] text-white/45 truncate">{category}</span>
-          </span>
-        </div>
-        <div className="relative w-12 h-12 shrink-0 rounded-full bg-black/45 backdrop-blur-md border border-white/10" aria-label={`Builder ${progress}% complete`}>
-          <svg viewBox="0 0 48 48" className="w-12 h-12 -rotate-90">
-            <circle cx="24" cy="24" r={r} stroke="rgba(255,255,255,0.1)" strokeWidth="4" fill="none" />
-            <motion.circle cx="24" cy="24" r={r} stroke={assembled ? "#34D399" : "#FF1E3C"} strokeWidth="4" fill="none" strokeLinecap="round" strokeDasharray={c} animate={{ strokeDashoffset: c - (c * progress) / 100 }} transition={{ duration: 0.8, ease: EASE }} />
-          </svg>
-          <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">{progress}%</span>
-        </div>
-      </div>
+/**
+ * Step 1 — a pinned, scroll-driven reel of large 3D panels (one build type per panel).
+ * Desktop: vertical scroll moves the reel sideways; the centred panel is in focus.
+ * Mobile: a native swipe carousel with snap points.
+ */
+function TypeReel({ value, onSelect }: { value: string; onSelect: (id: string) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const track = useRef<HTMLDivElement>(null);
+  const [dist, setDist] = useState(0);
+  const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end end"] });
+  const n = PROJECT_TYPES.length;
 
-      {/* bottom */}
-      <div className="hidden sm:flex items-end justify-between gap-3">
-        <div className="flex gap-2">
-          {[
-            { k: "Timeline", v: timeline },
-            { k: "Size", v: size },
-            { k: "Motion", v: motionLevel },
-          ].map((d) => (
-            <div key={d.k} className="rounded-xl bg-black/45 backdrop-blur-md border border-white/10 px-3 py-2">
-              <div className="font-mono text-[9px] uppercase tracking-widest text-white/40">{d.k}</div>
-              <AnimatePresence mode="wait">
-                <motion.div key={d.v} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="text-xs font-semibold text-white whitespace-nowrap">
-                  {d.v}
-                </motion.div>
-              </AnimatePresence>
-            </div>
-          ))}
-        </div>
-        <div className="rounded-xl bg-black/45 backdrop-blur-md border border-white/10 px-3 py-2 text-right">
-          <div className="font-mono text-[9px] uppercase tracking-widest text-white/40">Modules</div>
-          <div className="flex items-center gap-2 justify-end">
-            <div className="flex -space-x-1.5">
-              {styles.slice(0, 4).map((s) => (
-                <span key={s} className="w-3.5 h-3.5 rounded-full border border-black" style={{ background: DESIGN_STYLES.find((d) => d.id === s)?.color }} />
+  useEffect(() => {
+    const measure = () => {
+      if (track.current) setDist(Math.max(0, track.current.scrollWidth - window.innerWidth));
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
+  const x = useTransform(scrollYProgress, [0.03, 0.97], [0, -dist]);
+  const p = useTransform(scrollYProgress, [0.03, 0.97], [0, 1]);
+  const selectedIdx = PROJECT_TYPES.findIndex((t) => t.id === value);
+
+  return (
+    <div className="ml-[calc(50%-50vw)] w-screen">
+      {/* desktop: pinned horizontal reel */}
+      <div ref={ref} className="hidden md:block relative" style={{ height: `${n * 22 + 60}vh` }}>
+        <div className="sticky top-[118px] h-[calc(100vh-118px)] overflow-hidden flex flex-col justify-center">
+          <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(45%_55%_at_50%_50%,rgba(217,4,41,0.16),transparent_70%)]" />
+          <div style={{ perspective: 1800 }}>
+            <motion.div ref={track} style={{ x, transformStyle: "preserve-3d" }} className="flex items-center gap-7 w-max px-[calc(50vw-200px)]">
+              {PROJECT_TYPES.map((pt, i) => (
+                <ReelPanel key={pt.id} i={i} n={n} p={p} pt={pt} selected={value === pt.id} onSelect={onSelect} />
+              ))}
+            </motion.div>
+          </div>
+
+          {/* rail + hint */}
+          <div className="relative mt-10 flex flex-col items-center gap-3">
+            <div className="flex gap-1.5">
+              {PROJECT_TYPES.map((pt, i) => (
+                <ReelTick key={pt.id} i={i} n={n} p={p} selected={i === selectedIdx} />
               ))}
             </div>
-            <motion.span key={moduleCount} initial={{ scale: 1.6, color: "#FF1E3C" }} animate={{ scale: 1, color: "#ffffff" }} className="text-sm font-bold tabular-nums">
-              {moduleCount}
-            </motion.span>
+            <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-white/40">Scroll to browse · tap a panel to choose</p>
           </div>
         </div>
       </div>
 
-      <AnimatePresence>
-        {assembled && (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="absolute top-20 sm:top-24 inset-x-0 flex justify-center">
-            <span className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-emerald-500/15 border border-emerald-400/40 text-xs text-emerald-200 backdrop-blur-md">
-              <CheckCircle2 className="w-3.5 h-3.5" /> Blueprint assembled
-            </span>
+      {/* mobile: swipe carousel */}
+      <div className="md:hidden flex gap-4 overflow-x-auto snap-x snap-mandatory px-[10vw] pb-6 [scrollbar-width:none]" style={{ perspective: 1000 }}>
+        {PROJECT_TYPES.map((pt, i) => (
+          <motion.div
+            key={pt.id}
+            className="snap-center shrink-0 w-[80vw]"
+            initial={{ opacity: 0, rotateY: -25, x: 40 }}
+            whileInView={{ opacity: 1, rotateY: 0, x: 0 }}
+            viewport={{ once: true, amount: 0.4 }}
+            transition={{ duration: 0.6, ease: EASE }}
+          >
+            <PanelFace pt={pt} i={i} n={n} selected={value === pt.id} onSelect={onSelect} />
           </motion.div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ReelPanel({ pt, i, n, p, selected, onSelect }: { pt: (typeof PROJECT_TYPES)[number]; i: number; n: number; p: MotionValue<number>; selected: boolean; onSelect: (id: string) => void }) {
+  const c = i / (n - 1);
+  const w = 0.22;
+  const rotateY = useTransform(p, [c - w, c, c + w], [38, 0, -38]);
+  const scale = useTransform(p, [c - w, c, c + w], [0.8, 1, 0.8]);
+  const z = useTransform(p, [c - w, c, c + w], [-280, 0, -280]);
+  const opacity = useTransform(p, [c - w * 1.4, c, c + w * 1.4], [0.25, 1, 0.25]);
+  const glowO = useTransform(p, [c - w * 0.4, c, c + w * 0.4], [0, 1, 0]);
+  return (
+    <motion.div style={{ rotateY, scale, z, opacity, transformStyle: "preserve-3d" }} className="relative shrink-0 w-[400px]">
+      <motion.div style={{ opacity: glowO }} className="absolute -inset-6 rounded-[40px] bg-crimson/20 blur-3xl pointer-events-none" />
+      <PanelFace pt={pt} i={i} n={n} selected={selected} onSelect={onSelect} tall />
+    </motion.div>
+  );
+}
+
+/** The visual card used by both the desktop reel and the mobile carousel. */
+function PanelFace({ pt, i, n, selected, onSelect, tall }: { pt: (typeof PROJECT_TYPES)[number]; i: number; n: number; selected: boolean; onSelect: (id: string) => void; tall?: boolean }) {
+  const Icon = TYPE_ICONS[pt.id] || Box;
+  return (
+    <motion.button
+      type="button"
+      onClick={() => onSelect(pt.id)}
+      aria-pressed={selected}
+      whileHover={{ y: -6 }}
+      whileTap={{ scale: 0.97 }}
+      className={`group relative w-full overflow-hidden rounded-[32px] border text-left ${tall ? "h-[min(560px,68vh)]" : "h-[480px]"} p-7 flex flex-col transition-colors ${
+        selected ? "border-bright-red bg-gradient-to-br from-crimson/30 via-[#120709] to-[#08080a] shadow-[0_30px_90px_-25px_rgba(217,4,41,0.85)]" : "border-white/[0.09] bg-gradient-to-br from-white/[0.06] via-[#0b0b0d] to-[#08080a] hover:border-white/25"
+      }`}
+    >
+      {/* decorative grid + giant ghost icon */}
+      <div className="absolute inset-0 opacity-[0.35] bg-[linear-gradient(to_right,rgba(255,255,255,0.04)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.04)_1px,transparent_1px)] bg-[size:28px_28px] [mask-image:radial-gradient(ellipse_at_top_right,black,transparent_70%)]" />
+      <Icon className="absolute -right-8 -bottom-8 w-56 h-56 text-white/[0.035] group-hover:text-white/[0.06] transition-colors" strokeWidth={1} />
+
+      <div className="relative flex items-center justify-between">
+        <span className="font-mono text-[11px] tracking-[0.25em] text-white/40">
+          {String(i + 1).padStart(2, "0")} / {String(n).padStart(2, "0")}
+        </span>
+        {pt.badge && <span className="px-2.5 py-1 rounded-full bg-crimson text-[10px] font-semibold uppercase tracking-wider text-white">{pt.badge}</span>}
+      </div>
+
+      <motion.div
+        animate={{ y: [0, -6, 0] }}
+        transition={{ duration: 4, repeat: Infinity, ease: "easeInOut", delay: (i % 4) * 0.3 }}
+        className={`relative mt-6 w-20 h-20 rounded-3xl flex items-center justify-center border ${
+          selected ? "bg-crimson border-bright-red shadow-[0_0_50px_rgba(255,30,60,0.7)]" : "bg-white/[0.05] border-white/10 group-hover:border-bright-red/50"
+        } transition-colors`}
+      >
+        <Icon className={`w-9 h-9 ${selected ? "text-white" : "text-bright-red"}`} />
+        {/* spark burst on selection */}
+        <AnimatePresence>
+          {selected &&
+            Array.from({ length: 12 }).map((_, k) => {
+              const a = (k / 12) * Math.PI * 2;
+              return (
+                <motion.span
+                  key={k}
+                  initial={{ x: 0, y: 0, opacity: 1, scale: 1 }}
+                  animate={{ x: Math.cos(a) * 90, y: Math.sin(a) * 90, opacity: 0, scale: 0.3 }}
+                  transition={{ duration: 0.8, ease: "easeOut" }}
+                  className="pointer-events-none absolute w-1.5 h-1.5 rounded-full bg-bright-red shadow-[0_0_8px_#FF1E3C]"
+                />
+              );
+            })}
+        </AnimatePresence>
+      </motion.div>
+
+      <div className="relative mt-auto">
+        <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-bright-red">{pt.category}</p>
+        <h3 className="mt-2 font-orbitron font-black text-2xl text-white leading-tight">{pt.name}</h3>
+        <p className="mt-2.5 text-sm text-white/55 leading-relaxed line-clamp-2">{pt.description}</p>
+        <ul className="mt-4 space-y-1.5">
+          {(TYPE_DELIVERABLES[pt.id] || []).map((d) => (
+            <li key={d} className="flex items-center gap-2 text-xs text-white/75">
+              <span className={`w-4 h-4 rounded-full flex items-center justify-center transition-colors ${selected ? "bg-bright-red" : "bg-white/[0.08]"}`}>
+                <Check className="w-2.5 h-2.5 text-white" />
+              </span>
+              {d}
+            </li>
+          ))}
+        </ul>
+        <div className="mt-5 flex items-center justify-between gap-3">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-white/10 bg-black/30 text-xs text-white/70">
+            <Clock className="w-3.5 h-3.5 text-bright-red" /> {pt.recommendedTimeline}
+          </span>
+          <span className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold transition ${selected ? "bg-white text-black" : "bg-crimson/90 text-white group-hover:bg-bright-red"}`}>
+            {selected ? (
+              <>
+                <Check className="w-3.5 h-3.5" /> Selected
+              </>
+            ) : (
+              <>
+                Choose <ArrowRight className="w-3.5 h-3.5" />
+              </>
+            )}
+          </span>
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {selected && (
+          <motion.span
+            initial={{ scale: 0, rotate: -90 }}
+            animate={{ scale: 1, rotate: 0 }}
+            exit={{ scale: 0 }}
+            transition={{ type: "spring", stiffness: 320, damping: 16 }}
+            className="absolute top-5 right-5 w-9 h-9 rounded-full bg-bright-red flex items-center justify-center shadow-[0_0_25px_rgba(255,30,60,0.9)]"
+          >
+            <Check className="w-5 h-5 text-white" />
+          </motion.span>
         )}
       </AnimatePresence>
+      {selected && (
+        <motion.span initial={{ opacity: 0.8, scale: 0.6 }} animate={{ opacity: 0, scale: 1.6 }} transition={{ duration: 0.9 }} className="pointer-events-none absolute inset-0 rounded-[32px] border-2 border-bright-red" />
+      )}
+    </motion.button>
+  );
+}
+
+function ReelTick({ i, n, p, selected }: { i: number; n: number; p: MotionValue<number>; selected: boolean }) {
+  const c = i / (n - 1);
+  const width = useTransform(p, [c - 0.06, c, c + 0.06], [8, 28, 8]);
+  return <motion.span style={{ width }} className={`h-1 rounded-full block ${selected ? "bg-emerald-400" : "bg-white/25"}`} />;
+}
+
+/**
+ * "One decision at a time" stack.
+ * Desktop: the chapter pins while you scroll; scroll position picks the active panel and
+ * each change plays a short spring transition (no half-overlapped, scrubbed states).
+ * Smaller screens: panels simply flow one after another.
+ */
+function PanelStack({ children, labels }: { children: React.ReactNode; labels: string[] }) {
+  const items = React.Children.toArray(children);
+  const [desktop, setDesktop] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px) and (min-height: 700px)");
+    const on = () => setDesktop(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+
+  if (!desktop) return <div className="space-y-8">{items}</div>;
+  // mounted separately so its scroll target ref exists on first render
+  return <PinnedStack items={items} labels={labels} />;
+}
+
+const STICKY_TOP = 130;
+
+function PinnedStack({ items, labels }: { items: React.ReactNode[]; labels: string[] }) {
+  const n = items.length;
+  const ref = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState(0);
+  const { scrollYProgress } = useScroll({ target: ref, offset: [`start ${STICKY_TOP}px`, "end end"] });
+
+  useMotionValueEvent(scrollYProgress, "change", (v) => {
+    const idx = Math.min(n - 1, Math.max(0, Math.floor(v * n * 0.999)));
+    setActive((cur) => (cur === idx ? cur : idx));
+  });
+
+  // jump to a panel by scrolling to the middle of its slice of the pinned range
+  const goTo = (i: number) => {
+    const el = ref.current;
+    if (!el) return;
+    const top = el.getBoundingClientRect().top + window.scrollY - STICKY_TOP;
+    const range = el.offsetHeight - (window.innerHeight - STICKY_TOP);
+    const y = top + ((i + 0.5) / n) * range;
+    const lenis = (window as unknown as { __lenis?: { scrollTo: (y: number, o?: object) => void } }).__lenis;
+    if (lenis) lenis.scrollTo(y, { duration: 0.9 });
+    else window.scrollTo({ top: y, behavior: "smooth" });
+  };
+
+  return (
+    <div ref={ref} className="relative" style={{ height: `${n * 70 + 30}vh` }}>
+      <div className="sticky flex flex-col" style={{ top: STICKY_TOP, height: `calc(100vh - ${STICKY_TOP + 20}px)` }}>
+        {/* all layers share one grid cell, so every panel takes the tallest panel's height
+            and a taller panel behind never peeks out under a shorter one */}
+        <div className="relative flex-1 min-h-0 pt-6 grid content-start" style={{ perspective: 1600 }}>
+          {items.map((child, i) => {
+            const d = i - active;
+            const target =
+              d < 0
+                ? { y: Math.max(d, -3) * 22, scale: 1 + Math.max(d, -3) * 0.045, rotateX: 4, opacity: d < -3 ? 0 : 1 }
+                : d === 0
+                ? { y: 0, scale: 1, rotateX: 0, opacity: 1 }
+                : { y: 160, scale: 0.95, rotateX: -22, opacity: 0 };
+            return (
+              <motion.div
+                key={i}
+                initial={false}
+                animate={target}
+                transition={{ type: "spring", stiffness: 160, damping: 22, mass: 0.9, opacity: { duration: 0.22, ease: "easeOut" } }}
+                style={{ gridArea: "1 / 1", zIndex: i, transformOrigin: "50% 0%", pointerEvents: d === 0 ? "auto" : "none" }}
+                className="relative"
+                aria-hidden={d !== 0}
+              >
+                <div className="relative h-full flex flex-col [&>*]:flex-1">
+                  {child}
+                  <motion.div
+                    initial={false}
+                    animate={{ opacity: d < 0 ? 0.55 : 0 }}
+                    transition={{ duration: 0.4 }}
+                    className="pointer-events-none absolute inset-0 rounded-[30px] bg-black"
+                  />
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+
+        {/* footer: progress + next cue */}
+        <div className="relative z-50 flex items-center justify-between gap-4 pb-2">
+          <div className="flex items-center gap-2">
+            {labels.map((l, i) => (
+              <button
+                key={l}
+                type="button"
+                onClick={() => goTo(i)}
+                className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs transition ${
+                  i === active ? "bg-crimson text-white shadow-[0_0_18px_rgba(217,4,41,0.5)]" : i < active ? "text-emerald-300 hover:bg-white/[0.05]" : "text-white/40 hover:text-white/70"
+                }`}
+              >
+                {i < active ? <Check className="w-3.5 h-3.5" /> : <span className="font-mono text-[10px]">{String(i + 1).padStart(2, "0")}</span>}
+                {l}
+              </button>
+            ))}
+          </div>
+          <span className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.25em] text-white/40">
+            {active < n - 1 ? (
+              <>
+                Scroll for {labels[active + 1]}
+                <motion.span animate={{ y: [0, 4, 0] }} transition={{ duration: 1.3, repeat: Infinity }}>
+                  ↓
+                </motion.span>
+              </>
+            ) : (
+              "Last panel in this chapter"
+            )}
+          </span>
+        </div>
+      </div>
     </div>
+  );
+}
+
+/** Receipt-style summary of everything the client picked, with jump-back edit links. */
+function BlueprintReceipt({
+  typeName, category, typeIcon: TypeIcon, groups, onEdit,
+}: {
+  typeName: string;
+  category: string;
+  typeIcon: LucideIcon;
+  groups: { step: number; title: string; items: string[] }[];
+  onEdit: (step: number) => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 40, rotateX: 12 }}
+      whileInView={{ opacity: 1, y: 0, rotateX: 0 }}
+      viewport={{ once: true, margin: "-10%" }}
+      transition={{ duration: 0.9, ease: EASE }}
+      style={{ transformPerspective: 1200 }}
+      className="relative overflow-hidden rounded-[30px] border border-white/[0.08] bg-gradient-to-b from-white/[0.05] to-[#08080a]/95"
+    >
+      <div className="p-6 sm:p-8 border-b border-dashed border-white/10">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4 min-w-0">
+            <span className="w-14 h-14 rounded-2xl bg-crimson flex items-center justify-center shadow-[0_0_35px_rgba(255,30,60,0.55)] shrink-0">
+              <TypeIcon className="w-7 h-7 text-white" />
+            </span>
+            <div className="min-w-0">
+              <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-white/40">Your blueprint</p>
+              <h3 className="font-orbitron font-black text-xl sm:text-2xl text-white truncate">{typeName}</h3>
+              <p className="text-xs text-white/45">{category}</p>
+            </div>
+          </div>
+          <button type="button" onClick={() => onEdit(1)} className="shrink-0 text-xs text-bright-red hover:text-white">
+            Change
+          </button>
+        </div>
+      </div>
+      <div className="divide-y divide-dashed divide-white/10">
+        {groups.map((g, gi) => (
+          <motion.div key={g.title} initial={{ opacity: 0, x: -16 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: gi * 0.07 }} className="px-6 sm:px-8 py-5">
+            <div className="flex items-center justify-between mb-3">
+              <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-white/45">{g.title}</p>
+              <button type="button" onClick={() => onEdit(g.step)} className="text-xs text-white/40 hover:text-bright-red">
+                Edit
+              </button>
+            </div>
+            {g.items.length ? (
+              <div className="flex flex-wrap gap-1.5">
+                {g.items.map((it) => (
+                  <span key={it} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.07] text-xs text-white/80">
+                    <Check className="w-3 h-3 text-emerald-400" /> {it}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-white/35">Nothing selected</p>
+            )}
+          </motion.div>
+        ))}
+      </div>
+      {/* perforated edge */}
+      <div className="flex justify-between px-3 -mb-2.5" aria-hidden="true">
+        {Array.from({ length: 18 }).map((_, i) => (
+          <span key={i} className="w-4 h-4 rounded-full bg-[#050505]" />
+        ))}
+      </div>
+    </motion.div>
   );
 }
 
